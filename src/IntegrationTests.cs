@@ -167,6 +167,14 @@ namespace Hanautomata
                 }
                 finally { inputTag = Native.TestTag; }
                 TextCase("English IME: Korean greeting", plain, "dkssudgktpdy ", "안녕하세요 ");
+                TextCase("Public word list converts a deferred Korean word", plain, "dirks ", "야간 ");
+                TextCase("Public word list keeps a deferred English word", plain, "torch ", "torch ");
+                Ui(delegate { app.ApplySensitivity("conservative"); });
+                TextCase("Conservative sensitivity keeps a boundary word literal", plain, "tp ", "tp ");
+                Ui(delegate { app.ApplySensitivity("aggressive"); });
+                TextCase("Aggressive sensitivity converts a boundary word", plain, "wl ", "지 ");
+                Ui(delegate { app.ApplySensitivity("balanced"); });
+                TextCase("Balanced sensitivity restores the boundary word", plain, "wl ", "wl ");
                 Focus(plain); Tap(0x14); Thread.Sleep(200);
                 Assert("Caps Lock on state verified", Ui(delegate { return (Native.GetKeyState(0x14) & 1) != 0; }), new { caps = true });
                 TextCase("Caps Lock: user malfunction report", plain, "ehdwkrdksgka ehdwkrgkehfhr gownj ", "동작안함 동작하도록 해줘 ");
@@ -337,7 +345,9 @@ namespace Hanautomata
             Ui(delegate { app.Words.UndoLast(); });
             LearningCase("Undo restores former learned choice", "쥰 wbs wbs 쥰 ", delegate { Type("wbs "); }, false);
             Ui(delegate { app.Words.Enabled = false; });
-            LearningCase("Learning off keeps manual conversion only", "그 rm ", delegate { Type("rm; rm "); }, true);
+            // rm/그 can now convert from the statistical continuity prior even with personal learning off.
+            // A protected English word isolates this test from that independent model behavior.
+            LearningCase("Learning off keeps manual conversion only", "쥰 wbs ", delegate { Type("wbs; wbs "); }, true);
             Assert("Learning off creates no entry", app.Words.Count == 0, null);
             Ui(delegate { app.Words.Enabled = true; app.Input.SemicolonShortcut = false; });
             LearningCase("Semicolon shortcut can be disabled", "hello; ", delegate { Type("hello; "); }, true);

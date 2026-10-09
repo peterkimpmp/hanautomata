@@ -1,8 +1,13 @@
-param([switch]$Startup, [switch]$NoLaunch, [string]$SourceDirectory)
+param([switch]$Startup, [switch]$NoLaunch, [switch]$ValidateOnly, [string]$SourceDirectory)
 $ErrorActionPreference = 'Stop'
-if (-not $SourceDirectory) { $SourceDirectory = Join-Path $PSScriptRoot 'build' }
+if (-not $SourceDirectory) {
+    $SourceDirectory = if (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'Hanautomata.exe')) { $PSScriptRoot } else { Join-Path $PSScriptRoot 'build' }
+}
 $sourceExe = Join-Path $SourceDirectory 'Hanautomata.exe'
 if (-not (Test-Path -LiteralPath $sourceExe)) { throw 'Build Hanautomata first, or specify -SourceDirectory with the portable package.' }
+$config = Join-Path $SourceDirectory 'Hanautomata.exe.config'
+if (-not (Test-Path -LiteralPath $config)) { throw 'Hanautomata.exe.config is required beside the executable.' }
+if ($ValidateOnly) { Write-Output 'Install source validated; no files, shortcuts or startup entries changed.'; return }
 $destination = [System.IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA 'Programs/Hanautomata'))
 $null = New-Item -ItemType Directory -Force -Path $destination
 $installedExe = Join-Path $destination 'Hanautomata.exe'
@@ -22,8 +27,7 @@ if ($legacyRunning.Count -gt 0) { throw 'Close HanFlow (the previous name of thi
 $legacyInstall = Join-Path $env:LOCALAPPDATA 'Programs/HanFlow'
 if (Test-Path -LiteralPath $legacyInstall) { Write-Warning "Previous HanFlow install left in place: $legacyInstall (and HanFlow.lnk shortcuts). Remove them after confirming Hanautomata works. Settings and learned words are copied to %LOCALAPPDATA%\Hanautomata on first start." }
 Copy-Item -LiteralPath $sourceExe -Destination $installedExe -Force
-$config = Join-Path $SourceDirectory 'Hanautomata.exe.config'
-if (Test-Path -LiteralPath $config) { Copy-Item -LiteralPath $config -Destination (Join-Path $destination 'Hanautomata.exe.config') -Force }
+Copy-Item -LiteralPath $config -Destination (Join-Path $destination 'Hanautomata.exe.config') -Force
 if (-not ('HanautomataInstall.Shortcut' -as [type])) {
 Add-Type -TypeDefinition @'
 using System;

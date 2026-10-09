@@ -3,7 +3,8 @@
 ## 빌드와 검사
 - Windows: `.\build.ps1 -Test`(단위 검사) → `.\build.ps1 -Integration`(전용 시험창에서 실제 후크·입력 검사) → `.\install.ps1`.
 - macOS·Linux·Windows(.NET SDK 9): `dotnet build tests/dotnet/Hanautomata.App.Net48 -c Release`(전체 앱 컴파일 검사) · `dotnet run --project tests/dotnet/Hanautomata.Tests -f net9.0 -c Release`(단위 검사). 자세한 설명은 `tests/dotnet/README.md`.
-- PR 전에 두 검사가 모두 통과해야 합니다. CI(`.github/workflows/ci.yml`)가 같은 명령을 실행합니다.
+- 배포 검사: 앱 빌드 뒤 `.\tests\ReleaseTests.ps1`. 재패키징 시 잔여 파일 제외, ZIP 체크섬, 휴대용 설치 소스 확인을 검사합니다.
+- CI(`.github/workflows/ci.yml`)는 교차 플랫폼 컴파일·단위 검사와 Windows 단위·배포 검사를 실행합니다. `-Integration`은 대화형 Windows 데스크톱에서 별도로 실행하며, 물리 키보드 검증과 구분합니다.
 
 ## 코드 규칙
 - C# 5 문법 · .NET Framework 4.8 · 외부 패키지 없음(앱은 Windows 기본 컴파일러 `csc 4.0.30319`로 빌드됩니다).

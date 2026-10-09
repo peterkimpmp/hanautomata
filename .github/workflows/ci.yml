@@ -25,6 +25,9 @@ jobs:
       - name: Release build
         shell: pwsh
         run: .\build.ps1
+      - name: Portable installation and packaging regression tests
+        shell: pwsh
+        run: .\tests\ReleaseTests.ps1
       - name: SHA-256
         shell: pwsh
         run: Get-FileHash build\Hanautomata.exe -Algorithm SHA256 | Format-List

@@ -4,14 +4,12 @@
 
 Hanautomata is a Windows tray app that lets you type Korean or English from the same physical keys without toggling the 한/영 mode. It decides word by word (hand lists first, then a syllable-bigram vs letter-bigram likelihood ratio), shows a small candidate window, commits on Space, and fixes mistakes with F2 (last word) or Shift+F2 (selected text). No admin rights, no network, no cloud model. MIT licensed; model tables are aggregate statistics from Wikipedia dumps (CC BY-SA 4.0).
 
-*이전 이름은 **HanFlow**입니다(2026-10-09 변경 · 같은 목적의 macOS 프로젝트 [hyunki85/hanflow](https://github.com/hyunki85/hanflow)와 구별). Formerly HanFlow; renamed to avoid confusion with the macOS project of the same name.*
-
 `Hanautomata.exe`를 실행하고 입력 칸에 타이핑하세요.
 `dkssudgktpdy`는 **안녕하세요**, `hello world`는 **hello world**로 판별합니다.
 작은 조합창에 후보가 보이고 **Space에서 실제 편집 칸에 확정**됩니다.
 현재 Microsoft 입력기의 한/영 모드와 관계없이 같은 물리 키를 처리합니다.
 
-> **베타 상태**: 판별 코드는 Windows 1대(클라우드 PC)에서 기능 검사 101개와 설치를 확인한 v0.3.0을 바탕으로 합니다. 이 공개판은 통계 모델 표를 공개 코퍼스로 바꾸고 보류 구간 단어 목록과 이름 변경을 더했습니다. 이 변경분은 macOS 교차 검사와 CI의 Windows 빌드·단위 검사만 거쳤고, Windows 기능 검사와 실물 PC의 물리 키보드·실제 앱(브라우저·채팅·편집기) 표시 결과는 아직 확인하지 않았습니다. 빌드는 서명되어 있지 않습니다. 자세한 범위는 [검증 기록](docs/VERIFICATION.md)에 있습니다.
+> **베타 상태**: v0.4.0 공개 모델로 Windows 단위 단언 26,155개와 기능 검사 106개를 통과했고, 설치·이전 데이터 보존·선택 변환을 확인했습니다. 검증 환경은 클라우드 Windows PC 1대이며, 자동 입력과 실물 키보드 검증은 다릅니다. 실물 PC의 물리 키보드·실제 앱(브라우저·채팅·편집기) 호환성과 로그오프 후 로그인은 아직 확인하지 않았습니다. 빌드는 서명되어 있지 않습니다. 자세한 범위는 [검증 기록](docs/VERIFICATION.md)에 있습니다.
 
 ## 키
 
@@ -38,7 +36,17 @@ Windows 시작 시 실행은 트레이에서 직접 켜는 사용자별 옵션�
 
 ## 설치
 
-소스에서 빌드해 현재 사용자에게 배치합니다(Windows 10/11, 별도 SDK 없이 기본 C# 컴파일러 사용).
+[v0.4.0-beta 다운로드](https://github.com/peterkimpmp/hanautomata/releases/tag/v0.4.0-beta)에서 `Hanautomata-0.4.0-win.zip`과 `SHA256SUMS.txt`를 받으세요. Windows 10/11과 .NET Framework 4.8이 필요합니다.
+
+1. `Get-FileHash .\Hanautomata-0.4.0-win.zip -Algorithm SHA256` 결과를 함께 받은 체크섬과 대조합니다.
+2. ZIP을 풀고 `Hanautomata-0.4.0` 폴더에서 `Hanautomata.exe`를 실행합니다. EXE와 config는 같은 폴더에 둡니다.
+3. 현재 사용자에게 설치하려면 같은 폴더에서 아래 명령을 실행합니다. 관리자 권한은 필요하지 않습니다.
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
+```
+
+소스에서 직접 빌드할 때는 저장소 루트에서 실행합니다(별도 SDK 없이 Windows 기본 C# 컴파일러 사용).
 
 ```powershell
 .\build.ps1
@@ -46,8 +54,8 @@ Windows 시작 시 실행은 트레이에서 직접 켜는 사용자별 옵션�
 .\install.ps1 -Startup # 자동 시작까지 원할 때
 ```
 
-휴대용 폴더에서 쓰려면 `Hanautomata.exe`와 `Hanautomata.exe.config`를 같은 폴더에 두고 실행합니다. 제거는 트레이에서 자동 시작을 해제하고 종료한 뒤 앱 폴더와 바로가기를 지우면 됩니다. 이전 이름 HanFlow를 쓰고 있었다면 트레이에서 HanFlow를 먼저 종료한 뒤 설치하세요. `%LOCALAPPDATA%\HanFlow`의 설정·학습 단어는 첫 실행 때 자동으로 복사되고(원본 유지) 자동 시작 항목도 새 이름으로 바뀝니다. HanFlow가 실행 중이면 Hanautomata는 시작하지 않고 종료를 안내합니다. 옛 폴더 `%LOCALAPPDATA%\Programs\HanFlow`와 `HanFlow.lnk` 바로가기는 확인 후 지우면 됩니다. 앱별 제외 설정도 지우려면 `%LOCALAPPDATA%\Hanautomata\settings.json`을 삭제합니다.
-서명되지 않은 베타 빌드라 SmartScreen·백신이 경고할 수 있습니다. 직접 빌드하거나 CI 산출물의 SHA-256과 대조하세요([SECURITY.md](SECURITY.md)).
+제거는 트레이에서 자동 시작을 해제하고 종료한 뒤 앱 폴더와 바로가기를 지우면 됩니다. 앱별 제외 설정도 지우려면 `%LOCALAPPDATA%\Hanautomata\settings.json`을 삭제합니다. 이전 버전 사용자는 [데이터 이전과 구 설치본 정리](docs/MIGRATION.md)를 먼저 확인하세요.
+서명되지 않은 베타 빌드라 SmartScreen·백신이 경고할 수 있습니다. 릴리스의 SHA-256과 대조하거나 직접 빌드하세요([SECURITY.md](SECURITY.md)).
 
 ## 자동 판별의 범위
 
@@ -73,7 +81,7 @@ Windows 시작 시 실행은 트레이에서 직접 켜는 사용자별 옵션�
 앱은 문장 전체나 연속 키 기록을 저장하지 않으며 네트워크 통신을 하지 않습니다.
 직접 후보를 바꾸고 확정한 단어에 한해 키열·한글/영문 선택·선택 가중치·앞 단어 지문을 `%LOCALAPPDATA%\Hanautomata\learned-words.json`(읽을 수 있는 JSON)에 저장합니다. 앞 단어는 원문 대신 SHA-256 지문입니다.
 설정 파일에는 제외한 프로세스 이름, 민감도, 개인 학습·세미콜론 전환 사용 여부를 저장합니다.
-UI Automation에서는 편집 가능·비밀번호·포커스 등 속성만 읽고 대상 문서의 본문은 조회하지 않습니다.
+자동 판별을 위한 UI Automation 조회는 편집 가능·비밀번호·포커스 등 속성에 한정됩니다. **Shift+F2를 누르면 변환할 선택 영역의 글자를 읽습니다**(최대 4,096자). 문서 전체를 수집하거나 저장하지 않습니다.
 `--diagnose-input <경로>`를 지정했을 때만 입력 원문 없이 앱·입력 방식·문자 종류·차단 사유를 순환 기록합니다.
 
 ## 선택을 기억하는 사용법
@@ -92,6 +100,7 @@ UI Automation에서는 편집 가능·비밀번호·포커스 등 속성만 읽�
 ```powershell
 .\build.ps1 -Test          # 단위 검사(Framework csc)
 .\build.ps1 -Integration   # 전용 시험창에서 실제 후크·Unicode 입력 검사
+.\tests\ReleaseTests.ps1   # ZIP·체크섬·휴대용 설치 입력 검사
 .\package.ps1              # deliverables/Hanautomata-0.4.0-win.zip + SHA256SUMS
 ```
 
