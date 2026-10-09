@@ -442,6 +442,12 @@ namespace HanFlow
         readonly Lexicon englishTrie = new Lexicon(), koreanTrie = new Lexicon(), particleTrie = new Lexicon();
         readonly LanguageScorer scorer;
         public LanguageScorer Scorer { get { return scorer; } }
+        // Word lists from a public corpus slice disjoint from the LM tables. They act only inside the scorer's abstention band:
+        // a listed Korean word with the Korean side ahead by WordListMargin converts; a listed English word stays English without a prompt.
+        readonly HashSet<string> koreanWords = new HashSet<string>(StringComparer.Ordinal), englishWords = new HashSet<string>(StringComparer.Ordinal);
+        internal const double WordListMargin = 1.0;
+        public int KoreanWordCount { get { return koreanWords.Count; } }
+        public int EnglishWordCount { get { return englishWords.Count; } }
         static readonly Regex TokenParts = new Regex("[A-Za-z]+|[^A-Za-z]+", RegexOptions.Compiled);
         const string EdgePunctuation = ".,!?;:()[]{}\"'";
         readonly HashSet<string> korean = new HashSet<string>((
@@ -482,7 +488,24 @@ namespace HanFlow
                     foreach (string word in reader.ReadToEnd().Split((char[])null, StringSplitOptions.RemoveEmptyEntries)) english.Add(word);
             }
             scorer = new LanguageScorer(IsEnglish);
+            LoadWordList("HanFlow.KoreanWords.txt.gz", koreanWords);
+            LoadWordList("HanFlow.EnglishWords.txt.gz", englishWords);
             BuildLexicons();
+        }
+        // Optional resources: a build without them keeps the statistical band as is (fail-open for text, never for safety).
+        static void LoadWordList(string resource, HashSet<string> target)
+        {
+            using (Stream stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(resource))
+            {
+                if (stream == null) return;
+                using (var gzip = new GZipStream(stream, CompressionMode.Decompress))
+                using (var reader = new StreamReader(gzip, Encoding.UTF8))
+                {
+                    string line;
+                    while ((line = reader.ReadLine()) != null)
+                    { if (line.Length == 0 || line[0] == '#') continue; target.Add(line.Trim()); }
+                }
+            }
         }
         // Small, typed surface-form rules, not a full Korean morphological analyzer.
         void BuildLexicons()
@@ -759,6 +782,13 @@ namespace HanFlow
                 if (verdict.IsKorean)
                 { koreanChoice = true; reason = verdict.Nudged ? "앞 단어 문맥 · 음절 통계" : "음절 통계"; confidence = ConfidenceLevel.Pattern; }
                 else if (verdict.IsEnglish) reason = verdict.Nudged ? "앞 단어 문맥 · 영문 통계" : "영문 통계";
+                // Inside the band, a real word tips the balance: listed Korean (2+ syllables, Korean side ahead) converts,
+                // a listed English word (3+ letters) stays literal without asking. One-syllable words stay statistical.
+                else if (koBody.Length >= 2 && koBody.All(c => c >= 0xac00 && c <= 0xd7a3) && verdict.Llr >= WordListMargin
+                    && koreanWords.Contains(koBody) && !englishWords.Contains(body.ToLowerInvariant()))
+                { koreanChoice = true; reason = "단어 목록 · 음절 통계"; confidence = ConfidenceLevel.Pattern; }
+                else if (body.Length >= 3 && englishWords.Contains(body.ToLowerInvariant()) && !koreanWords.Contains(koBody))
+                    reason = "영어 단어 목록";
                 else confidence = ConfidenceLevel.Uncertain;
             }
             return new Decision(koreanChoice ? composed : raw, koreanChoice ? raw : composed, koreanChoice, reason, confidence);

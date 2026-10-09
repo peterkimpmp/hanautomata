@@ -1,7 +1,8 @@
 # 변경 기록
 
 ## 0.4.0-beta — 2026-10-09 · 첫 공개판
-- 통계 모델 표를 공개 코퍼스(한국어 위키백과 · Simple English 위키백과, CC BY-SA 4.0 집계)로 다시 생성. 코드 변경 없음.
+- 통계 모델 표를 공개 코퍼스(한국어 위키백과 · Simple English 위키백과, CC BY-SA 4.0 집계)로 다시 생성.
+- 통계가 **보류**한 구간에서만 쓰는 단어 목록 2종 추가(`data/korean-words.txt.gz` 61,759 어절 · `data/english-words.txt.gz` 73,901 단어 · 모델 표와 겹치지 않는 위키백과 슬라이스). 2음절 이상 한국어 단어는 우도비가 1.0 이상이면 변환하고, 3글자 이상 영어 단어는 확인 요청 없이 그대로 둡니다. held-out 한글 975→982 · 영문 보존 990→997(1,000 기준).
 - MIT 라이선스, NOTICE(데이터 출처), SECURITY, CONTRIBUTING, docs/DESIGN·VERIFICATION·REFERENCES 추가. 내부 조사 보고서와 개인 개발 표본은 공개하지 않음.
 - `tests/lm/wikitext2txt.py`·`make_fixtures.py` 추가, `build_lm.py`는 `--repo` 필수, `eval.py`는 개인 표본 없이도 실행.
 - 판별 경계 검사 토큰 6개를 새 모델에 맞게 교체(의미 동일). GitHub Actions CI(ubuntu 교차 검사 + windows 빌드).

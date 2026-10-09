@@ -197,8 +197,8 @@ namespace HanFlow
                 Assert("F2 selects literal candidate", Ui(delegate { return plain.Text; }) == "dkssud ", null);
                 Ui(delegate { plain.Clear(); }); Focus(plain); Type("wbs"); Tap(0x71); Type(" "); Thread.Sleep(150);
                 Assert("F2 selects Korean for ambiguous wbs", Ui(delegate { return plain.Text; }) == "쥰 ", null);
-                Ui(delegate { plain.Clear(); }); Focus(plain); Type("dirn"); Tap(0x71); Type(" "); Thread.Sleep(150); // dirn/야구 is literal by default (llr 1.51); F2 picks the Korean reading
-                Assert("F2 selects unknown short Korean", Ui(delegate { return plain.Text; }) == "야구 ", null);
+                Ui(delegate { plain.Clear(); }); Focus(plain); Type("vy"); Tap(0x71); Type(" "); Thread.Sleep(150); // vy/표 is literal by default (one syllable, llr 0.62); F2 picks the Korean reading
+                Assert("F2 selects unknown short Korean", Ui(delegate { return plain.Text; }) == "표 ", null);
                 Ui(delegate { app.Words.Clear(); plain.Clear(); }); Focus(plain); Type("dkssud"); Tap(0x71);
                 for (int i = 0; i < 6; i++) Tap(0x08);
                 Type("dkssud "); Thread.Sleep(150);

@@ -22,6 +22,8 @@
     <EmbeddedResource Include="../../../data/english.txt" LogicalName="HanFlow.English.txt" />
     <EmbeddedResource Include="../../../data/korean-lm.txt.gz" LogicalName="HanFlow.KoreanLM.txt.gz" />
     <EmbeddedResource Include="../../../data/english-lm.txt" LogicalName="HanFlow.EnglishLM.txt" />
+    <EmbeddedResource Include="../../../data/korean-words.txt.gz" LogicalName="HanFlow.KoreanWords.txt.gz" />
+    <EmbeddedResource Include="../../../data/english-words.txt.gz" LogicalName="HanFlow.EnglishWords.txt.gz" />
     <EmbeddedResource Include="../../corpora/scorer-fixtures.tsv" LogicalName="HanFlow.ScorerFixtures.tsv" />
     <EmbeddedResource Include="../../corpora/heldout-korean-1000.tsv" LogicalName="HanFlow.HeldoutKorean.tsv" />
     <EmbeddedResource Include="../../corpora/heldout-english-1000.tsv" LogicalName="HanFlow.HeldoutEnglish.tsv" />

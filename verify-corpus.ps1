@@ -10,7 +10,7 @@ if (-not $EnglishLmPath) { $EnglishLmPath = Join-Path $PSScriptRoot 'data/englis
 $null = New-Item -ItemType Directory -Force -Path (Split-Path -Parent $OutputPrefix)
 $compiler = Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
 $probe = $OutputPrefix + '.exe'
-& $compiler /nologo /utf8output /target:exe /reference:System.Web.Extensions.dll "/out:$probe" "/resource:$EnglishPath,HanFlow.English.txt" "/resource:$KoreanLmPath,HanFlow.KoreanLM.txt.gz" "/resource:$EnglishLmPath,HanFlow.EnglishLM.txt" $CorePath (Join-Path $PSScriptRoot 'tests/CorpusProbe.cs')
+& $compiler /nologo /utf8output /target:exe /reference:System.Web.Extensions.dll "/out:$probe" "/resource:$EnglishPath,HanFlow.English.txt" "/resource:$KoreanLmPath,HanFlow.KoreanLM.txt.gz" "/resource:$EnglishLmPath,HanFlow.EnglishLM.txt" "/resource:$(Join-Path $PSScriptRoot 'data/korean-words.txt.gz'),HanFlow.KoreanWords.txt.gz" "/resource:$(Join-Path $PSScriptRoot 'data/english-words.txt.gz'),HanFlow.EnglishWords.txt.gz" $CorePath (Join-Path $PSScriptRoot 'tests/CorpusProbe.cs')
 if ($LASTEXITCODE -ne 0) { throw 'Corpus probe compilation failed.' }
 & $probe $InputFile $CorrectionsFile $OutputPrefix
 if ($LASTEXITCODE -ne 0) { throw 'Corpus evaluation failed.' }

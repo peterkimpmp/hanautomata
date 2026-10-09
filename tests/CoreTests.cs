@@ -192,6 +192,14 @@ static class CoreTests
     {
         var detector = new Detector(); var scorer = detector.Scorer;
         True(scorer.BigramCount > 10000, "Korean language model loaded (" + scorer.BigramCount + " bigrams)");
+        True(detector.KoreanWordCount > 10000 && detector.EnglishWordCount > 10000, "word lists loaded (" + detector.KoreanWordCount + " Korean, " + detector.EnglishWordCount + " English)");
+        // dirks/야간 (llr 1.97) sits in the band; the Korean word list converts it. gown/해주 (llr 0.94) is a listed English word and stays literal.
+        Equal("야간", detector.Decide("dirks").Text, "listed Korean word inside the band converts");
+        Equal("Pattern", detector.Decide("dirks").Confidence.ToString(), "word-list evidence is still a pattern estimate");
+        Equal("gown", detector.Decide("gown").Text, "listed English word inside the band stays literal even though 해주 is also a listed Korean word");
+        Equal("torch", detector.Decide("torch").Text, "listed English word with no Korean reading stays literal");
+        True(!detector.Decide("torch").NeedsConfirmation, "listed English word with no Korean reading needs no confirmation");
+        True(detector.Decide("rory").NeedsConfirmation || detector.Decide("rory").Text == "rory", "unlisted band token is never converted by the word list below the margin");
         Equal("그런", detector.Decide("rmfjs").Text, "short Korean outside the hand lists converts");
         Equal("Pattern", detector.Decide("rmfjs").Confidence.ToString(), "statistical evidence is a pattern estimate, not lexical certainty");
         Equal("하는", detector.Decide("gksms").Text, "common two-syllable word converts without a shortcut");
@@ -531,9 +539,9 @@ static class CoreTests
             }
             var personalDetector = new Detector();
             var personalInput = new Composition(personalDetector);
-            foreach (char c in "dirn") personalInput.Append(c, c); // dirn/야구 llr 1.51: literal by default, F2 offers the Korean reading
+            foreach (char c in "vy") personalInput.Append(c, c); // vy/표 llr 0.62: one syllable stays literal by default, F2 offers the Korean reading
             personalInput.Toggle(); Confirm(personalInput); personalInput.Clear();
-            Equal("야구", personalDetector.Decide("dirn").Text, "confirmed F2 choice is remembered");
+            Equal("표", personalDetector.Decide("vy").Text, "confirmed F2 choice is remembered");
             foreach (char c in "rm") personalInput.Append(c, c);
             Semicolon(personalInput);
             Equal("그", personalInput.Current.Text, "semicolon selects the other candidate");

@@ -11,9 +11,11 @@ $core = Join-Path $appRoot 'src/Core.cs'
 $lexicon = Join-Path $appRoot 'data/english.txt'
 $koreanLm = Join-Path $appRoot 'data/korean-lm.txt.gz'
 $englishLm = Join-Path $appRoot 'data/english-lm.txt'
-foreach ($required in @($lexicon, $koreanLm, $englishLm)) { if (-not (Test-Path -LiteralPath $required)) { throw "Model resource missing: $required" } }
-# Embedded resources: the English lexicon plus the v0.2.0 Korean syllable and English letter statistics (aggregate counts only).
-$modelResources = @("/resource:$lexicon,HanFlow.English.txt", "/resource:$koreanLm,HanFlow.KoreanLM.txt.gz", "/resource:$englishLm,HanFlow.EnglishLM.txt")
+$koreanWords = Join-Path $appRoot 'data/korean-words.txt.gz'
+$englishWords = Join-Path $appRoot 'data/english-words.txt.gz'
+foreach ($required in @($lexicon, $koreanLm, $englishLm, $koreanWords, $englishWords)) { if (-not (Test-Path -LiteralPath $required)) { throw "Model resource missing: $required" } }
+# Embedded resources: the English lexicon, the Korean syllable and English letter statistics (aggregate counts only) and the two band-only word lists.
+$modelResources = @("/resource:$lexicon,HanFlow.English.txt", "/resource:$koreanLm,HanFlow.KoreanLM.txt.gz", "/resource:$englishLm,HanFlow.EnglishLM.txt", "/resource:$koreanWords,HanFlow.KoreanWords.txt.gz", "/resource:$englishWords,HanFlow.EnglishWords.txt.gz")
 $testResources = @(
     ("/resource:" + (Join-Path $appRoot 'tests/corpora/scorer-fixtures.tsv') + ",HanFlow.ScorerFixtures.tsv"),
     ("/resource:" + (Join-Path $appRoot 'tests/corpora/heldout-korean-1000.tsv') + ",HanFlow.HeldoutKorean.tsv"),

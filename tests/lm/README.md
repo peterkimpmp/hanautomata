@@ -8,6 +8,7 @@
 | `wikitext2txt.py` | 위키백과 pages-articles XML 덤프(부분 스트림도 가능)를 평문 청크로 변환 |
 | `build_lm.py` | 평문 폴더에서 한글 음절 unigram·bigram, 영문 자모 bigram **집계표**와 held-out 단어 표본 생성. 문장·단어 원문은 저장하지 않음 |
 | `make_fixtures.py` | 배포 표로 `tests/corpora/`의 held-out 1,000×2와 C# 동치 fixture를 다시 생성 |
+| `wordlist_from_stream.py` | 덤프의 **다음 슬라이스**(모델 표에 쓴 문서는 건너뜀)에서 어절·단어 빈도 목록 생성 → `data/*-words.txt.gz` |
 | `detector.py` | 우도비 판별기 참조 구현. C# `LanguageScorer`와 동일한 식 |
 | `eval.py` | held-out 4,000+4,000으로 임계값 스윕과 v0.1.8 규칙 비교 |
 
@@ -27,6 +28,13 @@ cp out-en/english-letter-lm.txt ../../data/english-lm.txt
 # 3) C# 검사용 표본·fixture, 평가
 python3 make_fixtures.py --ko-out out-ko --en-out out-en
 python3 eval.py
+
+# 4) 보류 구간 전용 단어 목록 — 모델 표에 쓴 문서 수(kept)만큼 건너뛴 다음 슬라이스에서
+curl -r 0-524287999 .../kowiki-latest-pages-articles.xml.bz2 -o ko500.bz2   # 앞 250MB는 모델 표에 쓴 구간
+bzip2 -dc ko500.bz2 2>/dev/null | python3 wordlist_from_stream.py --lang ko --skip-pages 94575 --out ko-words.tsv
+bzip2 -dc en200.bz2 2>/dev/null | python3 wordlist_from_stream.py --lang en --skip-pages 75241 --out en-words.tsv
+# 한국어: count>=50 · 2음절 이상 · Core.cs 손목록 제외 → gzip → ../../data/korean-words.txt.gz
+# 영어:  count>=5 · 3글자 이상 · [a-z]+ → gzip → ../../data/english-words.txt.gz
 ```
 
 - 배포 표(v0.4.0)는 2026-10-01판 덤프로 만들었습니다. 출처와 조건은 [NOTICE.md](../../NOTICE.md)에 있습니다.

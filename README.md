@@ -51,7 +51,7 @@ Windows 시작 시 실행은 트레이에서 직접 켜는 사용자별 옵션�
 
 두벌식/QWERTY용입니다. 일반 영어·기술 용어는 작은 내장 목록으로 보호하고, 자주 쓰는 한국어 목록과 음절 통계로 후보를 고릅니다.
 같은 키열을 한글 음절 bigram과 영문 자모 bigram으로 각각 점수화해 우도비로 판별하며, 판별이 갈리는 구간에서만 직전 단어의 언어를 참고합니다.
-모델 표는 `data/korean-lm.txt.gz`(367KB)·`data/english-lm.txt`이고 대형 언어 모델·외부 사전·네트워크를 사용하지 않습니다.
+모델 표는 `data/korean-lm.txt.gz`(367KB)·`data/english-lm.txt`이고, 통계가 보류한 구간에서만 단어 목록 2종(`data/korean-words.txt.gz` 61,759 어절 · `data/english-words.txt.gz` 73,901 단어)을 참고합니다. 대형 언어 모델·외부 사전·네트워크를 사용하지 않습니다.
 
 - `go`처럼 영어 단어이면서 ‘해’가 될 수 있는 키열은 영어로 보존합니다. 한글을 원하면 `;` 또는 F2를 누르세요.
 - `dkssudzz` → `안녕ㅋㅋ`, `rkatkgkqslekbb!` → `감사합니다ㅠㅠ!`처럼 한글 뒤의 채팅 표현도 처리합니다.
@@ -111,7 +111,7 @@ dotnet run --project tests/dotnet/HanFlow.Tests -f net9.0 -c Release
 | `src/PreferenceStore.cs` | 개인 선택 사전 저장·되돌리기 |
 | `src/InputDiagnostics.cs` | 원문 없는 진단 기록 |
 | `src/Native.cs` · `src/App.cs` · `src/IntegrationTests.cs` | Windows API 선언 · 트레이·연습창·조합창 · 실제 입력 경로 검사 |
-| `data/` | 영어 보호 어휘, 한글 음절·영문 자모 bigram 표 |
+| `data/` | 영어 보호 어휘, 한글 음절·영문 자모 bigram 표, 보류 구간 전용 단어 목록 2종 |
 | `tests/` | 단위 검사, C# 동치 fixture, 교차 플랫폼 검사 프로젝트, 모델 생성 도구 |
 
 설계 노트: [docs/DESIGN.md](docs/DESIGN.md) · 참고 소스와 라이선스: [docs/REFERENCES.md](docs/REFERENCES.md) · 변경 기록: [CHANGELOG.md](CHANGELOG.md) · 기여: [CONTRIBUTING.md](CONTRIBUTING.md)
