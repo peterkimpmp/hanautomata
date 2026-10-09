@@ -1,0 +1,36 @@
+name: ci
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+jobs:
+  cross-platform-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+      - name: Compile the whole app against .NET Framework 4.8 reference assemblies (C# 5)
+        run: dotnet build tests/dotnet/HanFlow.App.Net48 -c Release
+      - name: Unit tests on .NET 9
+        run: dotnet run --project tests/dotnet/HanFlow.Tests -f net9.0 -c Release
+  windows-build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Unit tests with the Windows Framework compiler
+        shell: pwsh
+        run: .\build.ps1 -Test
+      - name: Release build
+        shell: pwsh
+        run: .\build.ps1
+      - name: SHA-256
+        shell: pwsh
+        run: Get-FileHash build\HanFlow.exe -Algorithm SHA256 | Format-List
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HanFlow-win
+          path: |
+            build/HanFlow.exe
+            build/HanFlow.exe.config
