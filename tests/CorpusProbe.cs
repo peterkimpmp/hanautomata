@@ -4,7 +4,7 @@ using System.IO;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Web.Script.Serialization;
-using HanFlow;
+using Hanautomata;
 
 static class CorpusProbe
 {

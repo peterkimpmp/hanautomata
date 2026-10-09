@@ -39,4 +39,4 @@ bzip2 -dc en200.bz2 2>/dev/null | python3 wordlist_from_stream.py --lang en --sk
 
 - 배포 표(v0.4.0)는 2026-10-01판 덤프로 만들었습니다. 출처와 조건은 [NOTICE.md](../../NOTICE.md)에 있습니다.
 - `eval.py`의 사용자 표본 구간은 `tests/corpora/user-prompts.txt`·`user-corrections.tsv`가 있을 때만 실행됩니다(개인 개발 표본 · 배포하지 않음).
-- `scorer-fixtures.tsv`는 C# 검사(`build.ps1 -Test` · `tests/dotnet/HanFlow.Tests`)가 텍스트·판정을 정확히, 우도비를 0.05 안에서 재현해야 합니다.
+- `scorer-fixtures.tsv`는 C# 검사(`build.ps1 -Test` · `tests/dotnet/Hanautomata.Tests`)가 텍스트·판정을 정확히, 우도비를 0.05 안에서 재현해야 합니다.

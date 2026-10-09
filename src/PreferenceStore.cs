@@ -5,7 +5,7 @@ using System.Threading;
 using System.Runtime.InteropServices;
 using System.Web.Script.Serialization;
 
-namespace HanFlow
+namespace Hanautomata
 {
     // Disk access occurs at startup, on a worker, or during shutdown -- never inside the hook.
     internal sealed class PreferenceStore

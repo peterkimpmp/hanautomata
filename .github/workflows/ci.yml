@@ -12,9 +12,9 @@ jobs:
         with:
           dotnet-version: 9.0.x
       - name: Compile the whole app against .NET Framework 4.8 reference assemblies (C# 5)
-        run: dotnet build tests/dotnet/HanFlow.App.Net48 -c Release
+        run: dotnet build tests/dotnet/Hanautomata.App.Net48 -c Release
       - name: Unit tests on .NET 9
-        run: dotnet run --project tests/dotnet/HanFlow.Tests -f net9.0 -c Release
+        run: dotnet run --project tests/dotnet/Hanautomata.Tests -f net9.0 -c Release
   windows-build:
     runs-on: windows-latest
     steps:
@@ -27,10 +27,10 @@ jobs:
         run: .\build.ps1
       - name: SHA-256
         shell: pwsh
-        run: Get-FileHash build\HanFlow.exe -Algorithm SHA256 | Format-List
+        run: Get-FileHash build\Hanautomata.exe -Algorithm SHA256 | Format-List
       - uses: actions/upload-artifact@v4
         with:
-          name: HanFlow-win
+          name: Hanautomata-win
           path: |
-            build/HanFlow.exe
-            build/HanFlow.exe.config
+            build/Hanautomata.exe
+            build/Hanautomata.exe.config

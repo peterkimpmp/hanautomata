@@ -4,7 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Web.Script.Serialization;
-namespace HanFlow
+namespace Hanautomata
 {
     // Explicit diagnostic mode only: bounded aggregate counters and field metadata, never typed text.
     // The per-process guard histogram counts physical (non-injected) key-downs by the reason they were or were

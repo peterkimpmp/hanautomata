@@ -4,10 +4,10 @@ Usage: python3 build_lm.py --repo DIR [--roots a,b] [--out DIR]
 Ship: gzip -9 out/korean-syllable-lm-min30.txt > ../../data/korean-lm.txt.gz ; cp out/english-letter-lm.txt ../../data/english-lm.txt
 
 Only aggregate character statistics leave this script; no sentences are stored.
-Outputs (scratchpad/hanflow-lm/out):
+Outputs (scratchpad/hanautomata-lm/out):
   korean-syllable-lm.txt  — unigram + bigram log10 probabilities (quantized), boundary token '^' and '$'
   english-letter-lm.txt   — 28x28 letter bigram log10 probabilities with boundary
-  heldout-korean.txt      — Korean words (not in the HanFlow hand lists) with their QWERTY keys
+  heldout-korean.txt      — Korean words (not in the Hanautomata hand lists) with their QWERTY keys
   heldout-english.txt     — English tokens with frequency
   stats.json
 """
@@ -19,8 +19,8 @@ from hangul import to_keys, compose
 
 import argparse
 HERE = os.path.dirname(os.path.abspath(__file__))
-HANFLOW = os.path.dirname(os.path.dirname(HERE))
-parser = argparse.ArgumentParser(description='Build HanFlow n-gram tables from a directory of markdown/text files (aggregate counts only).')
+HANAUTOMATA = os.path.dirname(os.path.dirname(HERE))
+parser = argparse.ArgumentParser(description='Build Hanautomata n-gram tables from a directory of markdown/text files (aggregate counts only).')
 parser.add_argument('--repo', required=True, help='corpus root directory holding plain .txt/.md files (e.g. a Wikipedia dump extracted with wikitext2txt.py)')
 parser.add_argument('--roots', default='.', help='comma-separated subfolders under --repo (default: the root itself)')
 parser.add_argument('--out', default=os.path.join(HERE, 'out'))
@@ -46,8 +46,8 @@ for root in ROOTS:
         for f in fn:
             if not f.endswith(EXTENSIONS):
                 continue
-            # Exclude HanFlow's own corpus so evaluation stays independent of the model data.
-            if dp.startswith(HANFLOW):
+            # Exclude Hanautomata's own corpus so evaluation stays independent of the model data.
+            if dp.startswith(HANAUTOMATA):
                 continue
             try:
                 t = open(os.path.join(dp, f), encoding='utf-8', errors='ignore').read()
@@ -104,7 +104,7 @@ print('kept uni', len(uni_lp), 'kept bi', len(bi_lp))
 def write_lm(path, min_count, digits):
     fmt = '%%.%df' % digits
     with open(path, 'w', encoding='utf-8') as f:
-        f.write('# HanFlow Korean syllable LM v1 · log10 probabilities · aggregate counts only · min-bigram-count %d\n' % min_count)
+        f.write('# Hanautomata Korean syllable LM v1 · log10 probabilities · aggregate counts only · min-bigram-count %d\n' % min_count)
         f.write('#floor %.3f\n' % uni_floor)
         for s, lp in sorted(uni_lp.items(), key=lambda x: -x[1]):
             f.write(('U %s ' + fmt + ' ' + fmt + '\n') % (s, lp, backoff_w.get(s, math.log10(0.5))))
@@ -123,7 +123,7 @@ en_ctx = Counter()
 for (a, b), c in en_bi.items():
     en_ctx[a] += c
 with open(os.path.join(OUT, 'english-letter-lm.txt'), 'w', encoding='utf-8') as f:
-    f.write('# HanFlow English letter bigram LM v1 · log10 P(b|a) · add-0.5 smoothing\n')
+    f.write('# Hanautomata English letter bigram LM v1 · log10 P(b|a) · add-0.5 smoothing\n')
     for a in alphabet[:-1]:
         row = []
         for b in alphabet[1:]:
@@ -133,7 +133,7 @@ with open(os.path.join(OUT, 'english-letter-lm.txt'), 'w', encoding='utf-8') as 
 
 # --- Held-out sets. Korean: frequent words (count >= 3) of length 1..7, keyed as QWERTY.
 hand = set()
-core = open(os.path.join(HANFLOW, 'src/Core.cs'), encoding='utf-8').read()
+core = open(os.path.join(HANAUTOMATA, 'src/Core.cs'), encoding='utf-8').read()
 for w in KO.findall(core):
     hand.add(w)
 random.seed(20261008)
@@ -145,7 +145,7 @@ with open(os.path.join(OUT, 'heldout-korean.txt'), 'w', encoding='utf-8') as f:
         k = to_keys(w)
         assert compose(k) == w, (w, k)
         f.write('%s\t%s\t%d\n' % (k, w, c))
-english_list = set(open(os.path.join(HANFLOW, 'data/english.txt'), encoding='utf-8').read().split())
+english_list = set(open(os.path.join(HANAUTOMATA, 'data/english.txt'), encoding='utf-8').read().split())
 en_candidates = [(w, c) for w, c in en_words.items() if c >= 3 and 2 <= len(w) <= 12 and w.isalpha()]
 en_candidates.sort(key=lambda x: -x[1])
 en_sample = random.sample(en_candidates[:20000], min(4000, len(en_candidates[:20000])))

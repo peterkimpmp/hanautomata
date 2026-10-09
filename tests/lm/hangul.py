@@ -1,4 +1,4 @@
-"""Faithful Python port of HanFlow src/Core.cs `Hangul` (Compose / ToKeys).
+"""Faithful Python port of Hanautomata src/Core.cs `Hangul` (Compose / ToKeys).
 
 Used only to build fixtures and evaluate the detector offline; the product stays C#.
 """

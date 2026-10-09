@@ -7,3 +7,5 @@
 /tests/dotnet/**/bin/
 /tests/dotnet/**/obj/
 /tests/corpora/user-*
+__pycache__/
+*.pyc

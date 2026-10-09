@@ -15,27 +15,27 @@ $koreanWords = Join-Path $appRoot 'data/korean-words.txt.gz'
 $englishWords = Join-Path $appRoot 'data/english-words.txt.gz'
 foreach ($required in @($lexicon, $koreanLm, $englishLm, $koreanWords, $englishWords)) { if (-not (Test-Path -LiteralPath $required)) { throw "Model resource missing: $required" } }
 # Embedded resources: the English lexicon, the Korean syllable and English letter statistics (aggregate counts only) and the two band-only word lists.
-$modelResources = @("/resource:$lexicon,HanFlow.English.txt", "/resource:$koreanLm,HanFlow.KoreanLM.txt.gz", "/resource:$englishLm,HanFlow.EnglishLM.txt", "/resource:$koreanWords,HanFlow.KoreanWords.txt.gz", "/resource:$englishWords,HanFlow.EnglishWords.txt.gz")
+$modelResources = @("/resource:$lexicon,Hanautomata.English.txt", "/resource:$koreanLm,Hanautomata.KoreanLM.txt.gz", "/resource:$englishLm,Hanautomata.EnglishLM.txt", "/resource:$koreanWords,Hanautomata.KoreanWords.txt.gz", "/resource:$englishWords,Hanautomata.EnglishWords.txt.gz")
 $testResources = @(
-    ("/resource:" + (Join-Path $appRoot 'tests/corpora/scorer-fixtures.tsv') + ",HanFlow.ScorerFixtures.tsv"),
-    ("/resource:" + (Join-Path $appRoot 'tests/corpora/heldout-korean-1000.tsv') + ",HanFlow.HeldoutKorean.tsv"),
-    ("/resource:" + (Join-Path $appRoot 'tests/corpora/heldout-english-1000.tsv') + ",HanFlow.HeldoutEnglish.tsv"))
+    ("/resource:" + (Join-Path $appRoot 'tests/corpora/scorer-fixtures.tsv') + ",Hanautomata.ScorerFixtures.tsv"),
+    ("/resource:" + (Join-Path $appRoot 'tests/corpora/heldout-korean-1000.tsv') + ",Hanautomata.HeldoutKorean.tsv"),
+    ("/resource:" + (Join-Path $appRoot 'tests/corpora/heldout-english-1000.tsv') + ",Hanautomata.HeldoutEnglish.tsv"))
 if ($Test) {
-    & $compiler /nologo /utf8output /target:exe /optimize+ /define:HANFLOW_TESTS /reference:System.Web.Extensions.dll "/out:$OutputDirectory/HanFlow.Tests.exe" @modelResources @testResources $core (Join-Path $appRoot 'src/PreferenceStore.cs') (Join-Path $appRoot 'tests/CoreTests.cs')
+    & $compiler /nologo /utf8output /target:exe /optimize+ /define:HANAUTOMATA_TESTS /reference:System.Web.Extensions.dll "/out:$OutputDirectory/Hanautomata.Tests.exe" @modelResources @testResources $core (Join-Path $appRoot 'src/PreferenceStore.cs') (Join-Path $appRoot 'tests/CoreTests.cs')
     if ($LASTEXITCODE -ne 0) { throw 'Test compilation failed.' }
-    & (Join-Path $OutputDirectory 'HanFlow.Tests.exe')
+    & (Join-Path $OutputDirectory 'Hanautomata.Tests.exe')
     if ($LASTEXITCODE -ne 0) { throw 'Core tests failed.' }
 }
 if (-not $Test -or $Integration) {
     $sources = @(Get-ChildItem -LiteralPath (Join-Path $appRoot 'src') -Filter '*.cs' | ForEach-Object FullName)
-    & $compiler /nologo /utf8output /target:winexe /platform:anycpu /optimize+ "/win32manifest:$appRoot/app.manifest" "/out:$OutputDirectory/HanFlow.exe" /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Core.dll /reference:System.Web.Extensions.dll "/reference:$framework/WPF/UIAutomationClient.dll" "/reference:$framework/WPF/UIAutomationTypes.dll" "/reference:$framework/WPF/WindowsBase.dll" @modelResources @sources
+    & $compiler /nologo /utf8output /target:winexe /platform:anycpu /optimize+ "/win32manifest:$appRoot/app.manifest" "/out:$OutputDirectory/Hanautomata.exe" /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Core.dll /reference:System.Web.Extensions.dll "/reference:$framework/WPF/UIAutomationClient.dll" "/reference:$framework/WPF/UIAutomationTypes.dll" "/reference:$framework/WPF/WindowsBase.dll" @modelResources @sources
     if ($LASTEXITCODE -ne 0) { throw 'Application compilation failed.' }
-    Copy-Item -LiteralPath (Join-Path $appRoot 'app.config') -Destination (Join-Path $OutputDirectory 'HanFlow.exe.config')
-    Write-Output (Join-Path $OutputDirectory 'HanFlow.exe')
+    Copy-Item -LiteralPath (Join-Path $appRoot 'app.config') -Destination (Join-Path $OutputDirectory 'Hanautomata.exe.config')
+    Write-Output (Join-Path $OutputDirectory 'Hanautomata.exe')
 }
 if ($Integration) {
     $resultPath = Join-Path $OutputDirectory 'integration-results.json'
-    $testProcess = Start-Process -FilePath (Join-Path $OutputDirectory 'HanFlow.exe') -ArgumentList @('--integration-test', ('"' + $resultPath + '"')) -PassThru -WindowStyle Hidden
+    $testProcess = Start-Process -FilePath (Join-Path $OutputDirectory 'Hanautomata.exe') -ArgumentList @('--integration-test', ('"' + $resultPath + '"')) -PassThru -WindowStyle Hidden
     if (-not $testProcess.WaitForExit(90000)) { $testProcess.Kill(); throw 'Integration test timed out.' }
     if ($testProcess.ExitCode -ne 0) { throw "Integration test failed; inspect $resultPath" }
     Get-Content -LiteralPath $resultPath

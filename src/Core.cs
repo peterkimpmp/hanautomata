@@ -9,7 +9,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 
-namespace HanFlow
+namespace Hanautomata
 {
     // Standard modern Dubeolsik tables. No third-party implementation is bundled.
     public static class Hangul
@@ -341,7 +341,7 @@ namespace HanFlow
         {
             this.lexicon = lexicon;
             Assembly assembly = Assembly.GetExecutingAssembly();
-            using (Stream stream = assembly.GetManifestResourceStream("HanFlow.KoreanLM.txt.gz"))
+            using (Stream stream = assembly.GetManifestResourceStream("Hanautomata.KoreanLM.txt.gz"))
             {
                 if (stream == null) throw new InvalidOperationException("Korean language model missing.");
                 using (var gzip = new GZipStream(stream, CompressionMode.Decompress))
@@ -360,7 +360,7 @@ namespace HanFlow
                     }
                 }
             }
-            using (Stream stream = assembly.GetManifestResourceStream("HanFlow.EnglishLM.txt"))
+            using (Stream stream = assembly.GetManifestResourceStream("Hanautomata.EnglishLM.txt"))
             {
                 if (stream == null) throw new InvalidOperationException("English language model missing.");
                 using (var reader = new StreamReader(stream, Encoding.UTF8))
@@ -481,15 +481,15 @@ namespace HanFlow
             profilePath = (userProfile ?? "").TrimEnd('\\', '/'); profileKeys = Hangul.ToKeys(profilePath);
             foreach (string particle in "으로부터 으로 에서는 에서 에게 에도 의 를 을 은 는 이 가 와 과 로 에 만 도 보다 처럼".Split(' '))
                 particles[Hangul.ToKeys(particle)] = particle;
-            using (var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("HanFlow.English.txt"))
+            using (var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("Hanautomata.English.txt"))
             {
                 if (stream == null) throw new InvalidOperationException("English lexicon missing.");
                 using (var reader = new StreamReader(stream))
                     foreach (string word in reader.ReadToEnd().Split((char[])null, StringSplitOptions.RemoveEmptyEntries)) english.Add(word);
             }
             scorer = new LanguageScorer(IsEnglish);
-            LoadWordList("HanFlow.KoreanWords.txt.gz", koreanWords);
-            LoadWordList("HanFlow.EnglishWords.txt.gz", englishWords);
+            LoadWordList("Hanautomata.KoreanWords.txt.gz", koreanWords);
+            LoadWordList("Hanautomata.EnglishWords.txt.gz", englishWords);
             BuildLexicons();
         }
         // Optional resources: a build without them keeps the statistical band as is (fail-open for text, never for safety).
@@ -689,7 +689,7 @@ namespace HanFlow
             }
         }
         internal const int MixedKeyLimit = 64, MixedPartLimit = 8, MixedMargin = 3;
-#if HANFLOW_TESTS
+#if HANAUTOMATA_TESTS
         // Synthetic colliding lexemes exercise the decision contract without production data.
         internal void AddLexemeForTest(string surface, bool isKorean, int cost)
         {

@@ -7,7 +7,7 @@ using System.Threading;
 using System.Web.Script.Serialization;
 using System.Windows.Forms;
 
-namespace HanFlow
+namespace Hanautomata
 {
     // All generated keys stay inside this fixture's HWND. Untagged cases exercise production filtering.
     internal static class IntegrationTests
@@ -443,7 +443,7 @@ namespace HanFlow
             outputPath = Path.GetFullPath(outputPath);
             Directory.CreateDirectory(Path.GetDirectoryName(outputPath));
             app = new TrayApplication(true, true, null);
-            host = new Form { Text = "HanFlow input integration fixture", Width = 660, Height = 440, StartPosition = FormStartPosition.CenterScreen, TopMost = true };
+            host = new Form { Text = "Hanautomata input integration fixture", Width = 660, Height = 440, StartPosition = FormStartPosition.CenterScreen, TopMost = true };
             plain = new TextBox { Name = "plain", AccessibleName = "Plain input", Multiline = true, Location = new Point(16, 16), Size = new Size(610, 62) };
             rich = new RichTextBox { Name = "rich", AccessibleName = "Rich input", Location = new Point(16, 88), Size = new Size(610, 62) };
             password = new TextBox { Name = "password", AccessibleName = "Password input", UseSystemPasswordChar = true, Location = new Point(16, 164), Width = 610 };

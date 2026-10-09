@@ -1,10 +1,12 @@
-# HanFlow
+# Hanautomata
 
 **한영키를 바꾸지 않고 입력하는 Windows 트레이 앱 · v0.4.0 공개 베타**
 
-HanFlow is a Windows tray app that lets you type Korean or English from the same physical keys without toggling the 한/영 mode. It decides word by word (hand lists first, then a syllable-bigram vs letter-bigram likelihood ratio), shows a small candidate window, commits on Space, and fixes mistakes with F2 (last word) or Shift+F2 (selected text). No admin rights, no network, no cloud model. MIT licensed; model tables are aggregate statistics from Wikipedia dumps (CC BY-SA 4.0).
+Hanautomata is a Windows tray app that lets you type Korean or English from the same physical keys without toggling the 한/영 mode. It decides word by word (hand lists first, then a syllable-bigram vs letter-bigram likelihood ratio), shows a small candidate window, commits on Space, and fixes mistakes with F2 (last word) or Shift+F2 (selected text). No admin rights, no network, no cloud model. MIT licensed; model tables are aggregate statistics from Wikipedia dumps (CC BY-SA 4.0).
 
-`HanFlow.exe`를 실행하고 입력 칸에 타이핑하세요.
+*이전 이름은 **HanFlow**입니다(2026-10-09 변경 · 같은 목적의 macOS 프로젝트 [hyunki85/hanflow](https://github.com/hyunki85/hanflow)와 구별). Formerly HanFlow; renamed to avoid confusion with the macOS project of the same name.*
+
+`Hanautomata.exe`를 실행하고 입력 칸에 타이핑하세요.
 `dkssudgktpdy`는 **안녕하세요**, `hello world`는 **hello world**로 판별합니다.
 작은 조합창에 후보가 보이고 **Space에서 실제 편집 칸에 확정**됩니다.
 현재 Microsoft 입력기의 한/영 모드와 관계없이 같은 물리 키를 처리합니다.
@@ -40,11 +42,11 @@ Windows 시작 시 실행은 트레이에서 직접 켜는 사용자별 옵션�
 
 ```powershell
 .\build.ps1
-.\install.ps1          # %LOCALAPPDATA%\Programs\HanFlow + 바탕 화면·시작 메뉴 바로가기
+.\install.ps1          # %LOCALAPPDATA%\Programs\Hanautomata + 바탕 화면·시작 메뉴 바로가기
 .\install.ps1 -Startup # 자동 시작까지 원할 때
 ```
 
-휴대용 폴더에서 쓰려면 `HanFlow.exe`와 `HanFlow.exe.config`를 같은 폴더에 두고 실행합니다. 제거는 트레이에서 자동 시작을 해제하고 종료한 뒤 앱 폴더와 바로가기를 지우면 됩니다. 앱별 제외 설정도 지우려면 `%LOCALAPPDATA%\HanFlow\settings.json`을 삭제합니다.
+휴대용 폴더에서 쓰려면 `Hanautomata.exe`와 `Hanautomata.exe.config`를 같은 폴더에 두고 실행합니다. 제거는 트레이에서 자동 시작을 해제하고 종료한 뒤 앱 폴더와 바로가기를 지우면 됩니다. 이전 이름 HanFlow를 쓰고 있었다면 트레이에서 HanFlow를 먼저 종료한 뒤 설치하세요. `%LOCALAPPDATA%\HanFlow`의 설정·학습 단어는 첫 실행 때 자동으로 복사되고(원본 유지) 자동 시작 항목도 새 이름으로 바뀝니다. 옛 폴더 `%LOCALAPPDATA%\Programs\HanFlow`와 `HanFlow.lnk` 바로가기는 확인 후 지우면 됩니다. 앱별 제외 설정도 지우려면 `%LOCALAPPDATA%\Hanautomata\settings.json`을 삭제합니다.
 서명되지 않은 베타 빌드라 SmartScreen·백신이 경고할 수 있습니다. 직접 빌드하거나 CI 산출물의 SHA-256과 대조하세요([SECURITY.md](SECURITY.md)).
 
 ## 자동 판별의 범위
@@ -69,7 +71,7 @@ Windows 시작 시 실행은 트레이에서 직접 켜는 사용자별 옵션�
 ## 로컬 데이터
 
 앱은 문장 전체나 연속 키 기록을 저장하지 않으며 네트워크 통신을 하지 않습니다.
-직접 후보를 바꾸고 확정한 단어에 한해 키열·한글/영문 선택·선택 가중치·앞 단어 지문을 `%LOCALAPPDATA%\HanFlow\learned-words.json`(읽을 수 있는 JSON)에 저장합니다. 앞 단어는 원문 대신 SHA-256 지문입니다.
+직접 후보를 바꾸고 확정한 단어에 한해 키열·한글/영문 선택·선택 가중치·앞 단어 지문을 `%LOCALAPPDATA%\Hanautomata\learned-words.json`(읽을 수 있는 JSON)에 저장합니다. 앞 단어는 원문 대신 SHA-256 지문입니다.
 설정 파일에는 제외한 프로세스 이름, 민감도, 개인 학습·세미콜론 전환 사용 여부를 저장합니다.
 UI Automation에서는 편집 가능·비밀번호·포커스 등 속성만 읽고 대상 문서의 본문은 조회하지 않습니다.
 `--diagnose-input <경로>`를 지정했을 때만 입력 원문 없이 앱·입력 방식·문자 종류·차단 사유를 순환 기록합니다.
@@ -90,14 +92,14 @@ UI Automation에서는 편집 가능·비밀번호·포커스 등 속성만 읽�
 ```powershell
 .\build.ps1 -Test          # 단위 검사(Framework csc)
 .\build.ps1 -Integration   # 전용 시험창에서 실제 후크·Unicode 입력 검사
-.\package.ps1              # deliverables/HanFlow-0.4.0-win.zip + SHA256SUMS
+.\package.ps1              # deliverables/Hanautomata-0.4.0-win.zip + SHA256SUMS
 ```
 
 macOS·Linux(또는 Windows의 .NET SDK 9)에서는 `tests/dotnet/`로 같은 소스를 검사합니다. 전체 앱은 .NET Framework 4.8 참조 어셈블리에 C# 5로 컴파일만 하고, 단위 검사는 .NET 9로 실행합니다.
 
 ```sh
-dotnet build tests/dotnet/HanFlow.App.Net48 -c Release
-dotnet run --project tests/dotnet/HanFlow.Tests -f net9.0 -c Release
+dotnet build tests/dotnet/Hanautomata.App.Net48 -c Release
+dotnet run --project tests/dotnet/Hanautomata.Tests -f net9.0 -c Release
 ```
 
 단위 검사에는 통계 판별기의 C# 동치 fixture 1,135행과 held-out 게이트(한글 변환 ≥96% · 영문 보존 ≥97% · 오변환 ≤0.5%)가 들어 있습니다. 모델 표를 다시 만드는 절차는 [tests/lm/README.md](tests/lm/README.md), 데이터 출처는 [NOTICE.md](NOTICE.md)입니다.

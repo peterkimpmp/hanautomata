@@ -1,11 +1,12 @@
 # 보안 안내
 
-HanFlow는 키보드 입력을 가로채는 종류의 프로그램입니다. 무엇을 하고 무엇을 하지 않는지 먼저 밝힙니다.
+Hanautomata는 키보드 입력을 가로채는 종류의 프로그램입니다. 무엇을 하고 무엇을 하지 않는지 먼저 밝힙니다.
 
 ## 하는 것
 - `WH_KEYBOARD_LL` 저수준 키보드 후크로 물리 키 입력을 읽고, 한글로 판별한 단어를 `SendInput`(Unicode)으로 입력 칸에 넣습니다.
 - Windows UI Automation으로 현재 포커스 요소의 **속성**(편집 가능·비밀번호·읽기 전용·프로세스)만 읽습니다. 문서 본문은 읽지 않습니다.
-- 직접 후보를 바꾸고 확정한 단어만 `%LOCALAPPDATA%\HanFlow\learned-words.json`에 저장합니다(앞 단어는 SHA-256 지문).
+- 직접 후보를 바꾸고 확정한 단어만 `%LOCALAPPDATA%\Hanautomata\learned-words.json`에 저장합니다(앞 단어는 SHA-256 지문).
+- 트레이에서 자동 시작을 켤 때만 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`에 `Hanautomata` 항목을 씁니다. 첫 실행 때 이전 이름의 폴더 `%LOCALAPPDATA%\HanFlow`가 있고 새 폴더가 없으면 그 파일을 `%LOCALAPPDATA%\Hanautomata`로 복사하고(원본 유지), 자동 시작 항목 `HanFlow`가 있으면 `Hanautomata`로 바꿉니다.
 - 클립보드는 Shift+F2 선택 변환에서 UI Automation으로 선택 영역을 읽지 못할 때와, 트레이의 '미확정 조합 복사'를 직접 누를 때만 사용합니다. 글자가 아닌 클립보드 내용은 건너뛰고 원래 글자 내용을 복원합니다.
 - Raw Input 장치 등록은 후크가 조용히 제거됐는지 **감시**하기 위한 것이며 입력 내용을 저장하지 않습니다.
 

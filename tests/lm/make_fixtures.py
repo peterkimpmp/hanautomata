@@ -10,8 +10,8 @@ sys.path.insert(0, os.path.dirname(__file__))
 from detector import LanguageModel, Scorer
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-HANFLOW = os.path.dirname(os.path.dirname(HERE))
-CORPORA = os.path.join(HANFLOW, 'tests', 'corpora')
+HANAUTOMATA = os.path.dirname(os.path.dirname(HERE))
+CORPORA = os.path.join(HANAUTOMATA, 'tests', 'corpora')
 parser = argparse.ArgumentParser()
 parser.add_argument('--ko-out', required=True, help='build_lm.py --out directory of the Korean corpus (heldout-korean.txt)')
 parser.add_argument('--en-out', required=True, help='build_lm.py --out directory of the English corpus (heldout-english.txt)')

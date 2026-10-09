@@ -6,7 +6,7 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows.Forms;
 
-namespace HanFlow
+namespace Hanautomata
 {
     // The low-level hooks live on a dedicated thread that only pumps hook messages and reinstall requests.
     // Windows removes a low-level hook silently when its callback overruns LowLevelHooksTimeout, so painting,
@@ -64,7 +64,7 @@ namespace HanFlow
             this.focus = focus; Composition = new Composition(detector);
             keyboardProc = Keyboard; mouseProc = Mouse;
             focusProc = delegate { PreservePending(); focus.Invalidate("foreground-event"); };
-            hookThread = new Thread(HookLoop) { IsBackground = true, Name = "HanFlow keyboard hook" };
+            hookThread = new Thread(HookLoop) { IsBackground = true, Name = "Hanautomata keyboard hook" };
             hookThread.Start();
             ready.WaitOne();
             if (startupError != null) { Dispose(); throw new Win32Exception(startupCode, startupError); }
@@ -101,7 +101,7 @@ namespace HanFlow
         {
             readonly InputController owner; readonly IntPtr buffer = Marshal.AllocHGlobal(256);
             internal SentinelWindow(InputController owner)
-            { this.owner = owner; CreateHandle(new CreateParams { Parent = new IntPtr(-3), Caption = "HanFlow sentinel" }); }
+            { this.owner = owner; CreateHandle(new CreateParams { Parent = new IntPtr(-3), Caption = "Hanautomata sentinel" }); }
             protected override void WndProc(ref Message m)
             {
                 if (m.Msg == 0xff) owner.RawInput(m.LParam, buffer);

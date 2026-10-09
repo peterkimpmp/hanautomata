@@ -2,7 +2,7 @@
 
 ## 빌드와 검사
 - Windows: `.\build.ps1 -Test`(단위 검사) → `.\build.ps1 -Integration`(전용 시험창에서 실제 후크·입력 검사) → `.\install.ps1`.
-- macOS·Linux·Windows(.NET SDK 9): `dotnet build tests/dotnet/HanFlow.App.Net48 -c Release`(전체 앱 컴파일 검사) · `dotnet run --project tests/dotnet/HanFlow.Tests -f net9.0 -c Release`(단위 검사). 자세한 설명은 `tests/dotnet/README.md`.
+- macOS·Linux·Windows(.NET SDK 9): `dotnet build tests/dotnet/Hanautomata.App.Net48 -c Release`(전체 앱 컴파일 검사) · `dotnet run --project tests/dotnet/Hanautomata.Tests -f net9.0 -c Release`(단위 검사). 자세한 설명은 `tests/dotnet/README.md`.
 - PR 전에 두 검사가 모두 통과해야 합니다. CI(`.github/workflows/ci.yml`)가 같은 명령을 실행합니다.
 
 ## 코드 규칙

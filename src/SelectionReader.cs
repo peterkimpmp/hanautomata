@@ -4,7 +4,7 @@ using System.Threading;
 using System.Windows.Automation;
 using System.Windows.Automation.Text;
 
-namespace HanFlow
+namespace Hanautomata
 {
     // Reads the text the user selected in the focused field. UI Automation first (no clipboard involvement); a
     // tagged Ctrl+C with clipboard restore only when the provider exposes no selection. Runs on a worker, never in the hook.

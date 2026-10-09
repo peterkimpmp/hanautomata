@@ -2,7 +2,7 @@
 import json, os, re, sys
 sys.path.insert(0, os.path.dirname(__file__))
 from hangul import to_keys
-from detector import LanguageModel, Scorer, load_hand_lists, current_engine, OUT, HANFLOW
+from detector import LanguageModel, Scorer, load_hand_lists, current_engine, OUT, HANAUTOMATA
 
 HANGUL = re.compile(r'^[가-힣]+$')
 LETTERS = re.compile(r'^[A-Za-z]+$')
@@ -14,8 +14,8 @@ def load_heldout():
     return ko, en
 
 
-USER_PROMPTS = os.path.join(HANFLOW, 'tests/corpora/user-prompts.txt')          # optional private development sample (not distributed)
-USER_CORRECTIONS = os.path.join(HANFLOW, 'tests/corpora/user-corrections.tsv')
+USER_PROMPTS = os.path.join(HANAUTOMATA, 'tests/corpora/user-prompts.txt')          # optional private development sample (not distributed)
+USER_CORRECTIONS = os.path.join(HANAUTOMATA, 'tests/corpora/user-corrections.tsv')
 
 
 def load_user_corpus():

@@ -1,4 +1,4 @@
-// Development-only comparison. No third-party code is shipped in HanFlow.exe.
+// Development-only comparison. No third-party code is shipped in Hanautomata.exe.
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
@@ -11,7 +11,7 @@ const letters = 'rsefaqtdwczxvgkoiujphynbml';
 const jamo = 'ㄱㄴㄷㄹㅁㅂㅅㅇㅈㅊㅋㅌㅍㅎㅏㅐㅑㅕㅓㅔㅗㅛㅜㅠㅡㅣ';
 const shifted = { R:'ㄲ', E:'ㄸ', Q:'ㅃ', T:'ㅆ', W:'ㅉ', O:'ㅒ', P:'ㅖ' };
 const mapped = c => shifted[c] || jamo[letters.indexOf(c.toLowerCase())] || c;
-// Hangul.js joins standalone consonants. HanFlow and default inko keep them separate.
+// Hangul.js joins standalone consonants. Hanautomata and default inko keep them separate.
 // Expand only standalone compound jamo, NEVER complete syllables, to compare this policy.
 const standalone = { 'ㄳ':'ㄱㅅ', 'ㄵ':'ㄴㅈ', 'ㄶ':'ㄴㅎ', 'ㄺ':'ㄹㄱ', 'ㄻ':'ㄹㅁ', 'ㄼ':'ㄹㅂ', 'ㄽ':'ㄹㅅ', 'ㄾ':'ㄹㅌ', 'ㄿ':'ㄹㅍ', 'ㅀ':'ㄹㅎ', 'ㅄ':'ㅂㅅ' };
 const alignPolicy = text => [...text].map(c => standalone[c] || c).join('');
@@ -58,7 +58,7 @@ for (let i = 0; i < inputs.length; i++) {
   if (actual !== alignPolicy(b)) faults.push('Hangul.js aligned standalone policy');
   if (actual !== b && actual === alignPolicy(b)) {
     policyDifferences++;
-    if (differences.length < 8) differences.push({ raw, hanflow:actual, hangulJs:b });
+    if (differences.length < 8) differences.push({ raw, hanautomata:actual, hangulJs:b });
   }
   reverseChecks++;
   if (keys !== inko.ko2en(actual)) faults.push('reverse inko');

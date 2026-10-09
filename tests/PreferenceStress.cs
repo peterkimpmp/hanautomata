@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Web.Script.Serialization;
-using HanFlow;
+using Hanautomata;
 
 static class PreferenceStress
 {

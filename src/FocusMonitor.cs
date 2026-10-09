@@ -5,7 +5,7 @@ using System.Linq;
 using System.Threading;
 using System.Windows.Automation;
 
-namespace HanFlow
+namespace Hanautomata
 {
     internal sealed class FocusSnapshot
     {
@@ -36,7 +36,7 @@ namespace HanFlow
         internal FocusMonitor()
         {
             ownIntegrity = Native.IntegrityLevel((uint)Process.GetCurrentProcess().Id);
-            worker = new Thread(Run) { IsBackground = true, Name = "HanFlow field properties" };
+            worker = new Thread(Run) { IsBackground = true, Name = "Hanautomata field properties" };
             worker.SetApartmentState(ApartmentState.MTA); worker.Start();
         }
         internal void Invalidate(string reason = "explicit")

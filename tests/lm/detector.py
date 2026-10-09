@@ -1,4 +1,4 @@
-"""Reference implementation of the HanFlow v0.2 language-likelihood scorer (Python).
+"""Reference implementation of the Hanautomata v0.2 language-likelihood scorer (Python).
 
 Decision for a run of ASCII letters typed on a QWERTY layout:
   ko = log10 P_ko(syllable sequence composed from the keys)   [Korean syllable bigram LM, boundary tokens]
@@ -14,13 +14,13 @@ from hangul import compose
 import gzip
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, 'out')
-HANFLOW = os.path.dirname(os.path.dirname(HERE))
-SHIPPED_KO = os.path.join(HANFLOW, 'data', 'korean-lm.txt.gz')
-SHIPPED_EN = os.path.join(HANFLOW, 'data', 'english-lm.txt')
+HANAUTOMATA = os.path.dirname(os.path.dirname(HERE))
+SHIPPED_KO = os.path.join(HANAUTOMATA, 'data', 'korean-lm.txt.gz')
+SHIPPED_EN = os.path.join(HANAUTOMATA, 'data', 'english-lm.txt')
 
 
 class LanguageModel:
-    def __init__(self, ko_path=SHIPPED_KO, en_path=SHIPPED_EN, english_words=os.path.join(HANFLOW, 'data', 'english.txt')):
+    def __init__(self, ko_path=SHIPPED_KO, en_path=SHIPPED_EN, english_words=os.path.join(HANAUTOMATA, 'data', 'english.txt')):
         self.uni, self.backoff, self.bi = {}, {}, {}
         self.floor = -6.0
         opener = gzip.open if ko_path.endswith('.gz') else open
@@ -132,7 +132,7 @@ class Scorer:
 
 # --- Emulation of the current (v0.1.8) rule order for pure-letter tokens, for gap measurement only.
 def load_hand_lists():
-    core = open(os.path.join(HANFLOW, 'src/Core.cs'), encoding='utf-8').read()
+    core = open(os.path.join(HANAUTOMATA, 'src/Core.cs'), encoding='utf-8').read()
     def block(name):
         m = re.search(name + r'\s*=\s*(?:new HashSet<string>\(\()?\s*((?:"[^"]*"\s*\+?\s*)+)', core)
         return ' '.join(re.findall(r'"([^"]*)"', m.group(1))).split() if m else []

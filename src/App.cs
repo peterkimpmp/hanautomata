@@ -8,7 +8,7 @@ using System.Web.Script.Serialization;
 using System.Windows.Forms;
 using Microsoft.Win32;
 
-namespace HanFlow
+namespace Hanautomata
 {
     internal sealed class Settings
     {
@@ -16,8 +16,26 @@ namespace HanFlow
         public bool? LearnChoices { get; set; }
         public bool? SemicolonShortcut { get; set; }
         public string Sensitivity { get; set; }
-        internal static readonly string DirectoryPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "HanFlow");
+        internal static readonly string DirectoryPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Hanautomata");
         internal static string FilePath { get { return Path.Combine(DirectoryPath, "settings.json"); } }
+        // Pre-rename data folder (this app was called HanFlow until 2026-10-09). Copied once on first start, never deleted.
+        static readonly string LegacyDirectoryPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "HanFlow");
+        internal static void MigrateLegacyData()
+        {
+            try
+            {
+                if (Directory.Exists(DirectoryPath) || !Directory.Exists(LegacyDirectoryPath)) return;
+                Directory.CreateDirectory(DirectoryPath);
+                foreach (string file in Directory.GetFiles(LegacyDirectoryPath))
+                {
+                    try { File.Copy(file, Path.Combine(DirectoryPath, Path.GetFileName(file)), false); }
+                    catch (IOException) { }
+                    catch (UnauthorizedAccessException) { }
+                }
+            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
         internal static Settings Load()
         {
             try { return new JavaScriptSerializer().Deserialize<Settings>(File.ReadAllText(FilePath)) ?? new Settings(); }
@@ -84,18 +102,18 @@ namespace HanFlow
         internal bool ClosingPermanently;
         internal Dashboard()
         {
-            Text = "HanFlow v0.4.0 베타 — 한영 모드 없는 입력";
+            Text = "Hanautomata v0.4.0 베타 — 한영 모드 없는 입력";
             AutoScaleMode = AutoScaleMode.None;
             ClientSize = new Size(760, 570); MinimumSize = Size;
             StartPosition = FormStartPosition.CenterScreen; MaximizeBox = false;
             BackColor = Color.FromArgb(246, 248, 252); Font = new Font("Malgun Gothic", 14, FontStyle.Regular, GraphicsUnit.Pixel);
-            AddLabel("HanFlow", 28, 20, 480, 45, 25, true, Color.FromArgb(21, 32, 53));
+            AddLabel("Hanautomata", 28, 20, 480, 45, 25, true, Color.FromArgb(21, 32, 53));
             AddLabel("한영키 대신, 쓰고 싶은 말을 입력하세요.", 31, 72, 685, 28, 12, false, Color.FromArgb(65, 80, 101));
             State = AddLabel("입력 칸 확인 중", 32, 116, 500, 27, 12, true, Color.FromArgb(0, 112, 92));
             Detail = AddLabel("", 32, 146, 680, 24, 9, false, Color.DimGray);
             AddLabel("여기에서 연습해 보세요", 32, 194, 540, 28, 11, true, Color.FromArgb(21, 32, 53));
             AddLabel("dkssudgktpdy → 안녕하세요     hello world → hello world", 32, 225, 690, 25, 10, false, Color.FromArgb(78, 91, 111));
-            Practice = new TextBox { Name = "HanFlowPractice", AccessibleName = "HanFlow 입력 연습", Multiline = true, AcceptsReturn = true, AcceptsTab = false,
+            Practice = new TextBox { Name = "HanautomataPractice", AccessibleName = "Hanautomata 입력 연습", Multiline = true, AcceptsReturn = true, AcceptsTab = false,
                 Location = new Point(32, 264), Size = new Size(694, 122), Font = new Font("Malgun Gothic", 20, FontStyle.Regular, GraphicsUnit.Pixel), BorderStyle = BorderStyle.FixedSingle, ScrollBars = ScrollBars.Vertical };
             Controls.Add(Practice);
             Instructions = AddLabel("", 32, 399, 700, 23, 10, false, Color.FromArgb(55, 70, 94));
@@ -174,7 +192,7 @@ namespace HanFlow
             menu.Items.Add(new ToolStripSeparator());
             startup = new ToolStripMenuItem("Windows 시작 시 실행", null, delegate { SetStartup(!StartupEnabled()); }); menu.Items.Add(startup);
             menu.Items.Add("종료", null, delegate { ExitThread(); });
-            tray = new NotifyIcon { Text = "HanFlow · 자동 한영 입력", Icon = icon, ContextMenuStrip = menu, Visible = true };
+            tray = new NotifyIcon { Text = "Hanautomata · 자동 한영 입력", Icon = icon, ContextMenuStrip = menu, Visible = true };
             tray.DoubleClick += delegate { ShowDashboard(); };
             menu.Opening += delegate { enabled.Checked = Input.Enabled; startup.Checked = StartupEnabled(); recovery.Enabled = Input.Recovery.Length > 0;
                 semicolon.Checked = Input.SemicolonShortcut; learn.Checked = Words.Enabled;
@@ -205,7 +223,7 @@ namespace HanFlow
             Input.CheckHook(); Input.ValidatePending(); var snapshot = Focus.Snapshot;
             if (Diagnostics != null) Diagnostics.Tick(Input, Focus);
             if (personalStore != null) personalStore.ScheduleSave();
-            if (!string.IsNullOrEmpty(snapshot.ProcessName) && snapshot.ProcessName != "HanFlow") lastOtherProcess = snapshot.ProcessName;
+            if (!string.IsNullOrEmpty(snapshot.ProcessName) && snapshot.ProcessName != "Hanautomata") lastOtherProcess = snapshot.ProcessName;
             bool active = Input.Enabled && Focus.IsSafe(snapshot) && !Input.Excluded.Contains(snapshot.ProcessName);
             // Keys are captured while a refresh is pending, but the candidate window only shows verified fields.
             bool fresh = active && Focus.IsFresh(snapshot);
@@ -218,7 +236,7 @@ namespace HanFlow
             Dashboard.Toggle.Text = Input.Enabled ? "일시정지  F12" : "다시 시작  F12";
             Dashboard.Recovery.Text = Input.LastError.Length > 0 ? Input.LastError : Input.Recovery.Length > 0 ? "이동 전 조합이 보관되었습니다. 트레이 메뉴에서 복사할 수 있습니다." : "";
             if (personalStore != null && personalStore.LastError.Length > 0) Dashboard.Recovery.Text = personalStore.LastError;
-            tray.Text = Input.Enabled ? "HanFlow · 자동 판별" : "HanFlow · 일시정지";
+            tray.Text = Input.Enabled ? "Hanautomata · 자동 판별" : "Hanautomata · 일시정지";
             Decision candidate = null;
             lock (Input.Sync) { if (!Input.Composition.IsEmpty) candidate = Input.Composition.Current; }
             if (fresh && candidate != null) preview.UpdateCandidate(candidate, snapshot.Position, Input.SemicolonShortcut);
@@ -249,17 +267,33 @@ namespace HanFlow
                 finally { Native.DestroyIcon(native); }
             }
         }
+        // Carries the autostart entry over from the previous name so two instances never hook the keyboard together.
+        internal static void MigrateLegacyStartup()
+        {
+            try
+            {
+                using (RegistryKey key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", true))
+                {
+                    if (key == null || key.GetValue("HanFlow") == null) return;
+                    key.DeleteValue("HanFlow", false);
+                    key.SetValue("Hanautomata", "\"" + Application.ExecutablePath + "\" --background");
+                }
+            }
+            catch (System.Security.SecurityException) { }
+            catch (UnauthorizedAccessException) { }
+            catch (IOException) { }
+        }
         static bool StartupEnabled()
         {
             using (RegistryKey key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run"))
-                return key != null && string.Equals(key.GetValue("HanFlow") as string, "\"" + Application.ExecutablePath + "\" --background", StringComparison.OrdinalIgnoreCase);
+                return key != null && string.Equals(key.GetValue("Hanautomata") as string, "\"" + Application.ExecutablePath + "\" --background", StringComparison.OrdinalIgnoreCase);
         }
         static void SetStartup(bool enabled)
         {
             using (RegistryKey key = Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run"))
             {
-                if (enabled) key.SetValue("HanFlow", "\"" + Application.ExecutablePath + "\" --background");
-                else key.DeleteValue("HanFlow", false);
+                if (enabled) key.SetValue("Hanautomata", "\"" + Application.ExecutablePath + "\" --background");
+                else key.DeleteValue("Hanautomata", false);
             }
         }
         protected override void ExitThreadCore()
@@ -279,7 +313,7 @@ namespace HanFlow
             // Shorter, less frequent blocking collections keep the hook thread inside LowLevelHooksTimeout.
             System.Runtime.GCSettings.LatencyMode = System.Runtime.GCLatencyMode.SustainedLowLatency;
             string sid = System.Security.Principal.WindowsIdentity.GetCurrent().User.Value;
-            string stopName = "Local\\HanFlow.Stop." + sid;
+            string stopName = "Local\\Hanautomata.Stop." + sid;
             if (args.Contains("--exit"))
             {
                 try { using (var signal = EventWaitHandle.OpenExisting(stopName)) signal.Set(); } catch (WaitHandleCannotBeOpenedException) { }
@@ -288,19 +322,20 @@ namespace HanFlow
             if (args.Length == 2 && args[0] == "--integration-test") return IntegrationTests.Run(args[1]);
             if (args.Length == 3 && args[0] == "--corpus-integration") return IntegrationTests.RunCorpus(args[1], args[2]);
             bool created;
-            using (var mutex = new Mutex(true, "Local\\HanFlow.Instance." + sid, out created))
+            using (var mutex = new Mutex(true, "Local\\Hanautomata.Instance." + sid, out created))
             {
-                if (!created) { MessageBox.Show("HanFlow가 이미 실행 중입니다. 작업 표시줄의 한 아이콘을 확인하세요.", "HanFlow"); return 0; }
+                if (!created) { MessageBox.Show("Hanautomata가 이미 실행 중입니다. 작업 표시줄의 한 아이콘을 확인하세요.", "Hanautomata"); return 0; }
                 using (var stop = new EventWaitHandle(false, EventResetMode.ManualReset, stopName))
                 {
                     try
                     {
+                        Settings.MigrateLegacyData(); TrayApplication.MigrateLegacyStartup();
                         var app = new TrayApplication(args.Contains("--background"), false, stop);
                         int diagnostic = Array.IndexOf(args, "--diagnose-input");
                         if (diagnostic >= 0 && diagnostic + 1 < args.Length) app.Input.Diagnostics = app.Diagnostics = new InputDiagnostics(args[diagnostic + 1]);
                         Application.Run(app);
                     }
-                    catch (Exception ex) { MessageBox.Show("HanFlow를 시작하지 못했습니다.\n" + ex.Message, "HanFlow", MessageBoxButtons.OK, MessageBoxIcon.Error); return 1; }
+                    catch (Exception ex) { MessageBox.Show("Hanautomata를 시작하지 못했습니다.\n" + ex.Message, "Hanautomata", MessageBoxButtons.OK, MessageBoxIcon.Error); return 1; }
                 }
                 mutex.ReleaseMutex();
             }
