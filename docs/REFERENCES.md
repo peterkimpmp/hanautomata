@@ -50,3 +50,19 @@ v0.3.0에는 다음 자료를 추가했습니다. 별 수는 2026-10-09 스냅�
 | [Wikimedia TJones — 잘못된 키보드 감지 설계](https://www.mediawiki.org/wiki/User:TJones_(WMF)/Notes/Implementation_Design_and_Parameter_Optimization_for_Wrong_Keyboard_Detection_and_Suggestion) · [US6326953B1](https://patents.google.com/patent/US6326953B1/en) · [US11880511B1](https://patents.google.com/patent/US11880511B1/en) | 정밀도 우선 규칙 · 사후 변환 · 온라인 임계값 조정의 근거 |
 
 개발 전용 의존성(앱 런타임 아님): .NET 9 SDK(MIT · `~/.dotnet` 사용자 영역) · NuGet `Microsoft.NETFramework.ReferenceAssemblies` 1.0.3(MIT · net48 참조 어셈블리). `tests/dotnet/`의 `JavaScriptSerializerShim.cs`는 검사 실행용 대체물이며 배포 EXE에 들어가지 않습니다.
+
+## claude-hangul 검토 — 2026-10-09
+
+검토 기준은 [proagent-ai/claude-hangul](https://github.com/proagent-ai/claude-hangul/tree/977f30aa88522972d2a382728993c1fd598df36b) `977f30aa88522972d2a382728993c1fd598df36b`(package 버전 0.2.1 · MIT)입니다. Hanautomata 기준 코드는 v0.4.0-beta의 `18ee330`이며, 아래 반영분은 미출시입니다.
+
+| 검토 항목 | 원문 | 판단·반영 |
+|---|---|---|
+| 개발 용어와 일반 영어를 구분한 보호 | [core/judge.ts](https://github.com/proagent-ai/claude-hangul/blob/977f30aa88522972d2a382728993c1fd598df36b/core/judge.ts) | 채택. `cp` → `체` 오변환과 `gh` 등 불필요한 보류를 재현했습니다. 개발 토큰을 정확히 일치할 때 보호하고, `sha256` 같은 영숫자 토큰은 분절 전에 확인합니다. 통계 어휘·혼합어 경로는 유지합니다. |
+| 반복 자모·줄임말을 별도 인식 | [core/composer.ts](https://github.com/proagent-ai/claude-hangul/blob/977f30aa88522972d2a382728993c1fd598df36b/core/composer.ts) | 채택. 기존 `ㅋㅋ`·`ㅠㅠ`에 독립된 `ㄷㄷ`·`ㄴㄴ`·`ㅇㅋ`·`ㄱㅅ` 등을 보강했습니다. `dd`·`tr`·`fd`는 개발 명령을 우선하고, F2/`;` 확정으로 개인 선택을 기억합니다. |
+| 코어와 입력 어댑터 분리·키 단위 삭제 | `core/` · [hooks/editor.ts](https://github.com/proagent-ai/claude-hangul/blob/977f30aa88522972d2a382728993c1fd598df36b/hooks/editor.ts) | 기존 `Core`/`InputController` 구조를 유지합니다. 삭제 후 자모 후보 재계산, 취소·확정·되돌림 경계를 회귀 검사합니다. |
+| 세벌식 390·최종 | `core/layouts.ts` · `core/layout-data.ts` | 보류. 현재 Windows 물리 키·Shift 처리와 조합/역변환은 두벌식 계약입니다. 레이아웃 추상화와 Windows 입력 검증이 필요한 별도 기능입니다. |
+| 대화 기록에서 개인 빈도 학습 | [hooks/learn.ts](https://github.com/proagent-ai/claude-hangul/blob/977f30aa88522972d2a382728993c1fd598df36b/hooks/learn.ts) | 미채택. 기존의 직접 선택·확정만 학습하는 방식을 유지하며, 사용자 대화 기록을 읽는 기능은 추가하지 않습니다. |
+| 8자 이하 ASCII 묶음을 키 입력으로 간주 | `hooks/editor.ts` | 미채택. Claude Code 편집 훅의 전송 묶음과 Windows 키 이벤트는 입력 경계가 다릅니다. 길이만으로 붙여넣기를 재해석하지 않습니다. |
+| KS X 1001 밖 음절 배제·흔한 1음절 한글 우선 | `core/judge.ts` | 미채택. 현대 한글 11,172자 조합과 통계 보류·명시적 교정 정책을 유지합니다. |
+
+외부 TypeScript 구현·SCOWL 데이터·키 배열 표를 앱에 포함하지 않았습니다. 비교에서 얻은 동작 요구와 일반 키 대응을 기존 C# 코드에 구현했습니다. 원본의 [MIT 고지](https://github.com/proagent-ai/claude-hangul/blob/977f30aa88522972d2a382728993c1fd598df36b/LICENSE)는 원문에 보존되어 있습니다. 자동 판별·개인 선택·Caps Lock·주소/식별자 보호와 기존 held-out 표본을 함께 확인했으며, 실제 결과는 [검증 기록](VERIFICATION.md)에 있습니다.

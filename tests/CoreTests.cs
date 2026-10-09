@@ -18,6 +18,55 @@ static class CoreTests
     static void Confirm(Composition value) { value.ConfirmSelection(); }
     static void Semicolon(Composition value) { value.Semicolon(); }
     static void Type(Composition value, string text) { foreach (char c in text) value.Append(c, c); }
+    static void DeveloperAndChatTests()
+    {
+        var preferences = new WordPreferences(); var detector = new Detector(preferences);
+        foreach (string token in new[] { "gh", "pr", "mcp", "rag", "llm", "gpt", "cli", "tui", "ci", "cd", "qa", "ocr",
+            "npx", "pnpm", "bun", "deno", "uv", "ssh", "scp", "rsync", "curl", "wget", "grep", "sed", "awk",
+            "jq", "yq", "fd", "rg", "fzf", "tmux", "zsh", "sh", "ls", "cp", "mv", "dd", "tr", "gcc", "cmake",
+            "chmod", "chown", "sudo", "grpc", "lsp", "lgtm", "sha256", "sha512", "sha256sum", "md5", "utf8", "base64", "k8s", "OAuth2" })
+        {
+            Equal(token, detector.Decide(token).Text, "developer token stays literal " + token);
+            Equal(token, detector.Decide(token, token, "", true).Text, "Korean context cannot convert developer token " + token);
+            True(!detector.Decide(token).NeedsConfirmation, "known developer token needs no confirmation " + token);
+        }
+        foreach (string token in new[] { "(gh!)", "sha256,", "mcp/gh", "/gh", "--mcp", "gh.exe", "user_mcp", "mcp@example.com" })
+            Equal(token, detector.Decide(token).Text, "developer token keeps surrounding syntax " + token);
+        foreach (string[] pair in new[] {
+            new[] { "ee", "ㄷㄷ" }, new[] { "eee", "ㄷㄷㄷ" }, new[] { "ddd", "ㅇㅇㅇ" },
+            new[] { "ss", "ㄴㄴ" }, new[] { "rr", "ㄱㄱ" }, new[] { "qq", "ㅂㅂ" },
+            new[] { "tt", "ㅅㅅ" }, new[] { "ww", "ㅈㅈ" }, new[] { "cc", "ㅊㅊ" },
+            new[] { "dz", "ㅇㅋ" }, new[] { "cz", "ㅊㅋ" }, new[] { "rt", "ㄱㅅ" },
+            new[] { "wt", "ㅈㅅ" }, new[] { "gd", "ㅎㅇ" }, new[] { "qd", "ㅂㅇ" }, new[] { "dw", "ㅇㅈ" },
+            new[] { "(dz!)", "(ㅇㅋ!)" }, new[] { "ee!", "ㄷㄷ!" }
+        })
+        {
+            Decision decision = detector.Decide(pair[0]);
+            Equal(pair[1], decision.Text, "standalone Korean chat " + pair[0]);
+            Equal(pair[0], decision.Alternative, "chat keeps the literal alternative " + pair[0]);
+        }
+        foreach (string literal in new[] { "e", "d", "r", "rts", "dzdz", "dzez", "EE", "DZ", "ee.com", "dz@example.com", "user_ee", "helloee", "hellodz" })
+            Equal(literal, detector.Decide(literal).Text, "chat recognition does not spread to unrelated text " + literal);
+        Equal("ㄷㄷ", detector.Decide("EE", "ee").Text, "Caps Lock still permits unshifted Korean chat");
+        foreach (string literal in new[] { "dd", "tr", "fd" })
+        {
+            Equal(literal, detector.Decide(literal).Text, "CLI command wins a chat collision " + literal);
+            True(preferences.Remember(literal, literal, true), "explicit chat choice is learnable " + literal);
+            Equal(Hangul.Compose(literal), detector.Decide(literal).Text, "explicit choice overrides CLI protection " + literal);
+        }
+        preferences.Clear();
+        var input = new Composition(detector);
+        Type(input, "ee"); input.Toggle(); input.AcceptCommit(true);
+        Equal("ee", detector.Decide("ee").Text, "confirmed English choice overrides automatic chat");
+        True(preferences.UndoLast(), "chat preference can be undone");
+        Equal("ㄷㄷ", detector.Decide("ee").Text, "undo restores chat default");
+        input.Clear(); Type(input, "dzz");
+        Equal("dzz", input.Current.Text, "unlisted abbreviation extension remains literal");
+        input.Backspace(); Equal("ㅇㅋ", input.Current.Text, "backspace recomputes the complete chat token");
+        input.Backspace(); Equal("d", input.Current.Text, "single key is not a standalone chat word");
+        input.Clear(); Type(input, "gh"); input.Toggle(); input.AcceptCommit(true);
+        Equal("호", detector.Decide("gh").Text, "confirmed Korean choice overrides developer protection");
+    }
     static void IntelligenceTests()
     {
         var words = new WordPreferences(); var detector = new Detector(words); var input = new Composition(detector);
@@ -554,6 +603,7 @@ static class CoreTests
             PreferenceTests();
             IntelligenceTests();
             Round2Tests();
+            DeveloperAndChatTests();
             ScorerTests();
             FlipTests();
             True(FocusPolicy.CanCapture(true, false, true, false, true, 100, true), "safe target");

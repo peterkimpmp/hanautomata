@@ -450,6 +450,15 @@ namespace Hanautomata
         public int EnglishWordCount { get { return englishWords.Count; } }
         static readonly Regex TokenParts = new Regex("[A-Za-z]+|[^A-Za-z]+", RegexOptions.Compiled);
         const string EdgePunctuation = ".,!?;:()[]{}\"'";
+        // Exact developer tokens only: do not add these to the statistical lexicon or mixed-word trie.
+        // In particular cp -> 체 is a plausible Korean reading, but a command must stay literal by default.
+        static readonly HashSet<string> DeveloperTokens = new HashSet<string>((
+            "gh pr mcp rag llm gpt cli tui ci cd qa ocr npx pnpm bun deno uv ssh scp rsync curl wget grep sed awk " +
+            "jq yq fd rg fzf tmux zsh sh ls cp mv dd tr gcc cmake chmod chown sudo grpc lsp lgtm " +
+            "sha1 sha256 sha512 sha1sum sha256sum sha512sum md5 md5sum utf8 utf16 base64 k8s oauth2").Split(' '), StringComparer.OrdinalIgnoreCase);
+        const string DeveloperReason = "개발 도구·약어 유지";
+        static readonly HashSet<string> ChatAbbreviations = new HashSet<string>(
+            "ㅇㅋ ㅊㅋ ㅅㄱ ㄱㅅ ㅈㅅ ㅎㅇ ㅂㅇ ㄹㅇ ㅇㅈ".Split(' '), StringComparer.Ordinal);
         readonly HashSet<string> korean = new HashSet<string>((
             "안녕 회의 오늘 내일 어제 지금 다음 이전 먼저 다시 네 아니요 확인 부탁 감사합니다 반갑습니다 안녕하세요 뛰다 " +
             "좋아요 좋아요 고마워 고맙습니다 미안 죄송합니다 수고하세요 잘했어요 있어요 없어요 해주세요 해줘 됩니다 합니다 " +
@@ -580,6 +589,9 @@ namespace Hanautomata
         static bool IsChatJamo(char c) { return c == 'ㅋ' || c == 'ㅎ' || c == 'ㅠ' || c == 'ㅜ'; }
         bool IsKoreanChat(string word, string raw, string keys)
         {
+            // Extend standalone chat only. Arbitrary consonants or a suffix attached to English are not chat words.
+            if (ChatAbbreviations.Contains(word) || (word.Length >= 2 && "ㄷㅇㄴㄱㅂㅅㅈㅊ".IndexOf(word[0]) >= 0 && word.All(c => c == word[0])))
+                return true;
             int prefixLength = word.Length;
             while (prefixLength > 0 && IsChatJamo(word[prefixLength - 1])) prefixLength--;
             if (prefixLength == word.Length) return false;
@@ -614,6 +626,9 @@ namespace Hanautomata
                 (body.Length >= 2 && char.IsLetter(body[0]) && body[1] == ':') ||
                 body.IndexOf('@') >= 0 || body.IndexOf('_') >= 0 || body.IndexOf('.') >= 0 || body.Contains("://"))
                 return new Decision(raw, Hangul.Compose(hangulKeys), false, "주소·파일명·식별자 유지");
+            // Check complete tokens before letter/digit segmentation (sha256, k8s, OAuth2).
+            if (DeveloperTokens.Contains(body))
+                return new Decision(raw, Hangul.Compose(hangulKeys), false, DeveloperReason);
             var output = new StringBuilder(); var alternative = new StringBuilder();
             bool changed = false; string reason = "기호 유지";
             ConfidenceLevel confidence = ConfidenceLevel.Known;
@@ -761,6 +776,7 @@ namespace Hanautomata
             ConfidenceLevel confidence = ConfidenceLevel.Known;
             bool technical = body.Any(c => !char.IsLetter(c));
             if (body.Length == 0 || technical) reason = "기호·주소·식별자 유지";
+            else if (DeveloperTokens.Contains(body)) reason = DeveloperReason;
             else if (IsEnglish(body)) reason = "영어 단어 유지";
             else if (IsEnglishIdentifier(body)) reason = "영어 식별자 유지";
             // Caps Lock changes literal case, but Korean keys retain the actual Shift state.
