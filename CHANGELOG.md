@@ -1,7 +1,7 @@
 # 변경 기록
 
 ## 0.4.0-beta — 2026-10-09 · 첫 공개판
-- **이름 변경 HanFlow → Hanautomata**(2026-10-09 · 같은 목적의 macOS 프로젝트 hyunki85/hanflow와 구별). 네임스페이스·리소스·EXE·설치 폴더 `%LOCALAPPDATA%\Programs\Hanautomata`·데이터 폴더 `%LOCALAPPDATA%\Hanautomata`가 바뀝니다. 이전 폴더 `%LOCALAPPDATA%\HanFlow`의 설정·학습 단어는 첫 실행 때 복사하고(원본은 지우지 않음), 자동 시작 항목 `HanFlow`는 `Hanautomata`로 바꿉니다.
+- **이름 변경 HanFlow → Hanautomata**(2026-10-09 · 같은 목적의 macOS 프로젝트 hyunki85/hanflow와 구별). 네임스페이스·리소스·EXE·설치 폴더 `%LOCALAPPDATA%\Programs\Hanautomata`·데이터 폴더 `%LOCALAPPDATA%\Hanautomata`가 바뀝니다. 이전 폴더 `%LOCALAPPDATA%\HanFlow`의 설정·학습 단어는 첫 실행 때 복사하고(원본은 지우지 않음), 자동 시작 항목 `HanFlow`는 `Hanautomata`로 바꿉니다. HanFlow가 실행 중이면 두 후크가 같은 키를 함께 바꾸지 않도록 시작하지 않고 종료를 안내합니다(`install.ps1`도 같은 조건에서 멈춤).
 - 통계 모델 표를 공개 코퍼스(한국어 위키백과 · Simple English 위키백과, CC BY-SA 4.0 집계)로 다시 생성.
 - 통계가 **보류**한 구간에서만 쓰는 단어 목록 2종 추가(`data/korean-words.txt.gz` 61,759 어절 · `data/english-words.txt.gz` 73,901 단어 · 모델 표와 겹치지 않는 위키백과 슬라이스). 2음절 이상 한국어 단어는 우도비가 1.0 이상이면 변환하고, 3글자 이상 영어 단어는 확인 요청 없이 그대로 둡니다. held-out 한글 975→982 · 영문 보존 990→997(1,000 기준).
 - MIT 라이선스, NOTICE(데이터 출처), SECURITY, CONTRIBUTING, docs/DESIGN·VERIFICATION·REFERENCES 추가. 내부 조사 보고서와 개인 개발 표본은 공개하지 않음.

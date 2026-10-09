@@ -11,7 +11,7 @@ Hanautomata is a Windows tray app that lets you type Korean or English from the 
 작은 조합창에 후보가 보이고 **Space에서 실제 편집 칸에 확정**됩니다.
 현재 Microsoft 입력기의 한/영 모드와 관계없이 같은 물리 키를 처리합니다.
 
-> **베타 상태**: 코드는 Windows 1대(클라우드 PC)에서 기능 검사 101개와 설치를 확인한 v0.3.0과 같고, 이 공개판은 통계 모델 표를 공개 코퍼스로 바꾼 것입니다. 실물 PC의 물리 키보드와 실제 앱(브라우저·채팅·편집기)의 최종 표시 결과는 아직 확인하지 않았습니다. 빌드는 서명되어 있지 않습니다. 자세한 범위는 [검증 기록](docs/VERIFICATION.md)에 있습니다.
+> **베타 상태**: 판별 코드는 Windows 1대(클라우드 PC)에서 기능 검사 101개와 설치를 확인한 v0.3.0을 바탕으로 합니다. 이 공개판은 통계 모델 표를 공개 코퍼스로 바꾸고 보류 구간 단어 목록과 이름 변경을 더했습니다. 이 변경분은 macOS 교차 검사와 CI의 Windows 빌드·단위 검사만 거쳤고, Windows 기능 검사와 실물 PC의 물리 키보드·실제 앱(브라우저·채팅·편집기) 표시 결과는 아직 확인하지 않았습니다. 빌드는 서명되어 있지 않습니다. 자세한 범위는 [검증 기록](docs/VERIFICATION.md)에 있습니다.
 
 ## 키
 
@@ -46,7 +46,7 @@ Windows 시작 시 실행은 트레이에서 직접 켜는 사용자별 옵션�
 .\install.ps1 -Startup # 자동 시작까지 원할 때
 ```
 
-휴대용 폴더에서 쓰려면 `Hanautomata.exe`와 `Hanautomata.exe.config`를 같은 폴더에 두고 실행합니다. 제거는 트레이에서 자동 시작을 해제하고 종료한 뒤 앱 폴더와 바로가기를 지우면 됩니다. 이전 이름 HanFlow를 쓰고 있었다면 트레이에서 HanFlow를 먼저 종료한 뒤 설치하세요. `%LOCALAPPDATA%\HanFlow`의 설정·학습 단어는 첫 실행 때 자동으로 복사되고(원본 유지) 자동 시작 항목도 새 이름으로 바뀝니다. 옛 폴더 `%LOCALAPPDATA%\Programs\HanFlow`와 `HanFlow.lnk` 바로가기는 확인 후 지우면 됩니다. 앱별 제외 설정도 지우려면 `%LOCALAPPDATA%\Hanautomata\settings.json`을 삭제합니다.
+휴대용 폴더에서 쓰려면 `Hanautomata.exe`와 `Hanautomata.exe.config`를 같은 폴더에 두고 실행합니다. 제거는 트레이에서 자동 시작을 해제하고 종료한 뒤 앱 폴더와 바로가기를 지우면 됩니다. 이전 이름 HanFlow를 쓰고 있었다면 트레이에서 HanFlow를 먼저 종료한 뒤 설치하세요. `%LOCALAPPDATA%\HanFlow`의 설정·학습 단어는 첫 실행 때 자동으로 복사되고(원본 유지) 자동 시작 항목도 새 이름으로 바뀝니다. HanFlow가 실행 중이면 Hanautomata는 시작하지 않고 종료를 안내합니다. 옛 폴더 `%LOCALAPPDATA%\Programs\HanFlow`와 `HanFlow.lnk` 바로가기는 확인 후 지우면 됩니다. 앱별 제외 설정도 지우려면 `%LOCALAPPDATA%\Hanautomata\settings.json`을 삭제합니다.
 서명되지 않은 베타 빌드라 SmartScreen·백신이 경고할 수 있습니다. 직접 빌드하거나 CI 산출물의 SHA-256과 대조하세요([SECURITY.md](SECURITY.md)).
 
 ## 자동 판별의 범위

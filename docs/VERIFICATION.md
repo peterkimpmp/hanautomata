@@ -14,8 +14,10 @@
 | held-out 영문 1,000 | 공개 코퍼스 표본 | 997 확정 보존(단어 목록으로 +7) · 보류 3 · 오변환 0 — 게이트 ≥97% · ≤0.5% 통과 |
 | 민감도 프리셋(held-out 4,000+4,000) | Python 참조 구현 | 보수 3,859 변환·영문 오변환 1 / 표준 3,927·2 / 적극 3,958·2 |
 | Windows 전용 파일 잠금 검사 | macOS | 건너뜀(Windows CI에서 실행) |
-| Windows 단위 검사·릴리스 빌드(`build.ps1 -Test` · `build.ps1`) | GitHub Actions windows-latest | **첫 실행 결과 확인 전** — 워크플로는 `.github/workflows/ci.yml` |
+| Windows 단위 검사·릴리스 빌드(`build.ps1 -Test` · `build.ps1`) | GitHub Actions windows-latest | **26,155 통과 · 0 실패**(Windows 파일 잠금 단언 포함) · 릴리스 빌드 성공 · EXE SHA-256은 실행 기록에 표시 — 워크플로 `.github/workflows/ci.yml` |
 | Windows 기능 검사(`-Integration`) · 설치 · 실제 앱 물리 입력 | — | **v0.4.0 모델로는 미실행** |
+
+이름 변경(HanFlow → Hanautomata)에서는 이전 데이터 폴더 복사, 자동 시작 항목 이전, 실행 중인 HanFlow 확인 코드를 더했습니다. 이 코드는 컴파일과 CI 빌드만 거쳤고 Windows에서 실제로 실행해 확인하지 않았습니다.
 
 ## v0.3.0 (2026-10-09 · Windows 1대 · 비공개 모델)
 
@@ -47,3 +49,4 @@
 - 브라우저·채팅·IDE 등 실제 앱 5종 이상에서의 최종 표시 결과.
 - 서명된 배포본. 베타 빌드는 "알 수 없는 게시자" 경고가 납니다.
 - 일반 문장 정확도 추정치. held-out 수치는 단어 단위 회귀 게이트이며 실사용 정확도가 아닙니다.
+- 이름 변경에 따른 이전 폴더(`%LOCALAPPDATA%\HanFlow`) 복사, 자동 시작 항목 이전, 실행 중 HanFlow 확인의 Windows 실제 동작.

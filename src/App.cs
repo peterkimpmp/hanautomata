@@ -306,6 +306,18 @@ namespace Hanautomata
     }
     internal static class Program
     {
+        // This app was called HanFlow until 2026-10-09. Two keyboard hooks would both convert the same keys.
+        static bool LegacyInstanceRunning()
+        {
+            try
+            {
+                System.Diagnostics.Process[] legacy = System.Diagnostics.Process.GetProcessesByName("HanFlow");
+                foreach (System.Diagnostics.Process process in legacy) process.Dispose();
+                return legacy.Length > 0;
+            }
+            catch (InvalidOperationException) { return false; }
+            catch (System.ComponentModel.Win32Exception) { return false; }
+        }
         [STAThread]
         static int Main(string[] args)
         {
@@ -321,6 +333,11 @@ namespace Hanautomata
             }
             if (args.Length == 2 && args[0] == "--integration-test") return IntegrationTests.Run(args[1]);
             if (args.Length == 3 && args[0] == "--corpus-integration") return IntegrationTests.RunCorpus(args[1], args[2]);
+            if (LegacyInstanceRunning())
+            {
+                MessageBox.Show("이전 이름의 HanFlow가 실행 중입니다. 두 앱이 같은 키를 함께 처리하지 않도록 트레이에서 HanFlow를 종료한 뒤 다시 실행하세요.", "Hanautomata");
+                return 0;
+            }
             bool created;
             using (var mutex = new Mutex(true, "Local\\Hanautomata.Instance." + sid, out created))
             {
