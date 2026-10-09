@@ -1,0 +1,9 @@
+/build/
+/deliverables/
+/evaluation/
+/tests/lm/out/
+/tests/lm/out-*/
+/tests/lm/*.log
+/tests/dotnet/**/bin/
+/tests/dotnet/**/obj/
+/tests/corpora/user-*

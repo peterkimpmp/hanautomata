@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Core engine tests. net9.0 runs on macOS/Linux/Windows (dotnet run -f net9.0); net48 is a compile-only parity check
+       for the Framework build used by build.ps1 -Test. Same sources, resources and HANFLOW_TESTS define. -->
+  <PropertyGroup>
+    <TargetFrameworks>net9.0;net48</TargetFrameworks>
+    <OutputType>Exe</OutputType>
+    <LangVersion>5</LangVersion>
+    <AssemblyName>HanFlow.Tests</AssemblyName>
+    <EnableDefaultItems>false</EnableDefaultItems>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <DefineConstants>$(DefineConstants);HANFLOW_TESTS</DefineConstants>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <StartupObject>CoreTests</StartupObject>
+    <RollForward>Major</RollForward>
+    <WarningLevel>3</WarningLevel>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../../src/Core.cs" />
+    <Compile Include="../../../src/PreferenceStore.cs" />
+    <Compile Include="../../CoreTests.cs" />
+    <EmbeddedResource Include="../../../data/english.txt" LogicalName="HanFlow.English.txt" />
+    <EmbeddedResource Include="../../../data/korean-lm.txt.gz" LogicalName="HanFlow.KoreanLM.txt.gz" />
+    <EmbeddedResource Include="../../../data/english-lm.txt" LogicalName="HanFlow.EnglishLM.txt" />
+    <EmbeddedResource Include="../../corpora/scorer-fixtures.tsv" LogicalName="HanFlow.ScorerFixtures.tsv" />
+    <EmbeddedResource Include="../../corpora/heldout-korean-1000.tsv" LogicalName="HanFlow.HeldoutKorean.tsv" />
+    <EmbeddedResource Include="../../corpora/heldout-english-1000.tsv" LogicalName="HanFlow.HeldoutEnglish.tsv" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'net9.0'">
+    <Compile Include="JavaScriptSerializerShim.cs" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
+    <Reference Include="System.Web.Extensions" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+</Project>

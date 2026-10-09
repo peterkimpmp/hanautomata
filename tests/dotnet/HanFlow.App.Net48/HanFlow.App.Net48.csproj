@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Compile-only check of the full Windows app against .NET Framework 4.8 reference assemblies (works on macOS/Linux).
+       Mirrors build.ps1: same sources, same embedded resource names, C# 5 language level of the Framework csc. It does not run. -->
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <OutputType>WinExe</OutputType>
+    <LangVersion>5</LangVersion>
+    <AssemblyName>HanFlow</AssemblyName>
+    <RootNamespace>HanFlow</RootNamespace>
+    <EnableDefaultItems>false</EnableDefaultItems>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <ApplicationManifest>../../../app.manifest</ApplicationManifest>
+    <WarningLevel>3</WarningLevel>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../../src/*.cs" />
+    <EmbeddedResource Include="../../../data/english.txt" LogicalName="HanFlow.English.txt" />
+    <EmbeddedResource Include="../../../data/korean-lm.txt.gz" LogicalName="HanFlow.KoreanLM.txt.gz" />
+    <EmbeddedResource Include="../../../data/english-lm.txt" LogicalName="HanFlow.EnglishLM.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Web.Extensions" />
+    <Reference Include="UIAutomationClient" />
+    <Reference Include="UIAutomationTypes" />
+    <Reference Include="WindowsBase" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+</Project>
