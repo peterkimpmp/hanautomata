@@ -52,6 +52,8 @@ cargo run --release --example latency -- ../tests/corpora/intelligence-v014.tsv
 | `detector` | `Detector`(사전 트라이·혼합어 DAG·`BestTwo`) | 어휘는 `lists.rs`(Core.cs에서 그대로 추출) |
 | `composition` | `Composition` | 같은 캐시 규칙(학습 버전 기준) |
 | `focus` | `FocusPolicy` | |
+| `session` | `InputController`의 키 규칙 | 입력기 공통 세션: 모드 3종·단발 전환(22 §5.1a)·확정 경로·128자 상한. C#에 없는 확장 `Composition::force`·`clear_choice` |
+| `store` | `PreferenceStore` 형식 | 학습 파일(C-OPS-09): Format 1·2 읽기, Format 2 쓰기, 512KB 상한, 원자 저장(같은 폴더 임시 파일 → 이름 바꾸기), `<파일>.lock` 잠금. 읽지 못한 파일은 바뀔 때까지 덮어쓰지 않음 |
 | `unicode` + `unicode_tables` | .NET `char` 의미 | 생성된 BMP 표 |
 
 ## 동등성 계약과 의도적 차이
@@ -61,7 +63,7 @@ cargo run --release --example latency -- ../tests/corpora/intelligence-v014.tsv
 - C#이 예외를 던지는 입력은 Rust가 처리를 이어 간다. 이 차이는 기준값 밖이다.
   - `keys`의 UTF-16 길이가 `raw`와 다르면 C#은 `ArgumentOutOfRangeException`을 던진다. Rust는 `raw`를 키로 쓴다.
   - 영문 모델 줄이 공백으로 시작하면 C#은 예외를 던진다. Rust는 그 줄을 건너뛴다. 배포 데이터에는 이런 줄이 없다.
-- `PreferenceStore`(학습 파일 원자 저장, 형식 1·2)는 옮기지 않았다. 셸 단계에서 저장 계약 C-OPS-09와 함께 정한다.
+- `PreferenceStore`의 파일 형식은 `store`로 옮겼다. 저장 담당은 macOS에서 입력기 프로세스 하나다. Windows(앱마다 DLL)의 다중 프로세스 설계는 S0 뒤에 정한다. 공유 잠금 아래 다시 읽고 합치는 방식이 후보다.
 - `string.ToLowerInvariant`가 보충 평면 문자를 바꾸는 경로(`IsEnglish`·프리셋 이름)는 결과에 영향이 없다고 판단해 BMP 표만 쓴다 [추론].
 
 ## 지연(엔진만, 측정 범위)

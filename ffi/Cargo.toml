@@ -1,0 +1,24 @@
+[package]
+name = "hanautomata-ffi"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.89"
+license = "MIT"
+description = "UniFFI bindings of the Hanautomata engine for the platform input-method shells."
+publish = false
+
+[lib]
+name = "hanautomata_ffi"
+crate-type = ["staticlib", "cdylib", "lib"]
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "uniffi-bindgen.rs"
+
+[dependencies]
+hanautomata-core = { path = "../core" }
+uniffi = { version = "0.32.2", features = ["cli"] }
+
+[profile.release]
+lto = true
+codegen-units = 1

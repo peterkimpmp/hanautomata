@@ -2,17 +2,17 @@
 name = "hanautomata-core"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.82"
+rust-version = "1.89"
 license = "MIT"
 description = "Hanautomata shared engine: Dubeolsik composition and per-word Korean/English detection (port of src/Core.cs)."
 publish = false
 
 [dependencies]
 flate2 = { version = "1.1", default-features = false, features = ["rust_backend"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 sha2 = "0.10"
 
-[dev-dependencies]
-serde_json = "1"
 
 [profile.test]
 opt-level = 2

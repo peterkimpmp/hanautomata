@@ -15,6 +15,8 @@ mod lists;
 mod prefs;
 mod resources;
 mod scorer;
+mod session;
+mod store;
 mod unicode;
 #[rustfmt::skip]
 mod unicode_tables;
@@ -27,3 +29,5 @@ pub use scorer::{
     preset_thresholds, LanguageScorer, LanguageVerdict, CONTINUITY_PRIOR, DEFAULT_ENGLISH_THRESHOLD, DEFAULT_KOREAN_THRESHOLD,
     LEXICON_BONUS,
 };
+pub use session::{Key, Mode, Response, Session, MAX_WORD};
+pub use store::{Store, MAX_FILE_BYTES};

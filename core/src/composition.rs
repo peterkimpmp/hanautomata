@@ -201,6 +201,29 @@ impl Composition {
         }
     }
 
+    /// Input-method extension (no C# counterpart): forces the word's language, as a choice the user made explicitly
+    /// (a reserved next word). Learned on a confirmed commit like F2.
+    pub fn force(&mut self, korean: bool) {
+        self.semicolon_armed = false;
+        if !self.is_empty() {
+            self.forced_korean = Some(korean);
+            self.cached = None;
+        }
+    }
+
+    /// Input-method extension (no C# counterpart): drops the explicit choice, returning to the automatic decision, so the
+    /// word is not learned.
+    pub fn clear_choice(&mut self) {
+        self.semicolon_armed = false;
+        self.forced_korean = None;
+        self.cached = None;
+    }
+
+    /// Whether the user made an explicit choice for the current word.
+    pub fn has_choice(&self) -> bool {
+        self.forced_korean.is_some()
+    }
+
     pub fn clear(&mut self) {
         self.literal.clear();
         self.keys.clear();

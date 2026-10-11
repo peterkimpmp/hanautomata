@@ -61,7 +61,7 @@ fn nfd(s: &str) -> String {
             let cp = u - 0xac00;
             out.push(char::from_u32(0x1100 + cp / 588).unwrap());
             out.push(char::from_u32(0x1161 + cp % 588 / 28).unwrap());
-            if cp % 28 > 0 {
+            if !cp.is_multiple_of(28) {
                 out.push(char::from_u32(0x11a7 + cp % 28).unwrap());
             }
         } else {
