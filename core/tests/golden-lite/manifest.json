@@ -1,0 +1,16 @@
+{
+  "engine": "src/Core.cs",
+  "runtime": ".NET 9.0.20",
+  "profile": "C:\\Users\\Test사용자",
+  "lite": 40,
+  "bigrams": 77516,
+  "koreanWords": 61759,
+  "englishWords": 73901,
+  "rows": {
+    "decide": 24204,
+    "hangul": 2233,
+    "lists": 6,
+    "scenarios": 19,
+    "scorer": 1295
+  }
+}

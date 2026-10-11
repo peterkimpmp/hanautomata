@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Golden extractor for the Rust core parity gate (G1): runs the shipped C# engine (src/Core.cs) over fixed and generated
+       inputs and writes gzip JSON Lines that core/tests/parity.rs replays. Not part of the app. See core/README.md. -->
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>Hanautomata.Golden</AssemblyName>
+    <EnableDefaultItems>false</EnableDefaultItems>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <DefineConstants>$(DefineConstants);HANAUTOMATA_TESTS</DefineConstants>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <RollForward>Major</RollForward>
+    <WarningLevel>3</WarningLevel>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../../src/Core.cs" />
+    <Compile Include="Golden.cs" />
+    <EmbeddedResource Include="../../../data/english.txt" LogicalName="Hanautomata.English.txt" />
+    <EmbeddedResource Include="../../../data/korean-lm.txt.gz" LogicalName="Hanautomata.KoreanLM.txt.gz" />
+    <EmbeddedResource Include="../../../data/english-lm.txt" LogicalName="Hanautomata.EnglishLM.txt" />
+    <EmbeddedResource Include="../../../data/korean-words.txt.gz" LogicalName="Hanautomata.KoreanWords.txt.gz" />
+    <EmbeddedResource Include="../../../data/english-words.txt.gz" LogicalName="Hanautomata.EnglishWords.txt.gz" />
+  </ItemGroup>
+</Project>
