@@ -23,6 +23,7 @@
     <EmbeddedResource Include="../../../data/english-words.txt.gz" LogicalName="Hanautomata.EnglishWords.txt.gz" />
   </ItemGroup>
   <ItemGroup>
+    <Reference Include="Microsoft.CSharp" />
     <Reference Include="System.Windows.Forms" />
     <Reference Include="System.Drawing" />
     <Reference Include="System.Web.Extensions" />

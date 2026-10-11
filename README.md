@@ -1,6 +1,6 @@
 # Hanautomata
 
-**한영키를 바꾸지 않고 입력하는 Windows 트레이 앱 · v0.4.0 공개 베타**
+**한영키를 바꾸지 않고 입력하는 Windows 트레이 앱 · v0.4.1 개발판 (공개 릴리스 v0.4.0 베타)**
 
 Hanautomata is a Windows tray app that lets you type Korean or English from the same physical keys without toggling the 한/영 mode. It decides word by word (hand lists first, then a syllable-bigram vs letter-bigram likelihood ratio), shows a small candidate window, commits on Space, and fixes mistakes with F2 (last word) or Shift+F2 (selected text). No admin rights, no network, no cloud model. MIT licensed; model tables are aggregate statistics from Wikipedia dumps (CC BY-SA 4.0).
 
@@ -31,7 +31,9 @@ Hanautomata is a Windows tray app that lets you type Korean or English from the 
 
 **Zero Admin**: 관리자 권한·서비스·계정·서버·API 키가 없습니다. 현대 Windows의 .NET Framework 4.8을 사용하는 휴대용 EXE입니다.
 처음 실행하면 연습창이 열립니다. 트레이의 ‘한’ 아이콘을 더블클릭해 다시 열 수 있습니다.
-Windows 시작 시 실행은 트레이에서 직접 켜는 사용자별 옵션이며 기본값은 꺼짐입니다.
+Windows 로그인 시 실행은 트레이에서 직접 켜는 사용자별 옵션이며 기본값은 꺼짐입니다.
+v0.4.1부터 현재 사용자의 작업 스케줄러에 등록하여 로그인 15초 뒤 실행하고, 시작 실패 시 1분 간격으로 최대 3회 재시도합니다. 배터리·네트워크·유휴 상태를 실행 조건으로 요구하지 않습니다.
+트레이 **자동 시작 상태 확인**에서 실제 등록 상태·최근 실행 결과·시작 기록 위치를 볼 수 있습니다. [자동 시작 점검](docs/STARTUP.md)
 트레이의 **판별 민감도**(보수·표준·적극)는 보류 구간의 폭만 바꿉니다. 오변환이 거슬리면 보수, 짧은 단어가 안 바뀌면 적극을 고르세요.
 
 ## 설치
@@ -83,6 +85,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
 설정 파일에는 제외한 프로세스 이름, 민감도, 개인 학습·세미콜론 전환 사용 여부를 저장합니다.
 자동 판별을 위한 UI Automation 조회는 편집 가능·비밀번호·포커스 등 속성에 한정됩니다. **Shift+F2를 누르면 변환할 선택 영역의 글자를 읽습니다**(최대 4,096자). 문서 전체를 수집하거나 저장하지 않습니다.
 `--diagnose-input <경로>`를 지정했을 때만 입력 원문 없이 앱·입력 방식·문자 종류·차단 사유를 순환 기록합니다.
+별도로 `startup.log`에는 시작·준비·종료 시각, 프로세스 번호, 실행 방식, 오류 종류·코드를 기록합니다. 입력한 글자는 포함하지 않으며 64 KiB마다 이전 기록 1개를 남기고 교체합니다.
 
 ## 선택을 기억하는 사용법
 

@@ -7,12 +7,12 @@ foreach ($file in @('Hanautomata.exe', 'Hanautomata.exe.config')) {
 }
 $exe = Join-Path $SourceDirectory 'Hanautomata.exe'
 $fileVersion = [Diagnostics.FileVersionInfo]::GetVersionInfo((Resolve-Path -LiteralPath $exe).Path).FileVersion
-if ($fileVersion -ne '0.4.0.0') { throw "Expected 0.4.0.0; got $fileVersion" }
+if ($fileVersion -ne '0.4.1.0') { throw "Expected 0.4.1.0; got $fileVersion" }
 $null = New-Item -ItemType Directory -Force -Path $OutputDirectory
 $packageRoot = (Resolve-Path -LiteralPath $OutputDirectory).Path
 $staging = Join-Path $packageRoot ('.staging-' + [Guid]::NewGuid().ToString('N'))
-$bundle = Join-Path $staging 'Hanautomata-0.4.0'
-$zip = Join-Path $packageRoot 'Hanautomata-0.4.0-win.zip'
+$bundle = Join-Path $staging 'Hanautomata-0.4.1'
+$zip = Join-Path $packageRoot 'Hanautomata-0.4.1-win.zip'
 $sourceCommit = $null
 $sourceDirty = $null
 if (Get-Command git -ErrorAction SilentlyContinue) {
