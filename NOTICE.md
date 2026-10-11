@@ -9,9 +9,11 @@
 | `data/korean-words.txt.gz` | 한국어 어절 목록 61,759개(빈도 ≥50 · 2음절 이상 · 손목록 제외) | 한국어 위키백과 같은 덤프의 **다음 250 MB**(모델 표 슬라이스와 겹치지 않음 · 문서 148,861개) | 위와 같음(CC BY-SA 4.0) |
 | `data/english-words.txt.gz` | 영어 단어 목록 73,901개(빈도 ≥5 · 3글자 이상) | Simple English 위키백과 같은 덤프의 **다음 100 MB**(문서 89,859개) | 위와 같음(CC BY-SA 4.0) |
 | `tests/corpora/heldout-korean-1000.tsv` · `heldout-english-1000.tsv` · `scorer-fixtures.tsv` | 위 두 덤프에서 뽑은 단어·빈도 표본과 판별기 기대값 | 위와 같음 | 위와 같음 |
+| `data/hanja.txt.gz` | 한글 음절 → 한자 표(486음 · 상용 5,156 · 확장 3,761) | Unicode Unihan Database 18.0 `Unihan_Readings.txt`(`kHangul`)·`Unihan_IRGSources.txt`(`kIRG_KSource`), 2026-07-31판 → `core/tools/build_hanja.py` | [Unicode License v3](https://www.unicode.org/license.txt) — © 2026 Unicode®, Inc. |
 | `data/english.txt` | 한영 판별에서 보호할 영어 어휘(손으로 관리) | 프로젝트 저자 | MIT |
 | `tests/corpora/intelligence-v014.tsv` · `tests/round2-fixtures.tsv` | 손으로 쓴 개발 예제 | 프로젝트 저자 | MIT |
 
 - 표 생성 절차: `tests/lm/README.md`(`build_lm.py` → `make_fixtures.py` · 단어 목록은 `wordlist_from_stream.py`). 덤프에서 평문을 뽑는 `wikitext2txt.py`는 같은 폴더에 있습니다.
+- 세벌식 390·최종 자판 표(`core/src/hangul.rs`)는 공개된 자판 배열을 옮긴 것입니다. 옮긴 뒤 libhangul(LGPL-2.1)의 자판 표와 대조해 확인했고, libhangul 코드는 포함하지 않습니다.
 - 앱 실행 파일에는 외부 라이브러리 코드를 포함하거나 링크하지 않습니다. 설계 참고 자료와 그 라이선스는 [docs/REFERENCES.md](docs/REFERENCES.md)에 있습니다.
 - 개발 전용 의존성(앱 런타임 아님): .NET SDK 9(MIT) · NuGet `Microsoft.NETFramework.ReferenceAssemblies`(MIT).

@@ -1,0 +1,40 @@
+# Homebrew cask for the Hanautomata input method (M-14). package.sh fills in the version and checksum; publishing it in a
+# tap is a separate, manual release step.
+cask "hanautomata" do
+  version "@VERSION@"
+  sha256 "@SHA256@"
+
+  url "https://github.com/peterkimpmp/hanautomata/releases/download/v#{version}/Hanautomata-#{version}-macos.zip"
+  name "Hanautomata"
+  name "한오토마타"
+  desc "Korean/English auto-detecting input method"
+  homepage "https://github.com/peterkimpmp/hanautomata"
+
+  depends_on macos: ">= :sonoma"
+
+  input_method "Hanautomata.app"
+
+  postflight do
+    system_command "#{Dir.home}/Library/Input Methods/Hanautomata.app/Contents/MacOS/Hanautomata",
+                   args:         ["--register"],
+                   must_succeed: false
+  end
+
+  uninstall_preflight do
+    system_command "#{Dir.home}/Library/Input Methods/Hanautomata.app/Contents/MacOS/Hanautomata",
+                   args:         ["--unregister"],
+                   must_succeed: false
+  end
+
+  uninstall quit: "io.github.peterkimpmp.inputmethod.Hanautomata"
+
+  zap trash: [
+    "~/Library/Application Support/Hanautomata",
+    "~/Library/Preferences/io.github.peterkimpmp.inputmethod.Hanautomata.plist",
+  ]
+
+  caveats <<~EOS
+    Add the input source once: System Settings > Keyboard > Input Sources > Edit… > + > Korean > 한오토마타.
+    The first time you select it, a three-step setup explains the switch keys and any macOS setting that takes them.
+  EOS
+end

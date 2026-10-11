@@ -52,9 +52,32 @@ cargo run --release --example latency -- ../tests/corpora/intelligence-v014.tsv
 | `detector` | `Detector`(사전 트라이·혼합어 DAG·`BestTwo`) | 어휘는 `lists.rs`(Core.cs에서 그대로 추출) |
 | `composition` | `Composition` | 같은 캐시 규칙(학습 버전 기준) |
 | `focus` | `FocusPolicy` | |
-| `session` | `InputController`의 키 규칙 | 입력기 공통 세션: 모드 3종·단발 전환(22 §5.1a)·확정 경로·128자 상한. C#에 없는 확장 `Composition::force`·`clear_choice` |
+| `session` | `InputController`의 키 규칙 | 입력기 공통 세션: 모드 3종·단발 전환(22 §5.1a)·확정 경로·128자 상한. Space 확정 직후 F2 재변환(`SwapLastCommit`, 셸이 커서 앞 글자를 확인한 뒤 `reconvert`). 조합이 없을 때 Space 밖의 키·포커스 이동은 앞 단어 문맥을 끊는다(`PreservePending`). C#에 없는 확장 `Composition::force`·`clear_choice` |
 | `store` | `PreferenceStore` 형식 | 학습 파일(C-OPS-09): Format 1·2 읽기, Format 2 쓰기, 512KB 상한, 원자 저장(같은 폴더 임시 파일 → 이름 바꾸기), `<파일>.lock` 잠금. 읽지 못한 파일은 바뀔 때까지 덮어쓰지 않음 |
 | `unicode` + `unicode_tables` | .NET `char` 의미 | 생성된 BMP 표 |
+| `hangul::Layout`·`compose_layout` | — | 세벌식 390·최종 조합(C-LAY-02). 받침이 다음 음절로 넘어가지 않고, 겹자음·겹모음·겹받침은 두 키로 만든다. 자판 표는 공개 배열을 따르고 libhangul 표와 대조했다(코드는 가져오지 않음) |
+| `hangul::ms_clusters` | — | Windows식 겹자음(C-CMP-08): 모음 없이 ㄱ+ㅅ → ㄳ |
+| `hangul::dominant_language` | — | 커서 앞 40자의 우세 언어(C-DET-08) |
+| `exceptions` | — | 안 바꿀 단어·항상 바꿀 단어 목록(C-LEX-02). 판정과 개인 학습보다 앞서고, 지금 단어의 F2·`;`·전환 키만 이것보다 앞선다 |
+| `hanja` | — | 한글 한 음절의 한자(C-LEX-06). `data/hanja.txt.gz`(Unicode Unihan `kHangul` · `core/tools/build_hanja.py`): 상용(KS X 1001, 교육용 기초 한자 먼저) 5,156자 · 확장 3,761자 |
+| `bundle` | — | 내보내기·가져오기 묶음(C-LEX-04): 학습 파일 문서 + 예외 목록 + 셸 설정 객체. 가져오면 기존 것 뒤에 더하고 겹치면 가져온 쪽이 이긴다 |
+
+## 입력기 확장 — C#판에 없는 기능 (모두 기본 꺼짐)
+
+입력기에서만 쓰는 정책은 C# 판정 뒤에 얹고 기본값은 끈다. 그래서 G1 동등성은 그대로다.
+
+| 기능 | 위치 | 동작 |
+|---|---|---|
+| 전환 의미 3종 (C-MOD-02) | `Session::set_switch_meaning` | 단발(기본) · 순환(자동→한→영) · 토글(한↔영, 자동에서는 화면 언어의 반대로) |
+| 보호 강화 (앱 프로필, C-MOD-06) | `Composition::set_strict` | 통계 추정(`Pattern`)만으로 나온 한글은 원문으로 두고 확인 필요로 표시. 목록·개인 학습·혼합어 판정은 그대로 |
+| 예외 목록 (C-LEX-02) | `Session::exceptions` | 위 표 |
+| 학습 일시 중지 (C-LEX-09) | `WordPreferences::set_recording` | 기억한 선택은 계속 쓰고 새로 기록하지 않는다. 셸은 보안 입력 칸에서도 끈다(C-CTX-01) |
+| 단어 하나 지우기 (C-LEX-03) | `WordPreferences::forget` | 전역·문맥 항목을 모두 지우고 되돌리기 기록을 비운다 |
+| 음절 단위 지우기 (C-CMP-06) | `Session::set_delete_syllable` | 한글로 보이는 단어는 마지막 음절의 키를 모두 지운다 |
+| 커서 앞 문맥 (C-DET-08) | `Session::set_caret_text` | 앞 단어 문맥이 없을 때만 앞 단어 언어처럼 근소 차이를 가른다 |
+| 엔진 오류 대비 (C-CMP-11) | `Session::raw_pending` | FFI가 키마다 지금까지의 원문을 보관하고, 패닉이면 그대로 확정한 뒤 키를 넘긴다 |
+
+C-DET-08 held-out 측정(`ime_features_tests`): 앞 문장이 한글이면 한글 단어 놓침이 1,000개 중 15 → 6, 영어 문장 앞에서는 그대로 15. 영어 단어는 영어 문장 앞에서 오변환 0 → 0, 한글 문장 속에서는 0 → 4. 혼용 문장에서 오변환이 늘어 정의서 인수 기준(증가 0)을 넘지 못하므로 셸 기본값은 끔이다.
 
 ## 동등성 계약과 의도적 차이
 

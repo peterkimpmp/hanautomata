@@ -1,6 +1,8 @@
 // Input-method session (OS-neutral key handling) and learning-file store (C-OPS-09).
 
-use hanautomata_core::{Detector, Key, LearnedWord, Mode, Response, Session, Store, WordPreferences, MAX_WORD};
+use hanautomata_core::{
+    Detector, Key, LearnedWord, Mode, Reconversion, Response, Session, Store, SwitchMeaning, WordPreferences, MAX_WORD,
+};
 use std::sync::Arc;
 
 fn session() -> (Session, Arc<WordPreferences>) {
@@ -172,6 +174,57 @@ fn fixed_modes() {
 }
 
 #[test]
+fn cycle_meaning_walks_the_three_modes_and_commits_first() {
+    let (mut s, prefs) = session();
+    s.set_switch_meaning(SwitchMeaning::Cycle);
+    typed(&mut s, "gksrmf");
+    let r = s.handle(Key::Switch);
+    assert_eq!((r.commit.as_str(), r.marked.as_str(), r.handled), ("한글", "", true));
+    assert_eq!(s.mode(), Mode::Korean);
+    assert!(s.handle(Key::Switch).handled);
+    assert_eq!(s.mode(), Mode::English);
+    s.handle(Key::Switch);
+    assert_eq!(s.mode(), Mode::Auto);
+    assert_eq!(s.reserved(), None, "cycling never reserves a word");
+    assert_eq!(prefs.count(), 0, "a mode change is not a per-word choice");
+}
+
+#[test]
+fn toggle_meaning_leaves_the_automatic_mode_away_from_the_language_on_screen() {
+    let (mut s, _) = session();
+    s.set_switch_meaning(SwitchMeaning::Toggle);
+    typed(&mut s, "gksrmf");
+    assert_eq!(s.handle(Key::Switch).commit, "한글");
+    assert_eq!(s.mode(), Mode::English, "a Korean word on screen: to English");
+    s.handle(Key::Switch);
+    assert_eq!(s.mode(), Mode::Korean);
+    s.handle(Key::Switch);
+    assert_eq!(s.mode(), Mode::English);
+
+    let (mut s, _) = session();
+    s.set_switch_meaning(SwitchMeaning::Toggle);
+    typed(&mut s, "hello");
+    assert_eq!(s.handle(Key::Space).commit, "hello ");
+    s.handle(Key::Switch);
+    assert_eq!(s.mode(), Mode::Korean, "after an English word: to Korean");
+
+    let (mut s, _) = session();
+    s.set_switch_meaning(SwitchMeaning::Toggle);
+    s.handle(Key::Switch);
+    assert_eq!(s.mode(), Mode::Korean, "nothing known: Korean");
+}
+
+#[test]
+fn changing_the_meaning_drops_a_reservation() {
+    let (mut s, _) = session();
+    s.handle(Key::Switch);
+    assert_eq!(s.reserved(), Some(true));
+    s.set_switch_meaning(SwitchMeaning::Toggle);
+    assert_eq!(s.reserved(), None);
+    assert_eq!(s.switch_meaning(), SwitchMeaning::Toggle);
+}
+
+#[test]
 fn semicolon_and_candidate_keys() {
     let (mut s, _) = session();
     typed(&mut s, "rm");
@@ -225,6 +278,126 @@ fn caps_lock_literal_with_lowercase_keys_converts() {
         s.handle(Key::Text { raw, key: k });
     }
     assert_eq!(s.handle(Key::Space).commit, "안녕 ");
+}
+
+#[test]
+fn keys_with_nothing_composed_end_the_context() {
+    // The Windows app clears the composition context on any non-Space key with nothing composed (PreservePending).
+    for k in [
+        Key::Enter,
+        Key::Tab,
+        Key::Navigation,
+        Key::Shortcut,
+        Key::Other,
+        Key::Backspace,
+        Key::Escape,
+    ] {
+        let (mut s, _) = session();
+        typed(&mut s, "dkssud");
+        s.handle(Key::Space);
+        assert!(!s.handle(k).handled, "{k:?} passes");
+        assert_eq!(typed(&mut s, "dh").marked, "dh", "{k:?} ends continuity");
+    }
+    let (mut s, _) = session();
+    typed(&mut s, "dkssud");
+    s.handle(Key::Space);
+    s.commit_pending();
+    assert_eq!(typed(&mut s, "dh").marked, "dh", "a focus change ends continuity");
+    s.cancel();
+    typed(&mut s, "dkssud");
+    s.handle(Key::Space);
+    assert_eq!(s.handle(Key::Space), Response::default(), "a second Space passes");
+    assert_eq!(
+        typed(&mut s, "dh").marked,
+        "오",
+        "and keeps the context, as in the Windows app"
+    );
+}
+
+#[test]
+fn f2_after_space_swaps_the_committed_word_and_learns() {
+    let (mut s, prefs) = session();
+    typed(&mut s, "dkssud");
+    s.handle(Key::Space);
+    let swap = Reconversion {
+        old: "안녕 ".into(),
+        new: "dkssud ".into(),
+    };
+    assert_eq!(s.reconversion(), Some(swap.clone()));
+    // The shell replaced the text; the session learns and continues from the new word.
+    let r = s.reconvert();
+    assert!(r.handled && r.learned && r.commit.is_empty());
+    assert_eq!(prefs.count(), 1);
+    assert_eq!(
+        s.reconversion(),
+        Some(Reconversion {
+            old: swap.new.clone(),
+            new: swap.old.clone()
+        }),
+        "F2 again swaps back"
+    );
+    // Remembered in the word's (empty) context: the same word now stays English.
+    s.cancel();
+    assert_eq!(s.reconversion(), None, "cancel forgets the word");
+    assert_eq!(typed(&mut s, "dkssud").marked, "dkssud");
+}
+
+#[test]
+fn second_f2_swaps_back_and_remembers_the_original_choice() {
+    let (mut s, prefs) = session();
+    typed(&mut s, "dkssud");
+    s.handle(Key::Space);
+    s.reconvert();
+    let r = s.reconvert();
+    assert!(r.learned);
+    assert_eq!(s.reconversion().unwrap().old, "안녕 ");
+    assert_eq!(prefs.count(), 1, "the same word and context is one entry");
+    s.cancel();
+    assert_eq!(typed(&mut s, "dkssud").marked, "안녕");
+}
+
+#[test]
+fn only_space_commits_are_swappable_and_other_keys_forget_them() {
+    for k in [Key::Enter, Key::Tab, Key::Navigation, Key::Shortcut] {
+        let (mut s, _) = session();
+        typed(&mut s, "dkssud");
+        s.handle(k);
+        assert_eq!(s.reconversion(), None, "{k:?}");
+    }
+    for k in [Key::Backspace, Key::Space, Key::Escape, Key::Switch, key('a')] {
+        let (mut s, _) = session();
+        typed(&mut s, "dkssud");
+        s.handle(Key::Space);
+        s.handle(k);
+        assert_eq!(s.reconversion(), None, "{k:?} forgets the swappable word");
+    }
+    let (mut s, _) = session();
+    typed(&mut s, "dkssud");
+    s.handle(Key::Space);
+    assert_eq!(
+        s.handle(Key::Candidate),
+        Response::default(),
+        "F2 with nothing composed passes to the shell"
+    );
+    assert!(s.reconversion().is_some(), "and keeps the word");
+    s.forget_reconversion();
+    assert_eq!(s.reconversion(), None);
+    assert_eq!(s.reconvert(), Response::default(), "nothing to swap");
+    // A word whose candidates are identical (digits) is never swappable.
+    typed(&mut s, "2026");
+    s.handle(Key::Space);
+    assert_eq!(s.reconversion(), None);
+    // Fixed modes and focus changes.
+    let (mut s, _) = session();
+    s.set_mode(Mode::Korean);
+    typed(&mut s, "dkssud");
+    s.handle(Key::Space);
+    assert_eq!(s.reconversion(), None, "fixed Korean mode is not a per-word choice");
+    let (mut s, _) = session();
+    typed(&mut s, "dkssud");
+    s.handle(Key::Space);
+    s.commit_pending();
+    assert_eq!(s.reconversion(), None, "focus change forgets the word");
 }
 
 fn temp_dir(name: &str) -> std::path::PathBuf {
@@ -356,4 +529,30 @@ fn store_saves_are_atomic_under_concurrent_writers() {
     assert_eq!(reader.join().unwrap(), 200);
     assert!(!path.with_extension("json.tmp").exists(), "no temporary file remains");
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn paused_learning_applies_choices_but_records_nothing() {
+    let (mut s, prefs) = session();
+    typed(&mut s, "rm");
+    s.handle(Key::Candidate);
+    s.handle(Key::Space);
+    assert_eq!(
+        prefs.count(),
+        1,
+        "a confirmed choice is remembered (no preceding word: global entry only)"
+    );
+    prefs.set_recording(false);
+    let before = prefs.version();
+    typed(&mut s, "dh");
+    s.handle(Key::Candidate);
+    let r = s.handle(Key::Space);
+    assert!(
+        !r.learned && prefs.version() == before,
+        "nothing new is recorded while paused"
+    );
+    s.cancel();
+    assert_eq!(typed(&mut s, "rm").marked, "그", "remembered choices still apply");
+    prefs.set_recording(true);
+    assert!(prefs.recording());
 }

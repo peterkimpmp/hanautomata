@@ -7,10 +7,13 @@
 //! (`char.IsLetter`, `ToLowerInvariant`, `OrdinalIgnoreCase`) come from generated tables. See `core/README.md` for the
 //! deliberate deviations (inputs the C# engine rejects with an exception).
 
+pub mod bundle;
 mod composition;
 mod detector;
+mod exceptions;
 mod focus;
 pub mod hangul;
+mod hanja;
 mod lists;
 mod prefs;
 mod resources;
@@ -23,11 +26,14 @@ mod unicode_tables;
 
 pub use composition::Composition;
 pub use detector::{Confidence, Decision, Detector, MIXED_KEY_LIMIT, MIXED_MARGIN, MIXED_PART_LIMIT, WORD_LIST_MARGIN};
+pub use exceptions::{parse_list, Exceptions};
 pub use focus::can_capture;
+pub use hangul::Layout;
+pub use hanja::hanja;
 pub use prefs::{context_key, LearnedWord, Lookup, WordPreferences, CAPACITY};
 pub use scorer::{
     preset_thresholds, LanguageScorer, LanguageVerdict, CONTINUITY_PRIOR, DEFAULT_ENGLISH_THRESHOLD, DEFAULT_KOREAN_THRESHOLD,
     LEXICON_BONUS,
 };
-pub use session::{Key, Mode, Response, Session, MAX_WORD};
+pub use session::{Key, Mode, Reconversion, Response, Session, SwitchMeaning, MAX_WORD};
 pub use store::{Store, MAX_FILE_BYTES};

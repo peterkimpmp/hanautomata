@@ -17,15 +17,15 @@ use std::path::{Path, PathBuf};
 pub const MAX_FILE_BYTES: u64 = 524_288;
 
 #[derive(Serialize, Deserialize)]
-struct Document {
+pub(crate) struct Document {
     #[serde(rename = "Format", alias = "format")]
-    format: i32,
+    pub(crate) format: i32,
     #[serde(rename = "Entries", alias = "entries", default)]
-    entries: Option<Vec<Entry>>,
+    pub(crate) entries: Option<Vec<Entry>>,
 }
 
 #[derive(Serialize, Deserialize)]
-struct Entry {
+pub(crate) struct Entry {
     #[serde(rename = "Raw", alias = "raw", default)]
     raw: Option<String>,
     #[serde(rename = "Keys", alias = "keys", default)]

@@ -1,3 +1,5 @@
 "io.github.peterkimpmp.inputmethod.Hanautomata" = "Hanautomata";
+"io.github.peterkimpmp.inputmethod.Hanautomata.Korean" = "Hanautomata (Korean)";
+"io.github.peterkimpmp.inputmethod.Hanautomata.English" = "Hanautomata (English)";
 CFBundleName = "Hanautomata";
 CFBundleDisplayName = "Hanautomata";

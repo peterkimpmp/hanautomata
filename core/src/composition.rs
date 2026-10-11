@@ -1,7 +1,11 @@
 // The word being typed: literal characters and the keys the Korean layout saw, the user's explicit choice (F2 / semicolon),
 // and the preceding committed word's context. Trains the personal dictionary only on confirmed commits.
+// Input-method policies on top of the C# decision (no C# counterpart, all off by default so G1 parity holds): exception
+// lists (C-LEX-02), strict protection for app profiles (C-MOD-06), MS Windows consonant clusters (C-CMP-08).
 
 use crate::detector::{Confidence, Decision, Detector};
+use crate::exceptions::Exceptions;
+use crate::hangul;
 use crate::prefs::context_key;
 use std::sync::Arc;
 
@@ -16,7 +20,14 @@ pub struct Composition {
     previous_korean: Option<bool>,
     confirmed: bool,
     cached: Option<Decision>,
-    cached_version: i32,
+    cached_version: (i32, u32),
+    exceptions: Arc<Exceptions>,
+    /// Statistical (pattern) Hangul estimates stay as typed, for terminals and code editors.
+    strict: bool,
+    ms_clusters: bool,
+    /// Language of the text before the caret when the word started (C-DET-08, off unless the shell sets it): used like the
+    /// preceding committed word, only when there is none.
+    caret_korean: Option<bool>,
 }
 
 /// `Some(true)` for Hangul-only text, `Some(false)` for Latin-only text, `None` for both, neither or symbols.
@@ -49,8 +60,30 @@ impl Composition {
             previous_korean: None,
             confirmed: false,
             cached: None,
-            cached_version: 0,
+            cached_version: (0, 0),
+            exceptions: Arc::new(Exceptions::default()),
+            strict: false,
+            ms_clusters: false,
+            caret_korean: None,
         }
+    }
+
+    /// Sets the caret-text language for the word about to start; cleared with the word.
+    pub fn set_caret_language(&mut self, korean: Option<bool>) {
+        self.caret_korean = korean;
+        self.cached = None;
+    }
+
+    pub fn exceptions(&self) -> &Arc<Exceptions> {
+        &self.exceptions
+    }
+    pub fn set_strict(&mut self, strict: bool) {
+        self.strict = strict;
+        self.cached = None;
+    }
+    pub fn set_ms_clusters(&mut self, enabled: bool) {
+        self.ms_clusters = enabled;
+        self.cached = None;
     }
 
     pub fn detector(&self) -> &Arc<Detector> {
@@ -89,17 +122,41 @@ impl Composition {
 
     /// The decision for the current word, cached until the word, the choice or the personal dictionary changes.
     pub fn current(&mut self) -> Decision {
-        let version = self.detector.preferences().version();
+        let version = (self.detector.preferences().version(), self.exceptions.version());
         if let Some(cached) = &self.cached {
             if self.cached_version == version {
                 return cached.clone();
             }
         }
         self.cached_version = version;
-        let automatic = self
-            .detector
-            .decide_with(&self.raw(), &self.keys(), &self.context, self.previous_korean);
-        let decision = match self.forced_korean {
+        let (raw, keys) = (self.raw(), self.keys());
+        let automatic = match self.exceptions.lookup(&raw, &keys) {
+            Some(korean) => {
+                let composed = hangul::compose(&keys);
+                let (text, alternative, reason) = if korean {
+                    (composed, raw.clone(), "항상 바꿀 단어")
+                } else {
+                    (raw.clone(), composed, "안 바꿀 단어")
+                };
+                Decision::new(text, alternative, korean, reason, Confidence::Explicit)
+            }
+            None => {
+                let previous = self.previous_korean.or(self.caret_korean);
+                let decision = self.detector.decide_with(&raw, &keys, &self.context, previous);
+                if self.strict && decision.is_korean && decision.confidence == Confidence::Pattern {
+                    Decision::new(
+                        decision.alternative,
+                        decision.text,
+                        false,
+                        "보호 강화 · 원문 유지",
+                        Confidence::Uncertain,
+                    )
+                } else {
+                    decision
+                }
+            }
+        };
+        let mut decision = match self.forced_korean {
             None => automatic,
             Some(forced) => {
                 let same = forced == automatic.is_korean;
@@ -111,6 +168,10 @@ impl Composition {
                 Decision::new(text, alternative, forced, "직접 선택", Confidence::Explicit)
             }
         };
+        if self.ms_clusters {
+            decision.text = hangul::ms_clusters(&decision.text);
+            decision.alternative = hangul::ms_clusters(&decision.alternative);
+        }
         self.cached = Some(decision.clone());
         decision
     }
@@ -225,6 +286,7 @@ impl Composition {
     }
 
     pub fn clear(&mut self) {
+        self.caret_korean = None;
         self.literal.clear();
         self.keys.clear();
         self.forced_korean = None;

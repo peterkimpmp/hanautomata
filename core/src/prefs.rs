@@ -57,6 +57,9 @@ struct Inner {
     sequence: i64,
     version: i32,
     enabled: bool,
+    /// Off while learning is paused (C-LEX-09) or a secure field has focus (C-CTX-01): choices still apply, nothing new
+    /// is recorded.
+    recording: bool,
 }
 
 /// Bounded personal dictionary of confirmed Korean/English choices with exponentially discounted evidence and one-step undo
@@ -125,6 +128,7 @@ impl WordPreferences {
                 sequence: 0,
                 version: 0,
                 enabled: true,
+                recording: true,
             }),
         }
     }
@@ -152,6 +156,14 @@ impl WordPreferences {
             inner.enabled = value;
             inner.version = inner.version.wrapping_add(1);
         }
+    }
+
+    pub fn recording(&self) -> bool {
+        self.lock().recording
+    }
+    /// Pausing keeps applying remembered choices but records no new ones (C-LEX-09).
+    pub fn set_recording(&self, value: bool) {
+        self.lock().recording = value;
     }
 
     /// Global lookup only (no context).
@@ -206,7 +218,7 @@ impl WordPreferences {
             return false;
         }
         let mut inner = self.lock();
-        if !inner.enabled {
+        if !inner.enabled || !inner.recording {
             return false;
         }
         let mut record = Vec::new();
@@ -220,6 +232,23 @@ impl WordPreferences {
         }
         inner.version = inner.version.wrapping_add(1);
         true
+    }
+
+    /// Forgets one word everywhere (its global entry and every contextual one); returns how many entries went (C-LEX-03).
+    /// The undo history is cleared so an older step cannot bring the word back.
+    pub fn forget(&self, raw: &str, keys: &str) -> usize {
+        let Some((_, body, key_body)) = normalize(raw, keys) else {
+            return 0;
+        };
+        let mut inner = self.lock();
+        let before = inner.words.len();
+        inner.words.retain(|_, word| !(word.raw == body && word.keys == key_body));
+        let removed = before - inner.words.len();
+        if removed > 0 {
+            inner.undo.clear();
+            inner.version = inner.version.wrapping_add(1);
+        }
+        removed
     }
 
     pub fn undo_last(&self) -> bool {

@@ -17,4 +17,5 @@ else
     echo "Add it once: System Settings > Keyboard > Input Sources > Edit… > + > Korean > 한오토마타"
     echo "(or log out and back in, then run install.sh again)."
 fi
+"$dest/Hanautomata.app/Contents/MacOS/Hanautomata" --check || true
 echo "Learning file: ~/Library/Application Support/Hanautomata/words.json"

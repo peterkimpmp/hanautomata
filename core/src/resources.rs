@@ -8,6 +8,7 @@ pub(crate) const ENGLISH_LM: &str = include_str!("../../data/english-lm.txt");
 pub(crate) const ENGLISH: &str = include_str!("../../data/english.txt");
 pub(crate) const KOREAN_WORDS: &[u8] = include_bytes!("../../data/korean-words.txt.gz");
 pub(crate) const ENGLISH_WORDS: &[u8] = include_bytes!("../../data/english-words.txt.gz");
+pub(crate) const HANJA: &[u8] = include_bytes!("../../data/hanja.txt.gz");
 
 pub(crate) fn gunzip(bytes: &[u8]) -> String {
     let mut text = String::new();

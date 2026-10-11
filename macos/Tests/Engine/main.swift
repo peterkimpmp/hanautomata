@@ -14,7 +14,8 @@ let store = dir.appendingPathComponent("words.json").path
 let engine = Engine(home: "/Users/홍길동", storePath: store)
 check(engine.storeError() == "", "missing learning file starts empty")
 func type(_ text: String) -> KeyResult {
-    var last = KeyResult(commit: "", marked: "", handled: false, alternative: "", uncertain: false, reason: "", learned: false, failed: false)
+    var last = KeyResult(commit: "", marked: "", handled: false, alternative: "", uncertain: false, reason: "", label: "",
+                         confidence: "", korean: false, learned: false, failed: false)
     for c in text { last = engine.handle(kind: .text, raw: String(c), key: String(c)) }
     return last
 }
@@ -41,7 +42,47 @@ _ = engine.setMode(mode: .english)
 check(!engine.handle(kind: .text, raw: "a", key: "a").handled && engine.mode() == .english, "English mode passes")
 check(engine.setSensitivity(name: "aggressive") == "aggressive" && engine.setSensitivity(name: "x") == "balanced", "sensitivity")
 check(engine.flip(text: "dkssud 한글") == "안녕 gksrmf", "flip")
+// F2 after a Space commit (C-COR-02) and the candidate window's evidence label.
+let fresh = Engine(home: "/Users/홍길동", storePath: dir.appendingPathComponent("fresh.json").path)
+var last = KeyResult(commit: "", marked: "", handled: false, alternative: "", uncertain: false, reason: "", label: "",
+                     confidence: "", korean: false, learned: false, failed: false)
+for c in "rm" { last = fresh.handle(kind: .text, raw: String(c), key: String(c)) }
+check(last.label == "확인 필요", "uncertain words carry the 확인 필요 label")
+fresh.cancel()
+for c in "dkssud" { _ = fresh.handle(kind: .text, raw: String(c), key: String(c)) }
+_ = fresh.handle(kind: .space, raw: "", key: "")
+let swap = fresh.reconversion()
+check(swap?.old == "안녕 " && swap?.new == "dkssud ", "F2 after Space offers the swap")
+let swapped = fresh.reconvert()
+check(swapped.handled && swapped.learned && fresh.learnedCount() == 1, "reconvert learns")
+check(fresh.reconversion()?.new == "안녕 ", "and can swap back")
+fresh.forgetReconversion()
+check(fresh.reconversion() == nil, "forget")
 try? FileManager.default.removeItem(at: dir)
+
+// 1.0 surface: layouts, exception lists, learned words, bundle, hanja (C-LAY-02 · C-LEX-02/03/04/06).
+let more = Engine(home: "/Users/홍길동", storePath: dir.appendingPathComponent("more.json").path)
+_ = more.setKeyboard(kind: .sebeolsik390)
+var r = more.handle(kind: .text, raw: "k", key: "k")
+for c in "fs" { r = more.handle(kind: .text, raw: String(c), key: String(c)) }
+check(r.marked == "간" && more.keyboard() == .sebeolsik390, "Sebeolsik 390 through the bridge")
+check(more.setKeyboard(kind: .dubeolsik).commit == "간", "changing the layout commits")
+more.setExceptions(keep: ["dkssud"], convert: ["그"])
+check(more.keepList() == ["dkssud"] && more.convertList() == ["그"], "exception lists round-trip")
+check(more.parseList(text: "# c\na\n\n b \n") == ["a", "b"], "list text form")
+for c in "rm" { r = more.handle(kind: .text, raw: String(c), key: String(c)) }
+check(r.marked == "그", "an always-convert entry applies")
+_ = more.handle(kind: .candidate, raw: "", key: "")
+_ = more.handle(kind: .space, raw: "", key: "")
+check(more.learnedWords().first?.raw == "rm" && more.learnedWords().first?.korean == false, "learned words list")
+let bundle = more.exportBundle(settings: "{\"mode\":\"auto\"}")
+check(more.forgetWord(raw: "rm", keys: "rm") >= 1 && more.learnedCount() == 0, "one word forgotten")
+let back = more.importBundle(text: bundle)
+check(back.error.isEmpty && back.words >= 1 && back.settings.contains("auto") && more.learnedCount() >= 1, "bundle import")
+check(more.importBundle(text: "{}").error.isEmpty == false, "a broken bundle reports an error")
+check(more.hanja(syllable: "한", extended: false).first == "寒" && more.hanja(syllable: "ab", extended: true).isEmpty, "hanja")
+more.setLearningPaused(paused: true)
+check(more.learningPaused(), "learning pause flag")
 
 if failures.isEmpty { print("PASS: \(count) engine bridge assertions") } else {
     print("FAIL: \(failures.count) of \(count)"); for f in failures { print("  - \(f)") }; exit(1)
