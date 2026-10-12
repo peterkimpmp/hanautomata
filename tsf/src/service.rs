@@ -13,9 +13,14 @@ use hanautomata_ffi::{Engine, InputMode};
 
 use crate::display::{Attributes, InputAttribute};
 use crate::edit;
-use crate::guids::DISPLAY_ATTRIBUTE_INPUT;
+use crate::guids::{DISPLAY_ATTRIBUTE_INPUT, PRESERVED_RECONVERT};
 use crate::shell::{KeyEvent, Op, Outcome, Shell};
 use crate::system;
+
+const RECONVERSION_KEY: TF_PRESERVEDKEY = TF_PRESERVEDKEY {
+    uVKey: crate::shell::vk::F2 as u32,
+    uModifiers: 0,
+};
 
 /// Each text-service instance owns its composition session. A process can host multiple services: sharing an Engine
 /// makes one service's activation/reset discard another service's in-progress word (observed in Word during D2).
@@ -60,6 +65,7 @@ struct State {
     client: u32,
     thread_sink_cookie: u32,
     compartment_sink_cookie: u32,
+    reconversion_key_registered: bool,
     composition: Option<ITfComposition>,
     shell: Option<Shell>,
     attribute_atom: u32,
@@ -395,6 +401,11 @@ impl ITfTextInputProcessor_Impl for TextService_Impl {
         if let Some(tm) = st.thread_mgr.as_ref() {
             unsafe {
                 if let Ok(keystrokes) = tm.cast::<ITfKeystrokeMgr>() {
+                    if st.reconversion_key_registered {
+                        if let Err(error) = keystrokes.UnpreserveKey(&PRESERVED_RECONVERT, &RECONVERSION_KEY) {
+                            system::log(&format!("unpreserve F2 failed: {:?}", error.code()));
+                        }
+                    }
                     let _ = keystrokes.UnadviseKeyEventSink(st.client);
                 }
                 if let Ok(source) = tm.cast::<ITfSource>() {
@@ -450,6 +461,12 @@ impl ITfTextInputProcessorEx_Impl for TextService_Impl {
                     self.state.borrow_mut().attribute_atom = atom;
                 }
             }
+            // Word can process F2 before delivering an ordinary OnKeyDown. The preserved command returns false when
+            // no word can be reconverted, so the application's own F2 remains available in that case.
+            match keystrokes.PreserveKey(tid, &PRESERVED_RECONVERT, &RECONVERSION_KEY, &edit::utf16("Hanautomata reconvert")) {
+                Ok(()) => self.state.borrow_mut().reconversion_key_registered = true,
+                Err(error) => system::log(&format!("preserve F2 failed; ordinary key route retained: {:?}", error.code())),
+            }
         }
         self.update_indicator();
         system::log(&format!(
@@ -487,8 +504,23 @@ impl ITfKeyEventSink_Impl for TextService_Impl {
         guarded(false.into(), || self.handle_key(pic, wparam, lparam, false, false))
     }
 
-    fn OnPreservedKey(&self, _pic: Ref<ITfContext>, _rguid: *const GUID) -> Result<BOOL> {
-        Ok(false.into())
+    fn OnPreservedKey(&self, pic: Ref<ITfContext>, rguid: *const GUID) -> Result<BOOL> {
+        guarded(false.into(), || {
+            if rguid.is_null() || unsafe { *rguid } != PRESERVED_RECONVERT {
+                return Ok(false.into());
+            }
+            let Some(context) = pic.as_ref() else { return Ok(false.into()) };
+            // A preserved command need not be preceded by OnTestKeyDown. Recheck password scope and tray coexistence.
+            self.state.borrow_mut().checked_context = None;
+            self.refresh_pass_through(context);
+            let out = match self.state.borrow_mut().shell.as_mut() {
+                Some(shell) => shell.reconversion_command(),
+                None => return Ok(false.into()),
+            };
+            self.apply(context, &out)?;
+            system::log(&format!("preserved F2 handled={}", out.eaten));
+            Ok(out.eaten.into())
+        })
     }
 }
 

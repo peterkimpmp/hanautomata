@@ -514,6 +514,20 @@ impl Shell {
         self.caps_injected = 2;
     }
 
+    /// TSF may deliver F2 as a preserved command instead of a normal key. Keep the same eligibility rules, and leave
+    /// the application's F2 untouched when there is no freshly committed word, or correction is unavailable.
+    pub fn reconversion_command(&mut self) -> Outcome {
+        if !self.settings.correction_keys || self.engine.reconversion().is_none() {
+            return Outcome::pass();
+        }
+        let event = KeyEvent::new(vk::F2, Mods::NONE);
+        if self.test_key_down(event) {
+            self.key_down(event)
+        } else {
+            Outcome::pass()
+        }
+    }
+
     /// The ReplaceBefore of F2 was applied: remember the new choice.
     pub fn reconverted(&mut self) -> Outcome {
         let mut out = Outcome::eaten();

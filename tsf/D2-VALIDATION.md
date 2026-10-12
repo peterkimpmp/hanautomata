@@ -4,7 +4,7 @@ date: 2026-10-12
 layout: a4
 purpose: technical
 disposition: local-reusable
-status: pending-physical-input-validation
+status: pending-f2-runtime-validation
 ---
 
 # D2 관리자 설치는 성공했으나 앱 입력 승인은 보류
@@ -53,10 +53,10 @@ flowchart LR
 
 | 대상 | 진행 상태 | 남은 증거 |
 |---|---|---|
-| 일반 메모장 | 새 DLL 적재 후 ⇧Space 전환, 합성 `dkssud → 안녕` 조합·Space 확정 확인 | 실제 키보드 결과 확정·나머지 확정 키·전환 |
+| 일반 메모장 | 새 DLL 적재 후 ⇧Space 전환, 합성 `dkssud → 안녕` 조합·Space 확정·F2 재변환 확인 | 실제 키보드 결과 확정·나머지 확정 키·전환 |
 | Chrome | 미실행 | TSF 입력·확정·전환 |
 | Edge | 미실행 | TSF 입력·확정·전환 |
-| Word | 새 DLL을 적재한 새 문서에서 합성 키 `dkssud → 안녕` 밑줄 조합·Space 확정 확인. 이번 시도에서 첫 키 소실 없음 | 실제 키보드·나머지 확정 키·전환 |
+| Word | 새 DLL에서 합성 기본 조합·Space·Enter·Tab 확정·Backspace·⇧Space 확인. F2 재변환은 반응 없음 | F2 후보 적용 후 재시험·실제 키보드·나머지 전환 |
 | 시작 검색 | 미실행 | AppContainer 입력·확정 |
 | 관리자 메모장 | 미실행 | 관리자 앱의 TSF 입력·확정 |
 
@@ -100,13 +100,26 @@ flowchart LR
 
 확인 응답을 기다리는 동안 Microsoft 한국어 입력기로 복원했다. 전환 API의 `S_OK`와 후속 `active`의 Microsoft TIP 토큰을 확인했고, 기존 트레이 실행 파일의 프로세스도 확인했다. 설치된 새 DLL·시스템 등록·한오토마타 사용자 목록 항목·시험 문서는 보존했다.
 
+## 추가 확정 키 시험과 Word F2 후보 수정
+
+계속 진행 요청 후 트레이가 실행되지 않고 한오토마타가 선택된 상태에서 시험을 재개했다. Word 새 시험 문서에서 조합 중 ⇧Space, Enter 확정 후 다음 줄 입력, Tab 확정 후 탭 뒤 입력, Backspace의 `아 → ㅇ` 조합 삭제를 확인했다. Enter 직후 화면만으로 줄바꿈이 불명확했으나 다음 문자가 실제 다음 줄에 들어가는 것으로 구분했다.
+
+Word에서 자동 판별 `dkssud + Space → 안녕 ` 확정 직후 F2를 눌러도 변화가 없었다. 메모장에서는 같은 입력 뒤 F2가 `dkssud `로 바뀌었다. 이 앱별 차이는 합성 키로 관찰했으며 물리 키보드 결과를 대신하지 않는다. Word가 일반 키 이벤트에 앞서 F2를 처리하는 것이 원인 후보이고, 실제 콜백 전달 순서는 아직 추적하지 못했다.
+
+기존 서비스는 TSF 보존 단축키를 등록하지 않았고 `OnPreservedKey`가 항상 미처리를 반환했다. [PreserveKey](https://learn.microsoft.com/en-us/windows/win32/api/msctf/nf-msctf-itfkeystrokemgr-preservekey)와 [OnPreservedKey](https://learn.microsoft.com/en-us/windows/win32/api/msctf/nf-msctf-itfkeyeventsink-onpreservedkey)를 통해 F2 재변환 경로를 추가한 **후보**를 준비했다. 등록 성공한 키만 서비스 종료 때 해제한다. 명령 경로는 현재 필드·트레이 상태를 다시 확인하고, 직전 Space 확정 단어가 없거나 비밀번호/트레이 공존·일시정지·보정 기능 꺼짐이면 처리하지 않는다. 등록 실패는 로그에 남기고 기존 일반 키 경로를 유지한다. Shift+F2·F12 등의 보존 단축키 등록은 이번 변경에 포함하지 않았다.
+
+새 명령 경로의 단어 재변환·다시 되돌리기·새 조합 시 앱으로 전달, 그리고 공존·일시정지·기능 꺼짐의 두 검사를 추가했다. 미처리 명령 분기에서 재변환 검사가 실패했고, 연결 후 전체 **70개 검사**(공통 엔진 52, 키 로직 14, 등록 3, 서비스 격리 1)와 x64·x86 빌드·DLL selftest가 통과했다. 별도 Windows COM 시험 프로세스에서 서비스 활성화를 시도한 검사는 준비 단계가 `0x80070057`로 실패해 등록/해제 검증으로 사용할 수 없었다. 이 실패를 제품 회귀 검사 통과로 계산하지 않았고 해당 시험 코드는 후보에 포함하지 않았다. **실제 앱에서 보존 단축키 등록·콜백·해제를 확인하는 검증은 남아 있다.**
+
+적용 묶음은 로컬 `build/tsf/d2-f2-fix-20261012`다. 설치할 파일 4개의 복사 전후 해시와 `sha256.json`, 기존 설치 경로를 확인했고, `-CheckOnly`는 `preflight-passed`, `changes=none`이었다. 기존 등록은 `d2-session-20261012`이며 후보는 아직 적용하지 않았다. 이 후보를 Word 해결 완료로 기록하지 않는다. 비교 화면은 로컬 scratch의 `word-f2-no-change.png`, `notepad-f2-reconverted.png`다. 시험 후 Microsoft TIP 복원과 트레이 프로세스를 확인했다.
+
 ## 재개·복구 절차
 
 1. 메뉴 수정과 새 런타임 DLL의 관리자 적용은 완료했다. 같은 `d2-session-20261012` 적용 스크립트를 반복하지 않는다.
 2. 결과 정본은 `Program Files/Hanautomata-TSF-S0/revisions/d2-session-20261012/update-result.json`이다. 현재 사용자 활성화는 유지돼 있다.
 3. 아직 새 DLL을 적재하지 않은 시험 앱만 필요한 문서를 저장한 뒤 다시 연다. Word·메모장의 새 DLL 적재는 확인했다. 자동 종료·로그오프·재부팅은 하지 않는다.
-4. 물리 키보드 응답의 정정 대상을 먼저 확인하고, 트레이 앱을 종료한 새 시험 문서에서 6종 앱의 나머지 항목을 검증한다. API 성공이나 합성 키 결과만으로 승인하지 않는다.
-5. 기존 입력기로 복원하고 트레이 앱을 다시 실행한다. S0 시험을 종료할 때 일반 창에서 `disable-user`, 관리자 창에서 `install-machine.ps1 -Action Unregister`로 제거한다.
+4. Word F2 후보를 시험하려면 새 `build/tsf/d2-f2-fix-20261012/apply-admin.ps1`을 화면의 관리자 PowerShell에서 적용한다. 기존 DLL은 보관하고 새 revision의 COM 경로만 갱신한다. Word·메모장을 다시 열고 새 DLL·F2 등록/콜백 로그·재변환·앱 고유 F2를 확인한다.
+5. 물리 키보드 응답의 정정 대상을 확인하고, 트레이 앱을 종료한 새 시험 문서에서 6종 앱의 나머지 항목을 검증한다. API 성공이나 합성 키 결과만으로 승인하지 않는다.
+6. 기존 입력기로 복원하고 트레이 앱을 다시 실행한다. S0 시험을 종료할 때 일반 창에서 `disable-user`, 관리자 창에서 `install-machine.ps1 -Action Unregister`로 제거한다.
 
 설치 스크립트는 등록 중 실패 시 등록 해제를 시도하고 파일과 진단 기록을 보관한다. **관리자 제거·실패 자동 복구의 실제 실행 검증은 아직 남아 있다.** 이번 기록은 설치 성공을 제품 동작 승인이나 공개 릴리즈 승인으로 확대하지 않는다.
 

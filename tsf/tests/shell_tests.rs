@@ -17,6 +17,43 @@ fn shell(name: &str) -> Shell {
     Shell::new(engine)
 }
 
+#[test]
+fn preserved_reconversion_routes_a_fresh_word_and_leaves_other_f2_to_the_app() {
+    let mut s = shell("preserved-f2");
+    assert_eq!(s.reconversion_command(), Outcome::default());
+    let mut d = Doc::default();
+    for key in [b'D', b'K', b'S', b'S', b'U', b'D'] {
+        d.key(&mut s, key as u16, Mods::NONE, None);
+    }
+    d.key(&mut s, vk::SPACE, Mods::NONE, None);
+    let command = s.reconversion_command();
+    assert!(command.eaten, "The TSF preserved-key callback must dispatch a fresh F2 reconversion");
+    d.apply(&mut s, &command);
+    assert_eq!(d.text, "dkssud ");
+    let again = s.reconversion_command();
+    d.apply(&mut s, &again);
+    assert_eq!(d.text, "안녕 ");
+    d.key(&mut s, b'X' as u16, Mods::NONE, None);
+    assert_eq!(s.reconversion_command(), Outcome::default(), "A new composition invalidates F2");
+}
+
+#[test]
+fn preserved_reconversion_respects_passthrough_pause_and_settings() {
+    for condition in ["password-or-tray", "paused", "disabled"] {
+        let mut s = shell(&format!("preserved-{condition}"));
+        for key in [b'D', b'K', b'S', b'S', b'U', b'D', b' '] {
+            s.key_down(KeyEvent::new(key as u16, Mods::NONE));
+        }
+        match condition {
+            "password-or-tray" => s.pass_through = true,
+            "paused" => { s.key_down(KeyEvent::new(vk::F12, Mods::NONE)); }
+            "disabled" => s.settings.correction_keys = false,
+            _ => unreachable!(),
+        }
+        assert_eq!(s.reconversion_command(), Outcome::default(), "{condition}");
+    }
+}
+
 /// The application side: committed text, the composition after it, and the Caps Lock toggle.
 #[derive(Default)]
 struct Doc {
