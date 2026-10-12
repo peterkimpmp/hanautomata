@@ -105,6 +105,7 @@ static class UnicodeNet48
 
         var theirs = Parse(File.ReadAllText(args[0]));
         int differences = foldMismatches;
+        var touched = new SortedSet<int>();
         foreach (var kv in mine)
         {
             bool ranges = kv.Key == "LETTER" || kv.Key == "UPPER" || kv.Key == "LOWER";
@@ -114,10 +115,23 @@ static class UnicodeNet48
             var onlyNet48 = a.Except(b).ToList();
             var onlyNet9 = b.Except(a).ToList();
             differences += onlyNet48.Count + onlyNet9.Count;
+            foreach (string e in onlyNet48.Concat(onlyNet9)) touched.Add(Convert.ToInt32(e.Substring(0, 4), 16));
             Console.WriteLine(kv.Key + ": net48 " + a.Count + " · core " + b.Count + " · only net48 " + onlyNet48.Count + " · only core " + onlyNet9.Count);
             if (onlyNet48.Count > 0) Console.WriteLine("  only net48: " + string.Join(" ", onlyNet48.Take(40)) + (onlyNet48.Count > 40 ? " …" : ""));
             if (onlyNet9.Count > 0) Console.WriteLine("  only core:  " + string.Join(" ", onlyNet9.Take(40)) + (onlyNet9.Count > 40 ? " …" : ""));
         }
+        // Where the differences fall: the engine reads ASCII keys and Hangul; other scripts only reach it as surrounding text.
+        var blocks = new SortedDictionary<string, int>(StringComparer.Ordinal);
+        foreach (int c in touched)
+        {
+            string block = c < 0x80 ? "ASCII" : c < 0x100 ? "Latin-1" : (c >= 0x1100 && c < 0x1200) || (c >= 0x3130 && c < 0x3190)
+                || (c >= 0xa960 && c < 0xa980) || (c >= 0xac00 && c < 0xd800) ? "Hangul" : "other";
+            int n;
+            blocks.TryGetValue(block, out n);
+            blocks[block] = n + 1;
+        }
+        Console.WriteLine("code points that differ by block: " + string.Join(" · ", blocks.Select(kv => kv.Key + " " + kv.Value)));
+        foreach (int c in touched.Where(x => x < 0x100)) Console.WriteLine("  U+" + c.ToString("X4") + " " + (char)c);
         Console.WriteLine(differences == 0 ? "IDENTICAL" : "DIFFERENT: " + differences);
         return differences == 0 ? 0 : 1;
     }
