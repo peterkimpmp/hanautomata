@@ -12,7 +12,7 @@ use windows::Win32::Security::{
 use windows::Win32::System::LibraryLoader::GetModuleFileNameW;
 use windows::Win32::System::SystemInformation::GetTickCount64;
 use windows::Win32::System::Threading::{
-    GetCurrentProcess, GetCurrentProcessId, OpenMutexW, OpenProcessToken, SYNCHRONIZATION_SYNCHRONIZE,
+    GetCurrentProcess, GetCurrentProcessId, GetCurrentThreadId, OpenMutexW, OpenProcessToken, SYNCHRONIZATION_SYNCHRONIZE,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetKeyState, SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP, VIRTUAL_KEY,
@@ -176,9 +176,10 @@ pub fn log(event: &str) {
     {
         let _ = writeln!(
             f,
-            "{} pid={} {} {}",
+            "{} pid={} tid={} {} {}",
             now_ms(),
             unsafe { GetCurrentProcessId() },
+            unsafe { GetCurrentThreadId() },
             process_name(),
             event
         );

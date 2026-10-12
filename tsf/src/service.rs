@@ -3,6 +3,7 @@
 //! system indicator (가/A) through the conversion-mode compartment (W-07).
 
 use std::cell::{Cell, RefCell};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use windows::core::{implement, IUnknownImpl, Interface, Ref, Result, GUID};
 use windows::Win32::Foundation::{BOOL, E_FAIL, E_INVALIDARG, LPARAM, WPARAM};
@@ -21,6 +22,8 @@ const RECONVERSION_KEY: TF_PRESERVEDKEY = TF_PRESERVEDKEY {
     uVKey: crate::shell::vk::F2 as u32,
     uModifiers: 0,
 };
+
+static NEXT_SERVICE_ID: AtomicU64 = AtomicU64::new(1);
 
 /// Each text-service instance owns its composition session. A process can host multiple services: sharing an Engine
 /// makes one service's activation/reset discard another service's in-progress word (observed in Word during D2).
@@ -87,6 +90,8 @@ struct State {
 )]
 pub struct TextService {
     state: RefCell<State>,
+    diagnostic_id: u64,
+    diagnostics: Cell<bool>,
     /// We are writing the conversion compartment ourselves: ignore the change notice.
     writing_compartment: Cell<bool>,
 }
@@ -95,8 +100,28 @@ impl TextService {
     pub fn new() -> TextService {
         TextService {
             state: RefCell::new(State::default()),
+            diagnostic_id: NEXT_SERVICE_ID.fetch_add(1, Ordering::Relaxed),
+            diagnostics: Cell::new(false),
             writing_compartment: Cell::new(false),
         }
+    }
+
+    /// Opt-in Word diagnosis: state flags only, never key codes, text, document names or ranges.
+    fn trace(&self, event: &'static str) {
+        if !self.diagnostics.get() {
+            return;
+        }
+        let Ok(st) = self.state.try_borrow() else { return };
+        let Some(shell) = st.shell.as_ref() else { return };
+        if st.password_field {
+            return;
+        }
+        system::log(&format!(
+            "d2 service={} event={} client={} mode={:?} composing={} composition={} fresh={} pass={} paused={} preserved={}",
+            self.diagnostic_id, event, st.client, shell.mode(), shell.is_composing(), st.composition.is_some(),
+            shell.engine().reconversion().is_some(), shell.pass_through, shell.engine().paused(),
+            st.reconversion_key_registered
+        ));
     }
 }
 
@@ -193,6 +218,10 @@ impl TextService_Impl {
         if down && test {
             self.refresh_pass_through(context);
         }
+        let trace_key = down && (e.vk == crate::shell::vk::SPACE || e.vk == crate::shell::vk::F2);
+        if trace_key {
+            self.trace(if test { "test-key-before" } else { "key-before" });
+        }
         if test {
             let mut st = self.state.borrow_mut();
             let Some(shell) = st.shell.as_mut() else {
@@ -201,18 +230,26 @@ impl TextService_Impl {
             let wanted = if down { shell.test_key_down(e) } else { shell.test_key_up(e) };
             return Ok(wanted.into());
         }
-        let out = {
+        let (out, had_fresh_word) = {
             let mut st = self.state.borrow_mut();
             let Some(shell) = st.shell.as_mut() else {
                 return Ok(false.into());
             };
-            if down {
+            let had_fresh_word = self.diagnostics.get() && shell.engine().reconversion().is_some();
+            let out = if down {
                 shell.key_down(e)
             } else {
                 shell.key_up(e)
-            }
+            };
+            (out, had_fresh_word)
         };
+        if trace_key || had_fresh_word {
+            self.trace("key-after-shell");
+        }
         self.apply(context, &out)?;
+        if trace_key || had_fresh_word {
+            self.trace("key-after-document");
+        }
         Ok(out.eaten.into())
     }
 
@@ -245,6 +282,7 @@ impl TextService_Impl {
 
     /// Focus leaves the composition's context: commit the word there, asynchronously (it may not allow a sync session).
     fn commit_on_focus_change(&self) {
+        self.trace("focus-before");
         let (composition, out, client) = {
             let mut st = self.state.borrow_mut();
             let client = st.client;
@@ -254,6 +292,7 @@ impl TextService_Impl {
             };
             (st.composition.take(), out, client)
         };
+        self.trace("focus-after-shell");
         let Some(composition) = composition else { return };
         let Ok(range) = (unsafe { composition.GetRange() }) else {
             return;
@@ -397,6 +436,7 @@ impl ITfTextInputProcessor_Impl for TextService_Impl {
     }
 
     fn Deactivate(&self) -> Result<()> {
+        self.trace("deactivate");
         let st = std::mem::take(&mut *self.state.borrow_mut());
         if let Some(tm) = st.thread_mgr.as_ref() {
             unsafe {
@@ -427,6 +467,11 @@ impl ITfTextInputProcessor_Impl for TextService_Impl {
 
 impl ITfTextInputProcessorEx_Impl for TextService_Impl {
     fn ActivateEx(&self, ptim: Ref<ITfThreadMgr>, tid: u32, _flags: u32) -> Result<()> {
+        self.diagnostics.set(
+            system::process_name().eq_ignore_ascii_case("WINWORD.EXE")
+                && !system::elevated()
+                && system::data_dir().join("tsf-diagnostics.enabled").is_file()
+        );
         let thread_mgr = ptim.ok()?.clone();
         let mut shell = Shell::new(engine(system::home_dir(), system::data_dir().join("words.json")));
         shell.reset(system::caps_lock_on());
@@ -468,7 +513,9 @@ impl ITfTextInputProcessorEx_Impl for TextService_Impl {
                 Err(error) => system::log(&format!("preserve F2 failed; ordinary key route retained: {:?}", error.code())),
             }
         }
+        self.trace("activate-before-indicator");
         self.update_indicator();
+        self.trace("activate-after-indicator");
         system::log(&format!(
             "activate elevated={} appcontainer={} tray={} caps={}",
             system::elevated(),
@@ -513,11 +560,13 @@ impl ITfKeyEventSink_Impl for TextService_Impl {
             // A preserved command need not be preceded by OnTestKeyDown. Recheck password scope and tray coexistence.
             self.state.borrow_mut().checked_context = None;
             self.refresh_pass_through(context);
+            self.trace("preserved-before");
             let out = match self.state.borrow_mut().shell.as_mut() {
                 Some(shell) => shell.reconversion_command(),
                 None => return Ok(false.into()),
             };
             self.apply(context, &out)?;
+            self.trace("preserved-after");
             system::log(&format!("preserved F2 handled={}", out.eaten));
             Ok(out.eaten.into())
         })
@@ -526,11 +575,13 @@ impl ITfKeyEventSink_Impl for TextService_Impl {
 
 impl ITfCompositionSink_Impl for TextService_Impl {
     fn OnCompositionTerminated(&self, ecwrite: u32, pcomposition: Ref<ITfComposition>) -> Result<()> {
+        self.trace("terminated-before");
         let text = {
             let mut st = self.state.borrow_mut();
             st.composition = None;
             st.shell.as_mut().and_then(|s| s.composition_terminated())
         };
+        self.trace("terminated-after");
         if let (Some(text), Some(composition)) = (text, pcomposition.as_ref()) {
             unsafe {
                 let range = composition.GetRange()?;
@@ -598,6 +649,7 @@ impl ITfCompartmentEventSink_Impl for TextService_Impl {
         if unsafe { *rguid } != GUID_COMPARTMENT_KEYBOARD_INPUTMODE_CONVERSION {
             return Ok(());
         }
+        self.trace("indicator-before");
         let thread_mgr = self.state.borrow().thread_mgr.clone();
         let Some(thread_mgr) = thread_mgr else { return Ok(()) };
         let value = unsafe {
@@ -621,6 +673,8 @@ impl ITfCompartmentEventSink_Impl for TextService_Impl {
             let _ = shell.set_mode(target);
             system::log(&format!("indicator mode {:?}", target));
         }
+        drop(st);
+        self.trace("indicator-after");
         Ok(())
     }
 }
