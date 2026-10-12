@@ -3,9 +3,12 @@
 # Synthetic keys are not a physical-keyboard result (C-CTX-08): this answers whether Windows loads and runs the text
 # service at all. Keys are sent only while the test window is the active window.
 #   .\tsf\s0-live.ps1 [-Out C:\dev\s0-live] [-KeepRegistered]
+#   .\tsf\s0-live.ps1 -Registered   # already registered (an administrator ran `register`): only switch, type, switch back
+# On Windows 11 26H2 a standard user's --ctf-hkcu registration is refused at the switch (0x80004005, 2026-10-12).
 param(
     [string]$Out = 'C:\dev\s0-live',
-    [switch]$KeepRegistered
+    [switch]$KeepRegistered,
+    [switch]$Registered
 )
 
 $root = Split-Path $PSScriptRoot
@@ -41,8 +44,10 @@ $logStart = (LogLines).Count
 $form = $null
 $results = @()
 try {
-    Step 'register --ctf-hkcu'
-    & $tool register --ctf-hkcu
+    if (-not $Registered) {
+        Step 'register --ctf-hkcu'
+        & $tool register --ctf-hkcu
+    }
 
     Step 'test window'
     $form = New-Object Windows.Forms.Form
@@ -108,7 +113,7 @@ finally {
     if ($form) { $form.Close(); $form.Dispose() }
     Step 'text service log (new lines)'
     LogLines | Select-Object -Skip $logStart
-    if (-not $KeepRegistered) {
+    if (-not ($KeepRegistered -or $Registered)) {
         Step 'unregister'
         & $tool unregister
         & $tool status

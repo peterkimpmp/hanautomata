@@ -37,10 +37,12 @@ Mac에서 하는 검사: `cargo test --release`(키 로직 12개, held-out 재�
 .\build\tsf\x64\hanautomata-ime-setup.exe probe-hkcu [--enable]   # HKCU CTF 키가 남는지 10초 지켜본 뒤 스스로 지움(S0 실험)
 .\build\tsf\x64\hanautomata-ime-setup.exe active                  # 지금 세션의 입력기를 토큰으로 출력(되돌릴 때 씀)
 .\build\tsf\x64\hanautomata-ime-setup.exe activate [--to TOKEN]   # 세션 입력기를 우리 것으로(또는 토큰으로 되돌림) — Win+Space와 같은 전환
-.\tsf\s0-live.ps1                                                  # S0-4 원격 대리: 등록 → 전환 → 시험 창에 합성 키 → 읽기 → 되돌림·해제
+.\tsf\s0-live.ps1 [-Registered]                                    # S0-4 대리: (등록 →) 전환 → 시험 창에 합성 키 → 읽기 → 되돌림(·해제)
 ```
 
-`s0-live.ps1`의 합성 키(SendKeys) 통과는 물리 키보드 결과가 아니다. Windows가 입력기를 적재해 돌리는지만 답한다. 시험 창이 활성 창일 때만 키를 보낸다.
+`s0-live.ps1`의 합성 키(SendKeys) 통과는 물리 키보드 결과가 아니다. Windows가 입력기를 적재해 돌리는지만 답한다. 시험 창이 활성 창일 때만 키를 보낸다. 원격 셸에서 띄운 창은 활성 창이 되지 못하므로 화면 앞의 PowerShell 창에서 돌린다.
+
+2026-10-12 Windows 11 26H2(표준 사용자)에서 `register --ctf-hkcu`는 언어 목록까지 들어갔지만 전환(`ActivateProfile`)이 `0x80004005`로 거부됐다. 같은 셸에서 영어 자판·MS IME 전환은 ok였다. 그래서 앱 시험은 관리자 PowerShell로 `register`(HKLM)를 한 뒤 일반 창에서 `s0-live.ps1 -Registered`로 한다.
 
 - 각 단계의 ok/FAIL과 HRESULT를 기록한다. 이것이 결정 D2(사용자별 등록 / 관리자 1회 설치)의 근거다.
 - 입력기를 고른 뒤 메모장·Chrome·Edge·Word·시작 검색·관리자 권한 메모장에서 다음을 확인한다.
