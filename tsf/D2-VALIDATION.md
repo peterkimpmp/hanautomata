@@ -4,7 +4,7 @@ date: 2026-10-13
 layout: a4
 purpose: technical
 disposition: local-reusable
-status: word-autocorrect-conflict-candidate-uninstalled
+status: word-autocorrect-conflict-confirmed-after-correction-flag
 ---
 
 # D2 관리자 설치는 성공했으나 앱 입력 승인은 보류
@@ -56,7 +56,7 @@ flowchart LR
 | 일반 메모장 | 새 DLL 적재 후 ⇧Space 전환, 합성 `dkssud → 안녕` 조합·Space 확정·F2 재변환 확인 | 실제 키보드 결과 확정·나머지 확정 키·전환 |
 | Chrome | 미실행; 허용된 Aside 실행면에서 Chrome 시험을 수행하지 못함 | TSF 입력·확정·전환 |
 | Edge | 미실행; 허용된 Aside 실행면에서 Edge 시험을 수행하지 못함 | TSF 입력·확정·전환 |
-| Word | 추적판에서 Auto 모드·F2 처리 확인. 한/영 자동 고침 OFF일 때 왕복 성공, 원래 ON 복원 후 다시 실패. F12 일시정지·복귀 확인 | 교정 플래그 후보의 실제 앱 시험·나머지 전환 |
+| Word | 교정 플래그 후보에서도 자동 고침 ON이면 F2 결과가 다시 한글로 바뀜. Word의 자동 고침 취소 후 영문 결과 확인 | Word 자동 고침 충돌 보강·나머지 전환 |
 | 시작 검색 | SearchHost 실행이 화면 도구의 제품 정책으로 차단됨 | AppContainer 입력·확정 |
 | 관리자 메모장 | 미실행 | 관리자 앱의 TSF 입력·확정 |
 
@@ -149,12 +149,31 @@ F2와 Shift+F2가 확정된 텍스트를 바꿀 때 `ITfRange::SetText`에 `TF_S
 
 진단 종료 때 Microsoft 한국어 입력기 복원 API의 `S_OK`와 후속 활성 TIP를 확인했다. 기존 Hanautomata 트레이 실행 파일의 프로세스를 확인했고, 이번 진단에서 새로 만든 표식만 제거했다. 이미 활성화된 서비스는 진단 여부를 캐시할 수 있으므로 표식 제거를 기존 서비스의 즉시 기록 중단 보장으로 해석하지 않는다. 한오토마타 사용자 목록·시스템 등록·Word 시험 문서·이전 DLL은 보존했다. 문서 점검은 두 파일 모두 PASS였으며 가독성 경고는 남아 있다.
 
+## 2026-10-13 교정 플래그 후보 적용 후 재시험 — 실패
+
+사용자가 `d2-word-correction-20261013`을 적용했다. 설치 receipt는 **2026-10-13 05:58:19 KST**, `updated-restart-apps-required`이며 두 비트수의 selftest·시스템 등록은 종료 코드 0이다. 설치된 파일 4개의 SHA256과 묶음 manifest가 일치했고 일반 사용자의 등록 COM·활성 상태·언어 목록 검사가 통과했다. 같은 revision의 관리자 적용을 다시 요청하지 않는다.
+
+새 Word 프로세스 PID 19916(문서6, 창 1379892)에서 `revisions/d2-word-correction-20261013/x64/hanautomata_tsf.dll` 적재를 확인했다. 트레이는 정상 종료한 상태였다. 문서가 열린 뒤 한오토마타를 활성화했고, 추적 로그의 서비스 1·스레드 22980이 **Auto**, `pass=false`, `paused=false`임을 확인했다. Word 옵션 화면에서 **한/영 자동 고침 ON**을 확인하고 값을 바꾸지 않은 채 대화상자를 닫았다.
+
+| 순서 | 실제 Word의 합성 키 입력과 관찰 | 판정 |
+|---|---|---|
+| 1 | 본문에 `dkssud + Space + gksrmf + Space` → `안녕 한글` | 두 단어 조합·확정 확인. F2 대상은 문장 중간 단어 |
+| 2 | F2 → 화면은 `안녕 한글`; 로그는 같은 서비스의 `fresh=true`, `handled=true` | 교정 플래그만으로 자동 고침 충돌을 막지 못함 |
+| 3 | 다시 F2 → 화면 그대로; `reconversion skipped: text before the caret changed` | 호스트 변경으로 엔진이 예상한 텍스트와 달라져 안전 검사에서 거부 |
+| 4 | Word의 Undo 표시가 `자동 고침 취소`인 것을 확인한 뒤 Ctrl+Z → `안녕 gksrmf` | F2 결과가 Word 자동 고침에 의해 다시 한글로 바뀌었음을 뒷받침하는 직접 화면 증거 |
+
+따라서 **교정 플래그 후보의 Word F2 해결 판정은 실패**다. 로그의 `handled=true`와 설치 API 성공을 실제 재변환 통과로 계산하지 않는다. Ctrl+Z는 원인 확인용 관찰이며 제품의 정상 F2 사용 절차로 제안하지 않는다. 한/영 자동 고침 OFF를 해결책으로 적용하지도 않았다. 물리 키보드 결과와 나머지 앱 전체 검증은 별도이며 전체 승인은 **0/6**을 유지한다.
+
+비공개 scratch에 `word-correction-autocorrect-on.png`, `word-correction-f2-first.png`, `word-correction-undo-autocorrect.png`, `word-correction-pid19916.log`를 보관했다. 시험 후 Microsoft 입력기 전환 `S_OK`와 후속 활성 TIP, 기존 트레이 프로세스를 확인했다. 이번에 만든 진단 표식을 제거했고 기존 문서·설치 DLL은 보존했다. 이 재시험에서는 소스 동작을 추가 변경하거나 빌드 검사를 반복하지 않았다. 다음 보강은 확정 텍스트의 언어 속성과 Word의 후속 교정을 함께 다뤄야 하며, 구체적 수정 방식의 효과는 아직 미검증이다.
+
+실행 방법 주의: Word `/w`를 숨김으로 시작한 PID 9732는 화면 도구에 창을 노출하지 않았다. 일반 앱 실행은 이전 PID의 시작 창(문서5)을 열었으므로 해당 빈 창만 닫고 시험에서 제외했다. 실제 시험에는 표시된 새 `/w` 프로세스 PID 19916을 사용했다. 숨김 프로세스를 강제 종료하지 않았으며, 창 제목이나 실행 명령만으로 새 DLL 적재를 추정하지 않는다.
+
 ## 재개·복구 절차
 
-1. 메뉴 수정·서비스 격리·F2 보존 단축키·추적판의 관리자 적용은 완료했다. 같은 revision의 적용 스크립트를 반복하지 않는다.
-2. 현재 설치 receipt는 `Program Files/Hanautomata-TSF-S0/revisions/d2-f2-trace-20261013/update-result.json`이다. 일반 사용자 활성화는 유지돼 있다.
-3. 교정 후보는 별도 `build/tsf/d2-word-correction-20261013/apply-admin.ps1`이며 관리자 실행이 필요하다. 현재 에이전트는 일반 사용자이므로 적용하지 않았다. 보이지 않는 UAC를 반복 요청하거나 관리자 터미널을 화면 자동화하지 않는다.
-4. 새 revision 적용 후 새 Word 프로세스의 DLL 경로와 Auto 모드를 확인하고, 원래 한/영 자동 고침 ON 상태에서 문장 중간 F2 왕복을 먼저 시험한다. 자동 종료·로그오프·재부팅은 하지 않는다.
+1. 메뉴 수정·서비스 격리·F2 보존 단축키·추적판·교정 플래그 후보의 관리자 적용은 완료했다. 같은 revision의 적용 스크립트를 반복하지 않는다.
+2. 현재 설치 receipt는 `Program Files/Hanautomata-TSF-S0/revisions/d2-word-correction-20261013/update-result.json`이다. 일반 사용자 활성화는 유지돼 있다.
+3. 교정 플래그 후보의 Word 재시험은 실패했다. 추가 관리자 설치를 요청하기 전에 Word 자동 고침과 확정 텍스트 속성의 상호작용을 보강해야 한다. 보이지 않는 UAC를 반복 요청하거나 관리자 터미널을 화면 자동화하지 않는다.
+4. 후속 revision에서는 새 Word 프로세스의 DLL 경로와 Auto 모드를 확인하고, 한/영 자동 고침 ON 상태에서 문장 중간 F2 왕복을 먼저 시험한다. 자동 종료·로그오프·재부팅은 하지 않는다.
 5. 메모장 실제 키보드 결과와 6종 앱의 나머지 항목을 검증한다. Chrome·Edge 실행면 확보, 시작 검색 도구 정책 제한, 관리자 메모장 권한은 미검증 조건이다. API 성공이나 합성 키 결과만으로 승인하지 않는다.
 6. 기존 입력기로 복원하고 트레이 앱을 다시 실행한다. S0 시험을 종료할 때 일반 창에서 `disable-user`, 관리자 창에서 `install-machine.ps1 -Action Unregister`로 제거한다.
 
