@@ -1,5 +1,17 @@
 # 변경 기록
 
+## 미출시 — 정보 화면 · 판 번호 하나로 (2026-10-12)
+- **정보 화면.** 두 OS 모두 메뉴에서 바로 엽니다.
+  - macOS: 입력 메뉴의 `한오토마타 0.5.0 정보…`가 설정 창의 `정보` 탭을 엽니다.
+  - Windows 트레이 앱: `Hanautomata 정보` 메뉴가 작은 창을 엽니다.
+  - 판, GitHub 주소, 릴리스 노트, 문제 알리기 링크, MIT 라이선스를 보여 줍니다. 판·OS·아키텍처 한 줄을 복사해 문제 알리기에 붙일 수 있습니다.
+  - 링크는 누를 때만 브라우저로 엽니다. 정보 화면 자체는 네트워크를 쓰지 않습니다.
+- **판 번호를 하나로.** 저장소 루트의 `VERSION`(0.5.0)이 정본입니다.
+  - macOS `Info.plist`, Windows `AssemblyInfo.cs`·`app.manifest`, Rust 크레이트 3개가 이 값을 따릅니다. Windows 트레이 앱은 0.4.0에서, 크레이트는 0.1.0에서 0.5.0으로 올렸습니다.
+  - `check-version.sh`가 어긋난 곳을 찾습니다. macOS `build.sh`와 CI가 이 검사를 돌립니다.
+  - Windows `package.ps1`은 EXE 판을 `VERSION`과 대조하고 zip 이름도 여기서 만듭니다. 회귀 시험(`tests/ReleaseTests.ps1`)도 같은 값을 씁니다.
+  - 설정 도구 `hanautomata-ime-setup`은 첫 줄에 판을 찍고, 사용법 안내에 GitHub 주소를 붙입니다.
+
 ## 미출시 — Windows TSF 입력기 S0 빌드 · macOS 검색 칸 (2026-10-12)
 - **Windows 입력기 첫 빌드(S0).** `tsf/`는 TSF 텍스트 서비스 DLL입니다. macOS와 같은 Rust 엔진을 씁니다.
   - 넣은 것: 조합 밑줄·확정, ⇧Space·Caps Lock(짧게 전환·길게 대문자)·한/영·오른쪽 Alt 전환, F2·Shift+F2·F12, 작업 표시줄 가/A.

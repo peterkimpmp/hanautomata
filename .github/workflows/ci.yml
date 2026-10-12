@@ -11,6 +11,8 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 9.0.x
+      - name: One version across platforms (VERSION)
+        run: sh check-version.sh
       - name: Compile the whole app against .NET Framework 4.8 reference assemblies (C# 5)
         run: dotnet build tests/dotnet/Hanautomata.App.Net48 -c Release
       - name: Unit tests on .NET 9

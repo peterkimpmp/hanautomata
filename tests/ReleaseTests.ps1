@@ -1,6 +1,7 @@
 param([string]$SourceDirectory)
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
+$version = (Get-Content -LiteralPath (Join-Path $repo 'VERSION') -Raw).Trim()
 if (-not $SourceDirectory) { $SourceDirectory = Join-Path $repo 'build' }
 $buildRoot = [IO.Path]::GetFullPath((Join-Path $repo 'build'))
 $testRoot = Join-Path $buildRoot ('release-test-' + [Guid]::NewGuid().ToString('N'))
@@ -13,11 +14,11 @@ function Assert-Release([bool]$Condition, [string]$Message) {
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 try {
     & (Join-Path $repo 'package.ps1') -SourceDirectory $SourceDirectory -OutputDirectory $testRoot | Out-Null
-    $oldBundle = Join-Path $testRoot 'Hanautomata-0.4.0'
+    $oldBundle = Join-Path $testRoot "Hanautomata-$version"
     $null = New-Item -ItemType Directory -Path $oldBundle
     Set-Content -LiteralPath (Join-Path $oldBundle 'stale-private-canary.txt') -Value 'Must never ship'
     & (Join-Path $repo 'package.ps1') -SourceDirectory $SourceDirectory -OutputDirectory $testRoot | Out-Null
-    $zip = Join-Path $testRoot 'Hanautomata-0.4.0-win.zip'
+    $zip = Join-Path $testRoot "Hanautomata-$version-win.zip"
     $archive = [IO.Compression.ZipFile]::OpenRead($zip)
     try {
         Assert-Release (@($archive.Entries | Where-Object { $_.FullName -match 'stale-private-canary|HanFlow|\.pyc$' }).Count -eq 0) 'stale files or obsolete paths in ZIP'
@@ -25,7 +26,7 @@ try {
     } finally { $archive.Dispose() }
     $unpacked = Join-Path $testRoot 'unpacked'
     Expand-Archive -LiteralPath $zip -DestinationPath $unpacked
-    $portable = Join-Path $unpacked 'Hanautomata-0.4.0'
+    $portable = Join-Path $unpacked "Hanautomata-$version"
     & (Join-Path $portable 'install.ps1') -ValidateOnly | Out-Null
     Assert-Release $true 'portable installer resolves its executable without -SourceDirectory'
     foreach ($line in Get-Content -LiteralPath (Join-Path $portable 'SHA256SUMS.txt')) {

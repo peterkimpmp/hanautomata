@@ -10,6 +10,7 @@ root=$(cd "$here/.." && pwd)
 out="$here/build"
 app="$out/Hanautomata.app"
 gen="$out/generated"
+"$root/check-version.sh" >/dev/null
 host=$(uname -m)
 archs=$host
 [ "${1:-}" = "--universal" ] && archs="arm64 x86_64"

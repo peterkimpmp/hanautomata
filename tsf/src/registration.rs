@@ -749,7 +749,7 @@ pub fn cli(args: Vec<String>) -> i32 {
         .and_then(|i| args.get(i + 1).cloned())
         .unwrap_or_else(default_dll);
     let command = args.first().map(String::as_str).unwrap_or("status");
-    println!("Hanautomata input method setup · {} · {}", tip_string(), dll);
+    println!("Hanautomata input method setup {} · {} · {}", env!("CARGO_PKG_VERSION"), tip_string(), dll);
     let report = match command {
         "register" => register(&dll, args.iter().any(|a| a == "--ctf-hkcu")),
         "unregister" => unregister(),
@@ -762,6 +762,7 @@ pub fn cli(args: Vec<String>) -> i32 {
             eprintln!(
                 "usage: hanautomata-ime-setup <register [--ctf-hkcu] | unregister | status | selftest | probe-hkcu [--enable] | active | activate [--to TOKEN]> [--dll PATH]"
             );
+            eprintln!("https://github.com/peterkimpmp/hanautomata");
             return 2;
         }
     };
