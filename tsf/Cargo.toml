@@ -18,6 +18,11 @@ path = "src/bin/setup.rs"
 [dependencies]
 hanautomata-ffi = { path = "../ffi", default-features = false }
 
+[build-dependencies]
+# The setup tool's manifest (asInvoker): without one, Windows treats a 32-bit exe named "...setup..." as an installer
+# and demands elevation (ERROR_ELEVATION_REQUIRED, Windows 365, 2026-10-12). Pure Rust: no rc or windres needed.
+embed-manifest = "1.5"
+
 # windows 0.59 is the last release that links through prebuilt import libraries (windows-targets 0.53). From 0.60 the
 # crates use raw-dylib, which Rust's GNU toolchain builds with MinGW dlltool + as: not in the toolchain, and the
 # llvm-dlltool stand-in made test binaries crash (2026-10-12, Windows 365). windows-result and windows-strings are held at

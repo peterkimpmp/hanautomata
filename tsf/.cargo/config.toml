@@ -1,0 +1,5 @@
+# 32-bit Windows (GNU): link libgcc and winpthread into the binaries. Without this the DLL and the setup tool need
+# libgcc_s_dw2-1.dll, which ships only inside the Rust toolchain, so a 32-bit app could not load the input method
+# (Windows 365, 2026-10-12). The 64-bit build needs no such DLL.
+[target.i686-pc-windows-gnu]
+rustflags = ["-C", "target-feature=+crt-static"]
