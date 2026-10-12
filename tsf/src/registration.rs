@@ -459,14 +459,18 @@ pub fn unregister() -> Report {
     if let Some(r) = remove_from_language_list() {
         report.push("5 language list (User Profile)", r);
     }
-    if let Ok(manager) = categories() {
-        for (name, cat) in CATEGORIES {
-            let r = unsafe { manager.UnregisterCategory(&CLSID_TEXT_SERVICE, &cat, &CLSID_TEXT_SERVICE) };
-            report.push(format!("3 category {name}"), r.map(|_| String::new()).map_err(|e| e.code()));
+    // The API only removes what it registered (HKLM); for a standard user it answers E_FAIL even with nothing to remove
+    // (Windows 365, 2026-10-12), so it is called only when there is something there.
+    if key_exists(HKEY_LOCAL_MACHINE, &ctf_key()) {
+        if let Ok(manager) = categories() {
+            for (name, cat) in CATEGORIES {
+                let r = unsafe { manager.UnregisterCategory(&CLSID_TEXT_SERVICE, &cat, &CLSID_TEXT_SERVICE) };
+                report.push(format!("3 category {name}"), r.map(|_| String::new()).map_err(|e| e.code()));
+            }
         }
+        let r = profiles().and_then(|m| unsafe { m.UnregisterProfile(&CLSID_TEXT_SERVICE, LANGID_KOREAN, &PROFILE, 0) });
+        report.push("2 TSF profile", r.map(|_| String::new()).map_err(|e| e.code()));
     }
-    let r = profiles().and_then(|m| unsafe { m.UnregisterProfile(&CLSID_TEXT_SERVICE, LANGID_KOREAN, &PROFILE, 0) });
-    report.push("2 TSF profile", r.map(|_| String::new()).map_err(|e| e.code()));
     if key_exists(HKEY_CURRENT_USER, &ctf_key()) {
         let path = HSTRING::from(ctf_key());
         report.push(
