@@ -6,13 +6,14 @@ foreach ($file in @('Hanautomata.exe', 'Hanautomata.exe.config')) {
     if (-not (Test-Path -LiteralPath (Join-Path $SourceDirectory $file) -PathType Leaf)) { throw "Release input missing: $file" }
 }
 $exe = Join-Path $SourceDirectory 'Hanautomata.exe'
+$version = (Get-Content -LiteralPath (Join-Path $PSScriptRoot 'VERSION') -Raw).Trim()
 $fileVersion = [Diagnostics.FileVersionInfo]::GetVersionInfo((Resolve-Path -LiteralPath $exe).Path).FileVersion
-if ($fileVersion -ne '0.4.0.0') { throw "Expected 0.4.0.0; got $fileVersion" }
+if ($fileVersion -ne "$version.0") { throw "Expected $version.0 (VERSION); got $fileVersion" }
 $null = New-Item -ItemType Directory -Force -Path $OutputDirectory
 $packageRoot = (Resolve-Path -LiteralPath $OutputDirectory).Path
 $staging = Join-Path $packageRoot ('.staging-' + [Guid]::NewGuid().ToString('N'))
-$bundle = Join-Path $staging 'Hanautomata-0.4.0'
-$zip = Join-Path $packageRoot 'Hanautomata-0.4.0-win.zip'
+$bundle = Join-Path $staging "Hanautomata-$version"
+$zip = Join-Path $packageRoot "Hanautomata-$version-win.zip"
 $sourceCommit = $null
 $sourceDirty = $null
 if (Get-Command git -ErrorAction SilentlyContinue) {
