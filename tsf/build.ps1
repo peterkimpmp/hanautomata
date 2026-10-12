@@ -1,9 +1,11 @@
 # Builds the Hanautomata TSF input method (S0 build) with Rust's GNU toolchain: no Visual Studio, no administrator.
 #   .\build.ps1            x64 DLL + setup tool -> build\tsf\x64, then the setup tool's selftest (loads the DLL, no registration)
 #   .\build.ps1 -Test      also the shared engine tests (core) and the Windows key-logic tests (tsf)
-#   .\build.ps1 -X86       also the 32-bit DLL for 32-bit applications (W-03) -> build\tsf\x86
+#   .\build.ps1 -X86       also the 32-bit DLL for 32-bit applications (W-03) -> build\tsf\x86; uses the
+#                          stable-i686-pc-windows-gnu toolchain when installed (it carries its own 32-bit linker)
 #   .\build.ps1 -Package   zip + SHA-256 -> deliverables\Hanautomata-tsf-s0-<commit>.zip
 # Registration is a separate, deliberate step: build\tsf\x64\hanautomata-ime-setup.exe register (see README.md).
+# CARGO_TARGET_DIR is honoured: point it at an ASCII path when the user folder has non-ASCII characters (MinGW linker).
 param([switch]$Test, [switch]$X86, [switch]$Package)
 $ErrorActionPreference = 'Stop'
 $here = $PSScriptRoot
@@ -15,6 +17,7 @@ function Invoke-Checked([string]$exe, [string[]]$argv) {
 }
 
 Push-Location $here
+$target = if ($env:CARGO_TARGET_DIR) { $env:CARGO_TARGET_DIR } else { Join-Path $here 'target' }
 try {
     if ($Test) {
         Push-Location (Join-Path $root 'core')
@@ -24,12 +27,14 @@ try {
     Invoke-Checked cargo @('build', '--release')
     $x64 = Join-Path $root 'build\tsf\x64'
     New-Item -ItemType Directory -Force $x64 | Out-Null
-    Copy-Item 'target\release\hanautomata_tsf.dll', 'target\release\hanautomata-ime-setup.exe' $x64 -Force
+    Copy-Item (Join-Path $target 'release\hanautomata_tsf.dll'), (Join-Path $target 'release\hanautomata-ime-setup.exe') $x64 -Force
     if ($X86) {
-        Invoke-Checked cargo @('build', '--release', '--lib', '--target', 'i686-pc-windows-gnu')
+        $argv = @('build', '--release', '--lib', '--target', 'i686-pc-windows-gnu')
+        if (rustup toolchain list | Select-String -SimpleMatch 'stable-i686-pc-windows-gnu') { $argv = @('+stable-i686-pc-windows-gnu') + $argv }
+        Invoke-Checked cargo $argv
         $x86dir = Join-Path $root 'build\tsf\x86'
         New-Item -ItemType Directory -Force $x86dir | Out-Null
-        Copy-Item 'target\i686-pc-windows-gnu\release\hanautomata_tsf.dll' $x86dir -Force
+        Copy-Item (Join-Path $target 'i686-pc-windows-gnu\release\hanautomata_tsf.dll') $x86dir -Force
     }
     Invoke-Checked (Join-Path $x64 'hanautomata-ime-setup.exe') @('selftest')
     if ($Package) {

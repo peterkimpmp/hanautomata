@@ -15,9 +15,12 @@ Visual Studio와 관리자 권한 없이 Rust GNU 툴체인으로 빌드한다.
 ```powershell
 # Rust(사용자 영역): rustup-init.exe -y --default-host x86_64-pc-windows-gnu --profile minimal
 # 32비트 DLL을 만들 때: rustup target add i686-pc-windows-gnu
+#                      rustup toolchain install stable-i686-pc-windows-gnu --profile minimal   # 32비트 링커 포함
 cd tsf
 .\build.ps1 -Test -X86 -Package   # 엔진·키 로직 검사 → x64·x86 DLL → selftest(등록 없음) → zip
 ```
+
+사용자 폴더 이름에 한글이 있으면 MinGW 링커가 경로를 못 읽을 수 있다. 그때는 `RUSTUP_HOME`·`CARGO_HOME`·`CARGO_TARGET_DIR`을 영문 경로(예: `C:\dev\…`)로 두고 빌드한다. `build.ps1`은 `CARGO_TARGET_DIR`을 따른다.
 
 Mac에서 하는 검사: `cargo test --release`(키 로직 12개, held-out 재생 약 2만 키) · `cargo check --target x86_64-pc-windows-gnu` · `cargo clippy --target x86_64-pc-windows-gnu --all-targets`.
 
