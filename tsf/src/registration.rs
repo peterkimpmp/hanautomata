@@ -385,6 +385,32 @@ pub fn selftest(dll: &str) -> Report {
         }
     })();
     report.push("load DLL and create the text service", created);
+    // The names COM and regsvr32 look up. The 32-bit link resolves stdcall-decorated symbols (_DllCanUnloadNow@0) to
+    // these names; a missing one here means COM cannot use the DLL.
+    let exports = unsafe {
+        match LoadLibraryW(&HSTRING::from(dll)) {
+            Ok(module) => {
+                let missing: Vec<&str> = [
+                    c"DllGetClassObject",
+                    c"DllCanUnloadNow",
+                    c"DllRegisterServer",
+                    c"DllUnregisterServer",
+                ]
+                .iter()
+                .filter(|name| GetProcAddress(module, PCSTR(name.as_ptr() as *const u8)).is_none())
+                .map(|name| name.to_str().unwrap_or("?"))
+                .collect();
+                if missing.is_empty() {
+                    Ok("DllGetClassObject DllCanUnloadNow DllRegisterServer DllUnregisterServer".to_string())
+                } else {
+                    eprintln!("missing exports: {}", missing.join(" "));
+                    Err(E_FAIL)
+                }
+            }
+            Err(e) => Err(e.code()),
+        }
+    };
+    report.push("COM exports by name", exports);
     let engine = hanautomata_ffi::Engine::new(
         String::new(),
         std::env::temp_dir()
