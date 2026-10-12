@@ -112,4 +112,4 @@ if ($LASTEXITCODE -ne 0) { throw '현재 사용자 준비 상태 실패: 앱 시
 .\tsf\update-machine.ps1 -Revision d2-session-20261012
 ```
 
-기존 DLL은 보관하며 이미 존재하는 revision에는 다시 쓰지 않는다. receipt는 `Program Files\Hanautomata-TSF-S0\revisions\<revision>\update-result.json`이다. 등록 실패 시 이전 경로로 복구를 시도한다. 관리자 적용·실패 복구의 실제 검증은 아직 남아 있다. 사용자 목록 변경, 기본 입력기 선택, 자동 앱 종료·로그오프·재부팅은 하지 않는다. 필요한 문서를 저장하고 시험 앱을 다시 연 뒤 새 DLL 적재와 실제 입력을 확인해야 한다.
+기존 DLL은 보관하며 이미 존재하는 revision에는 다시 쓰지 않는다. receipt는 `Program Files\Hanautomata-TSF-S0\revisions\<revision>\update-result.json`이다. 2026-10-12 `d2-session-20261012`의 관리자 적용, 설치 해시와 COM 경로, 새 Word·메모장의 DLL 적재를 확인했다. 이 revision을 적용한 PC에서는 같은 명령을 반복하지 않는다. 등록 실패 시 이전 경로로 복구를 시도하지만, 실패 복구의 실제 시험은 아직 남아 있다. 사용자 목록 변경, 기본 입력기 선택, 자동 앱 종료·로그오프·재부팅은 하지 않는다. 실제 앱 승인 범위는 [D2 검증 기록](D2-VALIDATION.md)을 따른다.
