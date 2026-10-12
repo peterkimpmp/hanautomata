@@ -45,14 +45,16 @@ try {
         $argv = @('build', '--release', '--target', 'i686-pc-windows-gnu')
         if (rustup toolchain list | Select-String -SimpleMatch 'stable-i686-pc-windows-gnu') { $argv = @('+stable-i686-pc-windows-gnu') + $argv }
         Invoke-Checked cargo $argv
+        $built = Join-Path $target 'i686-pc-windows-gnu\release'
+        $x86files = (Join-Path $built 'hanautomata_tsf.dll'), (Join-Path $built 'hanautomata-ime-setup.exe')
+        # Test what cargo built. PowerShell 7 would not start the 32-bit tool inside a pipeline ("StandardOutputEncoding
+        # is only supported when standard output is redirected", Windows 365, 2026-10-12); cmd starts it.
+        cmd /c "`"$($x86files[1])`" selftest"
+        if ($LASTEXITCODE -ne 0) { throw "x86 selftest failed with exit code $LASTEXITCODE" }
         $x86dir = Join-Path $root 'build\tsf\x86'
         New-Item -ItemType Directory -Force $x86dir | Out-Null
-        $built = Join-Path $target 'i686-pc-windows-gnu\release'
-        Copy-Item (Join-Path $built 'hanautomata_tsf.dll'), (Join-Path $built 'hanautomata-ime-setup.exe') $x86dir -Force
-        # PowerShell 7 refuses to start this 32-bit console tool inside a pipeline ("StandardOutputEncoding is only
-        # supported when standard output is redirected", Windows 365, 2026-10-12); cmd starts it.
-        cmd /c "`"$(Join-Path $x86dir 'hanautomata-ime-setup.exe')`" selftest"
-        if ($LASTEXITCODE -ne 0) { throw "x86 selftest failed with exit code $LASTEXITCODE" }
+        try { Copy-Item $x86files $x86dir -Force -ErrorAction Stop }
+        catch { Write-Warning "build\tsf\x86 not refreshed ($($_.Exception.Message)); the package takes the files from $built" }
     }
     if ($Package) {
         $commit = (git -C $root rev-parse --short HEAD).Trim()
@@ -63,7 +65,10 @@ try {
         Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue
         New-Item -ItemType Directory -Force $stage | Out-Null
         Copy-Item $x64 (Join-Path $stage 'x64') -Recurse
-        if ($X86) { Copy-Item (Join-Path $root 'build\tsf\x86') (Join-Path $stage 'x86') -Recurse }
+        if ($X86) {
+            New-Item -ItemType Directory -Force (Join-Path $stage 'x86') | Out-Null
+            Copy-Item $x86files (Join-Path $stage 'x86')
+        }
         Copy-Item 'README.md' $stage
         Remove-Item $zip -Force -ErrorAction SilentlyContinue
         Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip
