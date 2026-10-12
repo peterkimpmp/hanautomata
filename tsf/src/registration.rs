@@ -360,6 +360,45 @@ pub fn status() -> Report {
     report
 }
 
+/// S0 experiment: writes the HKCU CTF keys (and the HKCU COM server), optionally enables the profile for the user, and
+/// watches for 10 s whether the CTF keys stay; then removes everything it wrote. On Windows 365 (2026-10-12) the keys
+/// written by `register --ctf-hkcu` were gone by the next `status`: this tells whether the system removes them by itself
+/// or only after InstallLayoutOrTip.
+pub fn probe_hkcu(dll: &str, enable: bool) -> Report {
+    init_com();
+    let mut report = Report::default();
+    let present = |b: bool| if b { "present" } else { "absent" }.to_string();
+    report.push("probe COM server (HKCU)", register_com(dll));
+    report.push("probe profile (HKCU)", register_profile_hkcu(dll));
+    for (name, r) in register_categories_hkcu() {
+        report.push(format!("probe {name}"), r);
+    }
+    if enable {
+        report.push("probe InstallLayoutOrTip", install_layout(0));
+    }
+    for second in 0..=10 {
+        let stays = key_exists(HKEY_CURRENT_USER, &ctf_key());
+        report.push(format!("probe HKCU CTF keys after {second} s"), Ok(present(stays)));
+        if !stays {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_secs(1));
+    }
+    if enable {
+        report.push("cleanup InstallLayoutOrTip remove", install_layout(ILOT_UNINSTALL));
+    }
+    for key in [ctf_key(), com_key()] {
+        if key_exists(HKEY_CURRENT_USER, &key) {
+            let path = HSTRING::from(key.as_str());
+            report.push(
+                format!("cleanup HKCU\\{key}"),
+                win32(unsafe { RegDeleteTreeW(HKEY_CURRENT_USER, &path) }).map(|_| String::new()),
+            );
+        }
+    }
+    report
+}
+
 /// Loads the DLL as COM would and creates the text service; then checks the engine on one word.
 pub fn selftest(dll: &str) -> Report {
     init_com();
@@ -458,8 +497,11 @@ pub fn cli(args: Vec<String>) -> i32 {
         "unregister" => unregister(),
         "status" => status(),
         "selftest" => selftest(&dll),
+        "probe-hkcu" => probe_hkcu(&dll, args.iter().any(|a| a == "--enable")),
         _ => {
-            eprintln!("usage: hanautomata-ime-setup <register [--ctf-hkcu] | unregister | status | selftest> [--dll PATH]");
+            eprintln!(
+                "usage: hanautomata-ime-setup <register [--ctf-hkcu] | unregister | status | selftest | probe-hkcu [--enable]> [--dll PATH]"
+            );
             return 2;
         }
     };

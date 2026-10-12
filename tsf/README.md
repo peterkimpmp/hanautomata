@@ -33,6 +33,7 @@ Mac에서 하는 검사: `cargo test --release`(키 로직 12개, held-out 재�
 .\build\tsf\x64\hanautomata-ime-setup.exe register                # 1 COM(HKCU) · 2 프로필 · 3 카테고리 · 4 사용자 활성화
 .\build\tsf\x64\hanautomata-ime-setup.exe register --ctf-hkcu     # 2·3이 거부될 때만: HKCU CTF 경로 실험(TextVN 방식)
 .\build\tsf\x64\hanautomata-ime-setup.exe unregister
+.\build\tsf\x64\hanautomata-ime-setup.exe probe-hkcu [--enable]   # HKCU CTF 키가 남는지 10초 지켜본 뒤 스스로 지움(S0 실험)
 ```
 
 - 각 단계의 ok/FAIL과 HRESULT를 기록한다. 이것이 결정 D2(사용자별 등록 / 관리자 1회 설치)의 근거다.
