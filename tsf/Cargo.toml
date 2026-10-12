@@ -16,11 +16,17 @@ name = "hanautomata-ime-setup"
 path = "src/bin/setup.rs"
 
 [dependencies]
-hanautomata-ffi = { path = "../ffi" }
+hanautomata-ffi = { path = "../ffi", default-features = false }
 
+# windows 0.59 is the last release that links through prebuilt import libraries (windows-targets 0.53). From 0.60 the
+# crates use raw-dylib, which Rust's GNU toolchain builds with MinGW dlltool + as: not in the toolchain, and the
+# llvm-dlltool stand-in made test binaries crash (2026-10-12, Windows 365). windows-result and windows-strings are held at
+# 0.3.0, the last patch releases on windows-targets, for the same reason.
 [target.'cfg(windows)'.dependencies]
-windows-core = "0.62"
-windows = { version = "0.62.2", features = [
+windows-core = "0.59"
+windows-result = "=0.3.0"
+windows-strings = "=0.3.0"
+windows = { version = "0.59", features = [
     "Win32_Foundation",
     "Win32_Globalization",
     "Win32_Security",

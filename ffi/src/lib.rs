@@ -13,9 +13,11 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
+#[cfg(feature = "uniffi")]
 uniffi::setup_scaffolding!();
 
-#[derive(uniffi::Enum, Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum KeyKind {
     /// Printable ASCII; `raw` and `key` carry one character each.
     Text,
@@ -31,7 +33,8 @@ pub enum KeyKind {
     Other,
 }
 
-#[derive(uniffi::Enum, Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum InputMode {
     Auto,
     Korean,
@@ -39,7 +42,8 @@ pub enum InputMode {
 }
 
 /// What a switch key does (C-MOD-02).
-#[derive(uniffi::Enum, Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SwitchKind {
     SingleShot,
     Cycle,
@@ -47,7 +51,8 @@ pub enum SwitchKind {
 }
 
 /// Korean keyboard layout (C-LAY-02). Sebeolsik composes in both Hangul modes; the automatic decision needs Dubeolsik.
-#[derive(uniffi::Enum, Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum KeyboardKind {
     Dubeolsik,
     Sebeolsik390,
@@ -56,7 +61,8 @@ pub enum KeyboardKind {
 
 /// One remembered word for the settings window (C-LEX-03): its keys as typed, its Hangul reading, the remembered side and
 /// in how many contexts it was remembered besides the global entry.
-#[derive(uniffi::Record, Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LearnedItem {
     pub raw: String,
     pub keys: String,
@@ -66,7 +72,8 @@ pub struct LearnedItem {
 }
 
 /// Result of `import_bundle` (C-LEX-04): counts, the bundle's settings object as JSON, or the failure.
-#[derive(uniffi::Record, Clone, Debug, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ImportResult {
     pub words: u32,
     pub keep: u32,
@@ -77,7 +84,8 @@ pub struct ImportResult {
 
 /// Apply in order: insert `commit`, set the composition to `marked` (empty clears it), then consume the key when
 /// `handled`, else pass it on.
-#[derive(uniffi::Record, Clone, Debug, Default, PartialEq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct KeyResult {
     pub commit: String,
     pub marked: String,
@@ -149,13 +157,14 @@ impl From<Response> for KeyResult {
 }
 
 /// F2 right after a Space commit (C-COR-02): replace `old` right before the caret with `new`, then call `reconvert()`.
-#[derive(uniffi::Record, Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Reconversion {
     pub old: String,
     pub new: String,
 }
 
-#[derive(uniffi::Object)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Object))]
 pub struct Engine {
     session: Mutex<Session>,
     store: Mutex<Store>,
@@ -203,11 +212,11 @@ impl Engine {
     }
 }
 
-#[uniffi::export]
+#[cfg_attr(feature = "uniffi", uniffi::export)]
 impl Engine {
     /// `home` is the user's home directory (its keyed alias is restored, never guessed); `store_path` is the learning
     /// file. A missing file starts empty; an unreadable one is reported by `store_error()` and kept until a change.
-    #[uniffi::constructor]
+    #[cfg_attr(feature = "uniffi", uniffi::constructor)]
     pub fn new(home: String, store_path: String) -> Arc<Self> {
         let preferences = Arc::new(WordPreferences::new());
         let store = Store::open(store_path, &preferences);

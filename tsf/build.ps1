@@ -6,6 +6,7 @@
 #   .\build.ps1 -Package   zip + SHA-256 -> deliverables\Hanautomata-tsf-s0-<commit>.zip
 # Registration is a separate, deliberate step: build\tsf\x64\hanautomata-ime-setup.exe register (see README.md).
 # CARGO_TARGET_DIR is honoured: point it at an ASCII path when the user folder has non-ASCII characters (MinGW linker).
+# No dlltool is needed: the crates link through prebuilt import libraries (Cargo.toml explains the windows 0.59 pin).
 param([switch]$Test, [switch]$X86, [switch]$Package)
 $ErrorActionPreference = 'Stop'
 $here = $PSScriptRoot
@@ -16,41 +17,12 @@ function Invoke-Checked([string]$exe, [string[]]$argv) {
     if ($LASTEXITCODE -ne 0) { throw "$exe $($argv -join ' ') failed with exit code $LASTEXITCODE" }
 }
 
-# The GNU toolchain carries its own MinGW tools (gcc, ld, dlltool) in bin\self-contained, but rustc looks for dlltool
-# (raw-dylib imports of the windows crate) on PATH. Put the toolchain's own folder first.
-function Use-SelfContained([string]$toolchain, [string]$triple) {
-    $sysroot = if ($toolchain) { (& rustc "+$toolchain" --print sysroot) } else { (& rustc --print sysroot) }
-    $dir = Join-Path $sysroot.Trim() "lib\rustlib\$triple\bin\self-contained"
-    if (Test-Path (Join-Path $dir 'dlltool.exe')) { $env:Path = "$dir;$env:Path" }
-}
-
 function Test-Ascii([string]$text) { return $text -notmatch '[^\x00-\x7F]' }
-
-# That MinGW dlltool also needs an assembler (as.exe) the toolchain does not carry ("dlltool: CreateProcess"). LLVM's
-# llvm-ar acts as llvm-dlltool when named dlltool and needs none; it comes with `rustup component add llvm-tools`.
-function Get-LlvmDlltool {
-    $ar = Join-Path (& rustc --print sysroot).Trim() 'lib\rustlib\x86_64-pc-windows-gnu\bin\llvm-ar.exe'
-    if (-not (Test-Path $ar)) { Write-Warning 'rustup component add llvm-tools: the MinGW dlltool alone fails without as.exe'; return $null }
-    $dir = Join-Path $target 'tools'
-    New-Item -ItemType Directory -Force $dir | Out-Null
-    Copy-Item $ar (Join-Path $dir 'dlltool.exe') -Force
-    return $dir
-}
 
 Push-Location $here
 $target = if ($env:CARGO_TARGET_DIR) { $env:CARGO_TARGET_DIR } else { Join-Path $here 'target' }
-$path, $temp, $tmp = $env:Path, $env:TEMP, $env:TMP
 try {
-    Use-SelfContained '' 'x86_64-pc-windows-gnu'
-    # MinGW dlltool cannot create its temporary files under a non-ASCII folder (C:\Users\<Korean name>\...): use one
-    # inside the ASCII target folder for this build only.
     if (-not (Test-Ascii $target)) { Write-Warning "CARGO_TARGET_DIR $target is not ASCII; MinGW tools may fail. See README." }
-    if (-not (Test-Ascii $env:TEMP) -and (Test-Ascii $target)) {
-        $env:TEMP = $env:TMP = Join-Path $target 'tmp'
-        New-Item -ItemType Directory -Force $env:TEMP | Out-Null
-    }
-    $dlltool = Get-LlvmDlltool
-    if ($dlltool) { $env:Path = "$dlltool;$env:Path" }
     if ($Test) {
         Push-Location (Join-Path $root 'core')
         try { Invoke-Checked cargo @('test', '--release') } finally { Pop-Location }
@@ -62,13 +34,8 @@ try {
     Copy-Item (Join-Path $target 'release\hanautomata_tsf.dll'), (Join-Path $target 'release\hanautomata-ime-setup.exe') $x64 -Force
     if ($X86) {
         $argv = @('build', '--release', '--lib', '--target', 'i686-pc-windows-gnu')
-        $x64path = $env:Path
-        if (rustup toolchain list | Select-String -SimpleMatch 'stable-i686-pc-windows-gnu') {
-            $argv = @('+stable-i686-pc-windows-gnu') + $argv
-            Use-SelfContained 'stable-i686-pc-windows-gnu' 'i686-pc-windows-gnu'
-            if ($dlltool) { $env:Path = "$dlltool;$env:Path" }
-        }
-        try { Invoke-Checked cargo $argv } finally { $env:Path = $x64path }
+        if (rustup toolchain list | Select-String -SimpleMatch 'stable-i686-pc-windows-gnu') { $argv = @('+stable-i686-pc-windows-gnu') + $argv }
+        Invoke-Checked cargo $argv
         $x86dir = Join-Path $root 'build\tsf\x86'
         New-Item -ItemType Directory -Force $x86dir | Out-Null
         Copy-Item (Join-Path $target 'i686-pc-windows-gnu\release\hanautomata_tsf.dll') $x86dir -Force
@@ -92,6 +59,5 @@ try {
         Write-Output "packaged $zip ($((Get-Item $zip).Length) bytes) SHA256 $hash"
     }
 } finally {
-    $env:Path, $env:TEMP, $env:TMP = $path, $temp, $tmp
     Pop-Location
 }

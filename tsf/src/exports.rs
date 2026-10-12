@@ -3,8 +3,8 @@
 
 use std::ffi::c_void;
 use std::sync::atomic::{AtomicPtr, Ordering};
-use windows::core::{implement, IUnknown, Interface, Ref, Result, BOOL, GUID, HRESULT};
-use windows::Win32::Foundation::{CLASS_E_CLASSNOTAVAILABLE, CLASS_E_NOAGGREGATION, E_POINTER, HINSTANCE, S_FALSE, S_OK};
+use windows::core::{implement, IUnknown, Interface, Ref, Result, GUID, HRESULT};
+use windows::Win32::Foundation::{BOOL, CLASS_E_CLASSNOTAVAILABLE, CLASS_E_NOAGGREGATION, E_POINTER, HINSTANCE, S_FALSE, S_OK};
 use windows::Win32::System::Com::{IClassFactory, IClassFactory_Impl};
 use windows::Win32::System::LibraryLoader::{DisableThreadLibraryCalls, GetModuleFileNameW};
 use windows::Win32::System::SystemServices::DLL_PROCESS_ATTACH;

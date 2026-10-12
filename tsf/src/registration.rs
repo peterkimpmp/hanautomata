@@ -239,7 +239,7 @@ fn register_categories_hkcu() -> Vec<(String, std::result::Result<String, HRESUL
         .collect()
 }
 
-type InstallLayoutOrTip = unsafe extern "system" fn(PCWSTR, u32) -> windows::core::BOOL;
+type InstallLayoutOrTip = unsafe extern "system" fn(PCWSTR, u32) -> windows::Win32::Foundation::BOOL;
 const ILOT_UNINSTALL: u32 = 0x0000_0001;
 
 /// Step 4: add (or remove) the input method in this user's list, as Settings > Language does.
@@ -252,7 +252,7 @@ fn install_layout(flags: u32) -> std::result::Result<String, HRESULT> {
         if install(PCWSTR(tip.as_ptr()), flags).as_bool() {
             Ok(tip_string())
         } else {
-            Err(windows::core::Error::from_thread().code())
+            Err(windows::core::Error::from_win32().code())
         }
     }
 }

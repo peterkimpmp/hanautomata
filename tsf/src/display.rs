@@ -2,7 +2,7 @@
 //! being composed.
 
 use std::cell::Cell;
-use windows::core::{implement, Error, Result, BSTR, GUID};
+use windows::core::{implement, Error, OutRef, Result, BSTR, GUID};
 use windows::Win32::Foundation::{E_INVALIDARG, E_NOTIMPL, S_FALSE};
 use windows::Win32::UI::TextServices::*;
 
@@ -64,10 +64,10 @@ impl IEnumTfDisplayAttributeInfo_Impl for Attributes_Impl {
         .into())
     }
 
-    fn Next(&self, ulcount: u32, rginfo: *mut Option<ITfDisplayAttributeInfo>, pcfetched: *mut u32) -> Result<()> {
+    fn Next(&self, ulcount: u32, rginfo: OutRef<'_, ITfDisplayAttributeInfo>, pcfetched: *mut u32) -> Result<()> {
         let mut fetched = 0u32;
         if ulcount > 0 && self.index.get() == 0 && !rginfo.is_null() {
-            unsafe { rginfo.write(Some(InputAttribute.into())) };
+            rginfo.write(Some(InputAttribute.into()))?;
             self.index.set(1);
             fetched = 1;
         }

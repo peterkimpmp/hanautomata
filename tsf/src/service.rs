@@ -4,8 +4,8 @@
 
 use std::cell::{Cell, RefCell};
 use std::sync::{Arc, OnceLock};
-use windows::core::{implement, IUnknownImpl, Interface, Ref, Result, BOOL, GUID};
-use windows::Win32::Foundation::{E_FAIL, E_INVALIDARG, LPARAM, WPARAM};
+use windows::core::{implement, IUnknownImpl, Interface, Ref, Result, GUID};
+use windows::Win32::Foundation::{BOOL, E_FAIL, E_INVALIDARG, LPARAM, WPARAM};
 use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_INPROC_SERVER};
 use windows::Win32::UI::TextServices::*;
 
