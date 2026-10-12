@@ -3,7 +3,7 @@
 //! system indicator (가/A) through the conversion-mode compartment (W-07).
 
 use std::cell::{Cell, RefCell};
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 use windows::core::{implement, IUnknownImpl, Interface, Ref, Result, GUID};
 use windows::Win32::Foundation::{BOOL, E_FAIL, E_INVALIDARG, LPARAM, WPARAM};
 use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_INPROC_SERVER};
@@ -17,15 +17,41 @@ use crate::guids::DISPLAY_ATTRIBUTE_INPUT;
 use crate::shell::{KeyEvent, Op, Outcome, Shell};
 use crate::system;
 
-/// One engine per process: the personal dictionary is shared by every thread of the application.
-fn engine() -> Arc<Engine> {
-    static ENGINE: OnceLock<Arc<Engine>> = OnceLock::new();
-    ENGINE
-        .get_or_init(|| {
-            let store = system::data_dir().join("words.json");
-            Engine::new(system::home_dir(), store.to_string_lossy().into_owned())
-        })
-        .clone()
+/// Each text-service instance owns its composition session. A process can host multiple services: sharing an Engine
+/// makes one service's activation/reset discard another service's in-progress word (observed in Word during D2).
+/// S0 reads the same learning file but does not save; shared learning needs a separate design after S0.
+fn engine(home: String, store: std::path::PathBuf) -> Arc<Engine> {
+    Engine::new(home, store.to_string_lossy().into_owned())
+}
+
+#[cfg(test)]
+mod session_tests {
+    use super::*;
+    use crate::shell::{vk, Mods};
+
+    #[test]
+    fn another_service_activation_does_not_discard_an_in_progress_word() {
+        let nonce = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let store = std::env::temp_dir().join(format!("hanautomata-service-isolation-{nonce}.json"));
+        let mut first = Shell::new(engine(String::new(), store.clone()));
+        first.reset(false);
+        first.key_down(KeyEvent::new(b'D' as u16, Mods::NONE));
+
+        // Word can activate another service while its document already has a composition.
+        let mut second = Shell::new(engine(String::new(), store.clone()));
+        second.reset(false);
+
+        let mut committed = String::new();
+        for key in [b'K' as u16, b'S' as u16, b'S' as u16, b'U' as u16, b'D' as u16, vk::SPACE] {
+            for op in first.key_down(KeyEvent::new(key, Mods::NONE)).ops {
+                if let Op::Commit(text) = op {
+                    committed.push_str(&text);
+                }
+            }
+        }
+        assert_eq!(committed, "안녕 ", "A second service must not cancel the first service's leading d");
+        assert!(!store.exists(), "S0 composition must not persist learning");
+    }
 }
 
 #[derive(Default)]
@@ -391,7 +417,7 @@ impl ITfTextInputProcessor_Impl for TextService_Impl {
 impl ITfTextInputProcessorEx_Impl for TextService_Impl {
     fn ActivateEx(&self, ptim: Ref<ITfThreadMgr>, tid: u32, _flags: u32) -> Result<()> {
         let thread_mgr = ptim.ok()?.clone();
-        let mut shell = Shell::new(engine());
+        let mut shell = Shell::new(engine(system::home_dir(), system::data_dir().join("words.json")));
         shell.reset(system::caps_lock_on());
         let tray = system::tray_running();
         {

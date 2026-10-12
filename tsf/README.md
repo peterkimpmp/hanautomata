@@ -98,3 +98,18 @@ if ($LASTEXITCODE -ne 0) { throw '현재 사용자 준비 상태 실패: 앱 시
 - 첫 실행 설정(C-OPS-07)과 후크판 학습 이전(W-17 이전 부분)
 
 트레이 앱(후크판)이 실행 중이면 입력기는 키를 그대로 넘긴다(W-17 상호 배제). 비밀번호 칸(InputScope)에서도 넘긴다.
+
+### D2 런타임 수정본 적용
+
+2026-10-12 실제 Word 시험에서 서비스가 추가 활성화될 때 첫 글자가 사라지는 결함을 확인했다. Windows는 한 프로세스에 여러 TSF 서비스를 만들 수 있으므로 조합 엔진을 서비스별로 분리했다. 회귀 검사와 실제 앱 재시험의 범위는 [D2 검증 기록](D2-VALIDATION.md)에 남긴다. S0의 학습 파일 저장은 아직 없으며, 같은 파일을 읽는 것과 조합 상태를 공유하는 것은 구분한다.
+
+기존 설치를 갱신할 때 `install-machine.ps1`은 덮어쓰기를 거부한다. 검증한 빌드와 `sha256.json`을 준비한 뒤 아래 전용 절차를 쓴다.
+
+```powershell
+# 일반 창: 해시·현재 등록 경로만 검사. 파일이나 설정을 바꾸지 않는다.
+.\tsf\update-machine.ps1 -Revision d2-session-20261012 -CheckOnly
+# 관리자 창: 새 revision 폴더에 배치하고 등록 경로를 갱신한다.
+.\tsf\update-machine.ps1 -Revision d2-session-20261012
+```
+
+기존 DLL은 보관하며 이미 존재하는 revision에는 다시 쓰지 않는다. receipt는 `Program Files\Hanautomata-TSF-S0\revisions\<revision>\update-result.json`이다. 등록 실패 시 이전 경로로 복구를 시도한다. 관리자 적용·실패 복구의 실제 검증은 아직 남아 있다. 사용자 목록 변경, 기본 입력기 선택, 자동 앱 종료·로그오프·재부팅은 하지 않는다. 필요한 문서를 저장하고 시험 앱을 다시 연 뒤 새 DLL 적재와 실제 입력을 확인해야 한다.
