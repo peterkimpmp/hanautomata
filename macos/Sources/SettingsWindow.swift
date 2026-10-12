@@ -604,22 +604,68 @@ struct IconsSection: View {
     }
 }
 
-struct SettingsView: View {
+/// Version, source and license (C-OPS-10). Nothing here uses the network.
+struct AboutSection: View {
     @ObservedObject var model: SettingsModel
 
     var body: some View {
+        Section {
+            HStack(spacing: 14) {
+                // The bundle has no app icon (input methods show menu-bar glyphs), so draw the Windows tray icon's mark.
+                Text("한").font(.system(size: 28, weight: .bold)).foregroundStyle(.white)
+                    .frame(width: 52, height: 52).background(Circle().fill(Color(red: 29 / 255, green: 77 / 255, blue: 216 / 255)))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("한오토마타 (Hanautomata)").font(.title3.bold())
+                    Text("판 \(Updates.current) (빌드 \(About.build))").textSelection(.enabled)
+                    Text("한영 모드 없이 치는 대로 한글·영문을 고르는 입력기").foregroundStyle(.secondary)
+                }
+            }
+        }
+        Section("소스") {
+            Link("GitHub — github.com/peterkimpmp/hanautomata", destination: About.repository)
+            Link("릴리스 노트·새 판", destination: Updates.releases)
+            Link("문제 알리기 (GitHub Issues)", destination: About.issues)
+            Caption("링크는 누를 때만 브라우저로 엽니다. 이 화면은 네트워크를 쓰지 않습니다.")
+        }
+        Section("라이선스") {
+            Text(About.license)
+            Caption("단어 통계의 출처와 라이선스는 저장소의 NOTICE.md에 있습니다.")
+        }
+        Section {
+            HStack {
+                Text(About.summary).font(.caption.monospaced()).textSelection(.enabled)
+                Spacer()
+                Button("복사") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(About.summary, forType: .string)
+                    model.status = "판 정보를 복사했습니다"
+                }
+            }
+            Caption("문제를 알릴 때 이 줄을 붙여 넣으세요.")
+        }
+    }
+}
+
+enum SettingsTab: Hashable { case switchKeys, input, keys, apps, dictionary, display, about }
+
+struct SettingsView: View {
+    @ObservedObject var model: SettingsModel
+    @State var tab: SettingsTab
+
+    var body: some View {
         VStack(spacing: 0) {
-            TabView {
+            TabView(selection: $tab) {
                 Form {
                     SwitchKeysSection(model: model)
                     MoreSwitchKeysSection(model: model)
                 }
-                .formStyle(.grouped).tabItem { Text("전환 키") }
-                Form { InputSection(model: model) }.formStyle(.grouped).tabItem { Text("입력") }
-                Form { KeysSection(model: model) }.formStyle(.grouped).tabItem { Text("단축키") }
-                Form { AppsSection(model: model) }.formStyle(.grouped).tabItem { Text("앱") }
-                Form { DictionarySection(model: model) }.formStyle(.grouped).tabItem { Text("사전") }
-                Form { DisplaySection(model: model) }.formStyle(.grouped).tabItem { Text("표시·기타") }
+                .formStyle(.grouped).tabItem { Text("전환 키") }.tag(SettingsTab.switchKeys)
+                Form { InputSection(model: model) }.formStyle(.grouped).tabItem { Text("입력") }.tag(SettingsTab.input)
+                Form { KeysSection(model: model) }.formStyle(.grouped).tabItem { Text("단축키") }.tag(SettingsTab.keys)
+                Form { AppsSection(model: model) }.formStyle(.grouped).tabItem { Text("앱") }.tag(SettingsTab.apps)
+                Form { DictionarySection(model: model) }.formStyle(.grouped).tabItem { Text("사전") }.tag(SettingsTab.dictionary)
+                Form { DisplaySection(model: model) }.formStyle(.grouped).tabItem { Text("표시·기타") }.tag(SettingsTab.display)
+                Form { AboutSection(model: model) }.formStyle(.grouped).tabItem { Text("정보") }.tag(SettingsTab.about)
             }
             if !model.status.isEmpty {
                 Text(model.status).font(.callout).foregroundStyle(.secondary).padding(.bottom, 8)
@@ -683,7 +729,7 @@ struct SetupView: View {
 enum SettingsWindow {
     private static var window: NSWindow?
 
-    static func show(firstRun: Bool) {
+    static func show(firstRun: Bool, tab: SettingsTab = .switchKeys) {
         let model = SettingsModel()
         let window = self.window ?? {
             let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 660, height: 720), styleMask: [.titled, .closable],
@@ -694,7 +740,7 @@ enum SettingsWindow {
         self.window = window
         let root = firstRun
             ? AnyView(SetupView(model: model) { window.close() })
-            : AnyView(SettingsView(model: model))
+            : AnyView(SettingsView(model: model, tab: tab))
         window.contentViewController = NSHostingController(rootView: root)
         window.title = firstRun ? "한오토마타 시작하기" : "한오토마타 설정"
         window.center()

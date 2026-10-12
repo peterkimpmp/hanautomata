@@ -228,8 +228,8 @@ final class HanautomataInputController: IMKInputController {
         }
         menu.addItem(.separator())
         menu.addItem(item("설정…", #selector(showPreferences(_:))))
-        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
-        menu.addItem(item("Hanautomata \(version) · 기억한 선택 \(engine.learnedCount())개", #selector(noop(_:)), enabled: false))
+        menu.addItem(item("한오토마타 \(Updates.current) 정보…", #selector(showAbout(_:))))
+        menu.addItem(item("기억한 선택 \(engine.learnedCount())개", #selector(noop(_:)), enabled: false))
         if Settings.updateCheck, !Settings.latestVersion.isEmpty {
             menu.addItem(item("새 판 \(Settings.latestVersion) 내려받기…", #selector(openReleases(_:))))
         }
@@ -300,6 +300,9 @@ final class HanautomataInputController: IMKInputController {
     }
     override func showPreferences(_ sender: Any!) {
         SettingsWindow.show(firstRun: false)
+    }
+    @objc func showAbout(_ sender: Any?) {
+        SettingsWindow.show(firstRun: false, tab: .about)
     }
     @objc func noop(_ sender: Any?) {}
 }

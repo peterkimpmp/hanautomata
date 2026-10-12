@@ -102,7 +102,7 @@ namespace Hanautomata
         internal bool ClosingPermanently;
         internal Dashboard()
         {
-            Text = "Hanautomata v0.4.0 베타 — 한영 모드 없는 입력";
+            Text = "Hanautomata v" + About.Version + " 베타 — 한영 모드 없는 입력";
             AutoScaleMode = AutoScaleMode.None;
             ClientSize = new Size(760, 570); MinimumSize = Size;
             StartPosition = FormStartPosition.CenterScreen; MaximizeBox = false;
@@ -131,6 +131,53 @@ namespace Hanautomata
         {
             var label = new Label { Text = text, Location = new Point(x, y), Size = new Size(w, h), Font = new Font("Malgun Gothic", size * 1.33f, bold ? FontStyle.Bold : FontStyle.Regular, GraphicsUnit.Pixel), ForeColor = color, AutoEllipsis = true };
             Controls.Add(label); return label;
+        }
+    }
+    internal static class About
+    {
+        internal const string Repository = "https://github.com/peterkimpmp/hanautomata";
+        internal const string License = "MIT 라이선스 · © 2026 Taeyoung Kim (peterkimpmp)";
+        internal static string Version { get { var v = typeof(About).Assembly.GetName().Version; return v.Major + "." + v.Minor + "." + v.Build; } }
+        // One line to paste into an issue: version, Windows version and process architecture.
+        internal static string Summary { get { return "Hanautomata " + Version + " · " + Environment.OSVersion.VersionString + " · " + (Environment.Is64BitProcess ? "x64" : "x86"); } }
+    }
+    // Version, source and license (C-OPS-10). Nothing here uses the network; a link opens the browser only when clicked.
+    internal sealed class AboutWindow : Form
+    {
+        internal AboutWindow(Icon icon)
+        {
+            Text = "Hanautomata 정보"; Icon = icon;
+            AutoScaleMode = AutoScaleMode.None; ClientSize = new Size(520, 330);
+            FormBorderStyle = FormBorderStyle.FixedDialog; MaximizeBox = false; MinimizeBox = false; ShowInTaskbar = false;
+            StartPosition = FormStartPosition.CenterScreen;
+            BackColor = Color.FromArgb(246, 248, 252); Font = new Font("Malgun Gothic", 14, FontStyle.Regular, GraphicsUnit.Pixel);
+            AddLabel("Hanautomata", 28, 20, 460, 40, 22, true, Color.FromArgb(21, 32, 53));
+            AddLabel("v" + About.Version + " 베타 · 한영 모드 없는 입력", 30, 64, 460, 26, 11, false, Color.FromArgb(65, 80, 101));
+            AddLink("GitHub — " + About.Repository.Substring("https://".Length), About.Repository, 30, 108);
+            AddLink("릴리스 노트·새 판", About.Repository + "/releases", 30, 138);
+            AddLink("문제 알리기 (GitHub Issues)", About.Repository + "/issues", 30, 168);
+            AddLabel(About.License, 30, 208, 460, 24, 10, false, Color.FromArgb(55, 70, 94));
+            AddLabel("네트워크를 쓰지 않습니다. 링크는 누를 때만 브라우저로 엽니다.", 30, 234, 460, 24, 9, false, Color.DimGray);
+            var copy = new Button { Text = "판 정보 복사", Location = new Point(30, 276), Size = new Size(150, 34), FlatStyle = FlatStyle.Flat, BackColor = Color.White };
+            copy.Click += delegate { Clipboard.SetText(About.Summary); copy.Text = "복사했습니다"; };
+            Controls.Add(copy);
+            var close = new Button { Text = "닫기", Location = new Point(370, 276), Size = new Size(120, 34), FlatStyle = FlatStyle.Flat, BackColor = Color.FromArgb(29, 77, 216), ForeColor = Color.White };
+            close.Click += delegate { Close(); };
+            Controls.Add(close); AcceptButton = close; CancelButton = close;
+        }
+        void AddLabel(string text, int x, int y, int w, int h, float size, bool bold, Color color)
+        {
+            Controls.Add(new Label { Text = text, Location = new Point(x, y), Size = new Size(w, h), Font = new Font("Malgun Gothic", size * 1.33f, bold ? FontStyle.Bold : FontStyle.Regular, GraphicsUnit.Pixel), ForeColor = color, AutoEllipsis = true });
+        }
+        void AddLink(string text, string url, int x, int y)
+        {
+            var link = new LinkLabel { Text = text, Location = new Point(x, y), Size = new Size(460, 26), AutoEllipsis = true };
+            link.LinkClicked += delegate
+            {
+                try { System.Diagnostics.Process.Start(url); }
+                catch (Exception) { Clipboard.SetText(url); link.Text = "브라우저를 열지 못해 주소를 복사했습니다"; }
+            };
+            Controls.Add(link);
         }
     }
     internal sealed class TrayApplication : ApplicationContext
@@ -191,6 +238,7 @@ namespace Hanautomata
             clearLearning = new ToolStripMenuItem("개인 학습 초기화", null, delegate { Input.PreservePending(); Words.Clear(); }); menu.Items.Add(clearLearning);
             menu.Items.Add(new ToolStripSeparator());
             startup = new ToolStripMenuItem("Windows 시작 시 실행", null, delegate { SetStartup(!StartupEnabled()); }); menu.Items.Add(startup);
+            menu.Items.Add("Hanautomata 정보 (v" + About.Version + ")", null, delegate { ShowAbout(); });
             menu.Items.Add("종료", null, delegate { ExitThread(); });
             tray = new NotifyIcon { Text = "Hanautomata · 자동 한영 입력", Icon = icon, ContextMenuStrip = menu, Visible = true };
             tray.DoubleClick += delegate { ShowDashboard(); };
@@ -203,6 +251,12 @@ namespace Hanautomata
             Dashboard.Reconnect.Click += delegate { Input.Reconnect(); };
             timer = new System.Windows.Forms.Timer { Interval = 60 }; timer.Tick += Tick; timer.Start();
             if (!background) ShowDashboard();
+        }
+        AboutWindow about;
+        void ShowAbout()
+        {
+            if (about == null || about.IsDisposed) about = new AboutWindow(icon);
+            about.Show(); about.Activate();
         }
         void ShowDashboard()
         {

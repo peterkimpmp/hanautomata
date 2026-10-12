@@ -250,3 +250,23 @@ enum Updates {
         }.resume()
     }
 }
+
+/// What the about tab shows (C-OPS-10). The links open in the browser only when clicked.
+enum About {
+    static let repository = URL(string: "https://github.com/peterkimpmp/hanautomata")!
+    static let issues = URL(string: "https://github.com/peterkimpmp/hanautomata/issues")!
+    static let license = "MIT 라이선스 · © 2026 Taeyoung Kim (peterkimpmp)"
+
+    static var build: String { Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?" }
+
+    /// One line to paste into an issue: version, build, macOS version and architecture.
+    static var summary: String {
+        #if arch(arm64)
+        let arch = "arm64"
+        #else
+        let arch = "x86_64"
+        #endif
+        let os = ProcessInfo.processInfo.operatingSystemVersion
+        return "Hanautomata \(Updates.current) (\(build)) · macOS \(os.majorVersion).\(os.minorVersion).\(os.patchVersion) · \(arch)"
+    }
+}
