@@ -6,9 +6,9 @@
   - 비밀번호 칸과 트레이 앱(후크판)이 실행 중일 때는 키를 그대로 넘깁니다.
   - `hanautomata-ime-setup`(register·unregister·status·selftest)은 등록 4단계를 하나씩 보고합니다.
 - **Windows에서 빌드·검사.** Windows 365(관리자 아님)에서 Rust GNU 툴체인으로 빌드했습니다.
-  - 통과: 엔진 검사 52개, 키 로직 12개(held-out 19,616키 재생 손실 0), selftest(DLL 적재·클래스 생성·엔진 확인). 32비트 DLL: __X86__.
+  - 통과: 엔진 검사 52개, 키 로직 12개(held-out 19,616키 재생 손실 0), selftest(DLL 적재·클래스 생성·엔진 확인). 32비트 DLL과 설정 도구도 32비트 프로세스에서 selftest를 통과했습니다(COM 내보내기 4개를 이름으로 확인).
   - 아직: 등록과 실제 앱 입력(계획의 S0 시험).
-  - 빌드 함정: 사용자 폴더에 한글이 있으면 MinGW 도구가 TEMP를 못 씁니다(`build.ps1`이 빌드 동안 영문 경로로 바꿈). `windows` crate는 0.59로 고정했습니다(0.60부터 raw-dylib라 dlltool·as 필요).
+  - 빌드 함정: 사용자 폴더에 한글이 있으면 MinGW 도구가 TEMP를 못 씁니다(`build.ps1`이 빌드 동안 영문 경로로 바꿈). `windows` crate는 0.59로 고정했습니다(0.60부터 raw-dylib라 dlltool·as 필요). 이름에 setup이 든 32비트 exe는 Windows가 설치 프로그램으로 보고 관리자 권한을 요구해서, 설정 도구에 asInvoker 매니페스트를 넣었습니다.
 - **ffi.** UniFFI를 기본 기능(`uniffi`)으로 옮겼습니다. macOS 빌드는 그대로이고, Windows 입력기는 UniFFI 없이 같은 엔진 API를 씁니다.
 - **net48 문자 표 대조.** Rust 코어의 .NET 9 문자 표를 Windows 트레이 앱 런타임(.NET Framework 4.8)과 대조했습니다(`tests/dotnet/UnicodeNet48`).
   - 다른 항목은 822개입니다. 다른 코드 포인트는 ASCII 0 · 한글 0 · Latin-1 3(ª º µ) · 그 밖 589입니다.
