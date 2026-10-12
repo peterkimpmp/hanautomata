@@ -348,11 +348,14 @@ pub fn status() -> Report {
         )?;
         Ok(p.dwFlags)
     });
+    // GetProfile answers E_FAIL for a profile that is not registered (Windows 365, 2026-10-12): that is "absent" here.
     report.push(
         "2 TSF profile (GetProfile)",
-        listed
-            .map(|flags| format!("flags=0x{flags:x} (1=active, 2=enabled)"))
-            .map_err(|e| e.code()),
+        match listed {
+            Ok(flags) => Ok(format!("flags=0x{flags:x} (1=active, 2=enabled)")),
+            Err(e) if e.code() == E_FAIL => Ok("absent (GetProfile 0x80004005)".to_string()),
+            Err(e) => Err(e.code()),
+        },
     );
     report
 }

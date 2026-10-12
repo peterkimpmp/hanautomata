@@ -21,8 +21,15 @@ function Test-Ascii([string]$text) { return $text -notmatch '[^\x00-\x7F]' }
 
 Push-Location $here
 $target = if ($env:CARGO_TARGET_DIR) { $env:CARGO_TARGET_DIR } else { Join-Path $here 'target' }
+$temp, $tmp = $env:TEMP, $env:TMP
 try {
     if (-not (Test-Ascii $target)) { Write-Warning "CARGO_TARGET_DIR $target is not ASCII; MinGW tools may fail. See README." }
+    # MinGW ld cannot read gcc's response files under a non-ASCII TEMP (C:\Users\<Korean name>\...: "ld: cannot find
+    # @...\cc*: Invalid argument", i686 link, 2026-10-12): use a folder inside the ASCII target folder for this build only.
+    if (-not (Test-Ascii $env:TEMP) -and (Test-Ascii $target)) {
+        $env:TEMP = $env:TMP = Join-Path $target 'tmp'
+        New-Item -ItemType Directory -Force $env:TEMP | Out-Null
+    }
     if ($Test) {
         Push-Location (Join-Path $root 'core')
         try { Invoke-Checked cargo @('test', '--release') } finally { Pop-Location }
@@ -59,5 +66,6 @@ try {
         Write-Output "packaged $zip ($((Get-Item $zip).Length) bytes) SHA256 $hash"
     }
 } finally {
+    $env:TEMP, $env:TMP = $temp, $tmp
     Pop-Location
 }

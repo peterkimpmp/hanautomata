@@ -20,7 +20,7 @@ cd tsf
 .\build.ps1 -Test -X86 -Package   # 엔진·키 로직 검사 → x64·x86 DLL → selftest(등록 없음) → zip
 ```
 
-사용자 폴더 이름에 한글이 있으면 `CARGO_TARGET_DIR`을 영문 경로(예: `C:\dev\target`)로 둔다. `build.ps1`은 그 값을 따른다. `windows` crate는 0.59로 고정했다: 0.60부터는 raw-dylib라 Rust GNU 툴체인에 없는 MinGW dlltool·as가 필요하고, llvm-dlltool로 대신 만든 검사 실행 파일은 실행 중 죽었다(2026-10-12 Windows 365 실측 · `Cargo.toml` 주석).
+사용자 폴더 이름에 한글이 있으면 `CARGO_TARGET_DIR`을 영문 경로(예: `C:\dev\target`)로 둔다. `build.ps1`은 그 값을 따르고, `TEMP`에 한글이 있으면 빌드 동안만 그 안의 `tmp`를 쓴다(MinGW ld가 한글 경로의 응답 파일을 못 읽는다). `windows` crate는 0.59로 고정했다: 0.60부터는 raw-dylib라 Rust GNU 툴체인에 없는 MinGW dlltool·as가 필요하고, llvm-dlltool로 대신 만든 검사 실행 파일은 실행 중 죽었다(2026-10-12 Windows 365 실측 · `Cargo.toml` 주석).
 
 Mac에서 하는 검사: `cargo test --release`(키 로직 12개, held-out 재생 약 2만 키) · `cargo check --target x86_64-pc-windows-gnu` · `cargo clippy --target x86_64-pc-windows-gnu --all-targets`.
 

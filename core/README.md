@@ -82,7 +82,8 @@ C-DET-08 held-out 측정(`ime_features_tests`): 앞 문장이 한글이면 한�
 ## 동등성 계약과 의도적 차이
 
 - C# 코드가 UTF-16 코드 단위에 의존하는 곳은 Rust도 UTF-16으로 처리한다. 길이·인덱스·통계 점수가 이에 해당한다. 그래서 이모지 같은 보충 평면 문자가 섞여도 결과가 같다.
-- `char.IsLetter/IsUpper/IsLower`, `ToLowerInvariant`, `OrdinalIgnoreCase`의 문자 의미는 .NET 9(ICU)에서 뽑은 표를 쓴다. Windows 배포 런타임 net48(NLS)의 문자 표와 같은지는 **검증하지 않았다**. 차이는 비ASCII 대소문자 경계에서만 생길 수 있다.
+- `char.IsLetter/IsUpper/IsLower`, `ToLowerInvariant`, `OrdinalIgnoreCase`의 문자 의미는 .NET 9(ICU)에서 뽑은 표를 쓴다. Windows 트레이 앱의 런타임 .NET Framework 4.8(NLS)과 대조한 결과(2026-10-12 Windows 365 · `tests/dotnet/UnicodeNet48`): 표 항목 822개가 다르다. 다른 코드 포인트는 ASCII 0 · 한글 0 · Latin-1 3(`ª` `º`: net48만 소문자 · `µ`: .NET 9만 `Μ`로 접음) · 그 밖 589(아르메니아·조지아·체로키·라틴 확장 등 Unicode 판 차이)다. `OrdinalIgnoreCase`가 글자 단위 접기라는 가정은 net48에서도 맞았다(불일치 0).
+  - 판단: Rust 코어(macOS·Windows 입력기)는 .NET 9 표를 기준으로 둔다. 판별 입력은 ASCII 키와 한글이라 결과가 같고, 차이는 위 글자가 섞인 주변 문맥·예외 목록·학습 단어에서만 생긴다. 후크판(net48)과 입력기판의 결과가 갈릴 수 있는 범위는 이 글자들이다.
 - C#이 예외를 던지는 입력은 Rust가 처리를 이어 간다. 이 차이는 기준값 밖이다.
   - `keys`의 UTF-16 길이가 `raw`와 다르면 C#은 `ArgumentOutOfRangeException`을 던진다. Rust는 `raw`를 키로 쓴다.
   - 영문 모델 줄이 공백으로 시작하면 C#은 예외를 던진다. Rust는 그 줄을 건너뛴다. 배포 데이터에는 이런 줄이 없다.

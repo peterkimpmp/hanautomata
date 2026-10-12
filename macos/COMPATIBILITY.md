@@ -77,6 +77,18 @@ G2 통과 조건은 세 가지다. 셋 다 실물 키보드와 실제 앱에서 
 | 메모 | ○ | ○ | | ○ | | — | 충돌 | | 10-12 합성 키: D F2 두 번 왕복 |
 | TextEdit (기준) | ○ | ○ | ○ | ○ | ○ | — | 충돌 | △ | 10-12 합성 키: C ⌘S 저장 창 전 확정 · E Shift+F2·⌘Z · H ⌥↩ 한國 ○, ⌥F2 뒤 ⌘Z가 앞 글자까지 되돌림 |
 
+## 검색 칸 즉시 반영 스파이크 (C-CTX-07)
+
+설정 > 판별의 '검색 칸에서 조합 중인 글자도 바로 검색되게 (실험)'을 켜고, 시스템 설정 > 개인정보 보호 및 보안 > 손쉬운 사용에서 Hanautomata를 켠 뒤 확인한다. 칸 정보는 터미널에서 `~/Library/Input\ Methods/Hanautomata.app/Contents/MacOS/Hanautomata --inspect-field 5`로 본다(터미널에도 손쉬운 사용 권한이 필요하다).
+
+| 칸 | `--inspect-field` 결과(subrole · identifier · kind) | 첫 음절에 결과가 바뀜 | Esc 취소 | F2 재판별 | 자동 완성과 충돌 | 비고 |
+|---|---|---|---|---|---|---|
+| Safari 주소·검색 칸 | | | | | | |
+| Safari 페이지 안 검색 칸(type=search) | | | | | | |
+| Finder 검색 칸 | | | | | | |
+| Chrome 주소창 | | | | | | identifier가 다르면 `FieldKind.classify`에 더한다 |
+| 시스템 설정 검색 칸 | | | | | | |
+
 ## 타이핑 보조 도구와의 공존
 
 | 도구 | Unicode 주입 통과 (C-CTX-08 ①) | 붙여넣기 전 확정 (③) | Tab 수락 1회 = 1회 (C-CTX-09) | 진단 이벤트 출처 | 메모 |
