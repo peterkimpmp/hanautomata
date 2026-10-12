@@ -4,21 +4,24 @@
 //!   3. Categories: keyboard, display attributes, immersive (AppContainer), system tray, input-mode compartment
 //!   4. Turn it on for this user (InstallLayoutOrTip)
 //!
-//! Microsoft asks text services not to write TSF registrations to the registry directly. `--ctf-hkcu` (steps 2–3 written
-//! under HKCU\Software\Microsoft\CTF\TIP, the TextVN route) is only an S0 experiment for when the API refuses.
+//! Microsoft asks text services not to write TSF registrations to the registry directly. `--ctf-hkcu` (the TextVN route:
+//! steps 2–3 written under HKCU\Software\Microsoft\CTF\TIP, again after step 4, then 5 the value in the language list
+//! Settings reads) is only an S0 experiment for when the API refuses.
 //!
 //! `cli` is the `hanautomata-ime-setup` tool: register · unregister · status · selftest.
 
-use windows::core::{Interface, GUID, HRESULT, HSTRING, PCSTR, PCWSTR};
-use windows::Win32::Foundation::{ERROR_SUCCESS, E_FAIL, WIN32_ERROR};
+use windows::core::{Interface, GUID, HRESULT, HSTRING, PCSTR, PCWSTR, PWSTR};
+use windows::Win32::Foundation::{ERROR_SUCCESS, E_FAIL, LPARAM, WIN32_ERROR, WPARAM};
 use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED};
 use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
 use windows::Win32::System::Registry::{
-    RegCloseKey, RegCreateKeyExW, RegDeleteTreeW, RegOpenKeyExW, RegSetValueExW, HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE,
-    KEY_READ, KEY_WRITE, REG_DWORD, REG_OPTION_NON_VOLATILE, REG_SZ,
+    RegCloseKey, RegCreateKeyExW, RegDeleteKeyValueW, RegDeleteTreeW, RegEnumKeyExW, RegEnumValueW, RegOpenKeyExW,
+    RegQueryValueExW, RegSetValueExW, HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_READ, KEY_WRITE, REG_DWORD,
+    REG_OPTION_NON_VOLATILE, REG_SZ,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::HKL;
 use windows::Win32::UI::TextServices::*;
+use windows::Win32::UI::WindowsAndMessaging::{SendMessageTimeoutW, HWND_BROADCAST, SMTO_ABORTIFHUNG, WM_SETTINGCHANGE};
 
 use crate::guids::{braced, tip_string, CLSID_TEXT_SERVICE, DESCRIPTION, DLL_NAME, LANGID_KOREAN, PROFILE};
 
@@ -119,6 +122,64 @@ fn key_exists(root: HKEY, path: &str) -> bool {
         drop(Key(key));
     }
     opened
+}
+
+fn open_key(root: HKEY, path: &str) -> Option<Key> {
+    let mut key = HKEY::default();
+    let path = HSTRING::from(path);
+    (unsafe { RegOpenKeyExW(root, &path, None, KEY_READ, &mut key) } == ERROR_SUCCESS).then_some(Key(key))
+}
+
+fn subkeys(key: &Key) -> Vec<String> {
+    let mut names = Vec::new();
+    for index in 0u32.. {
+        let mut name = [0u16; 256];
+        let mut len = name.len() as u32;
+        if unsafe { RegEnumKeyExW(key.0, index, Some(PWSTR(name.as_mut_ptr())), &mut len, None, None, None, None) }
+            != ERROR_SUCCESS
+        {
+            break;
+        }
+        names.push(String::from_utf16_lossy(&name[..len as usize]));
+    }
+    names
+}
+
+/// Value names, with the data of the DWORD ones.
+fn values(key: &Key) -> Vec<(String, Option<u32>)> {
+    let mut found = Vec::new();
+    for index in 0u32.. {
+        let mut name = [0u16; 512];
+        let mut len = name.len() as u32;
+        let mut kind = 0u32;
+        if unsafe {
+            RegEnumValueW(
+                key.0,
+                index,
+                Some(PWSTR(name.as_mut_ptr())),
+                &mut len,
+                None,
+                Some(&mut kind),
+                None,
+                None,
+            )
+        } != ERROR_SUCCESS
+        {
+            break;
+        }
+        let name = String::from_utf16_lossy(&name[..len as usize]);
+        let dword = (kind == REG_DWORD.0).then(|| {
+            let mut data = [0u8; 4];
+            let mut size = data.len() as u32;
+            let value = HSTRING::from(name.as_str());
+            unsafe {
+                let _ = RegQueryValueExW(key.0, &value, None, None, Some(data.as_mut_ptr()), Some(&mut size));
+            }
+            u32::from_le_bytes(data)
+        });
+        found.push((name, dword));
+    }
+    found
 }
 
 fn set_string(key: &Key, name: Option<&str>, value: &str) -> std::result::Result<(), HRESULT> {
@@ -257,46 +318,137 @@ fn install_layout(flags: u32) -> std::result::Result<String, HRESULT> {
     }
 }
 
+/// The language list Settings and Win+Space read: one subkey per language (`ko`, `en-US`), one value per keyboard
+/// (`0412:{CLSID}{profile}` = its order). InstallLayoutOrTip writes a different store; TextVN adds its value here too.
+const USER_PROFILE: &str = "Control Panel\\International\\User Profile";
+
+/// Languages in this user's list that hold our keyboard value, or with `korean` the ones that hold any Korean keyboard.
+fn language_tags(korean: bool) -> Vec<String> {
+    let Some(root) = open_key(HKEY_CURRENT_USER, USER_PROFILE) else {
+        return Vec::new();
+    };
+    let tip = tip_string();
+    let prefix = format!("{LANGID_KOREAN:04X}:");
+    subkeys(&root)
+        .into_iter()
+        .filter(|tag| {
+            open_key(HKEY_CURRENT_USER, &format!("{USER_PROFILE}\\{tag}")).is_some_and(|key| {
+                values(&key).iter().any(|(name, _)| {
+                    if korean {
+                        name.to_uppercase().starts_with(&prefix)
+                    } else {
+                        name.eq_ignore_ascii_case(&tip)
+                    }
+                })
+            })
+        })
+        .collect()
+}
+
+/// Tells running programs the language settings changed, as Settings does after editing the list.
+fn broadcast_international() {
+    let area = HSTRING::from("International");
+    unsafe {
+        let _ = SendMessageTimeoutW(
+            HWND_BROADCAST,
+            WM_SETTINGCHANGE,
+            WPARAM(0),
+            LPARAM(area.as_ptr() as isize),
+            SMTO_ABORTIFHUNG,
+            5000,
+            None,
+        );
+    }
+}
+
+/// `--ctf-hkcu` step 5: our value in the Korean language the user already has (never adds a language).
+fn add_to_language_list() -> std::result::Result<String, HRESULT> {
+    let tag = language_tags(true).into_iter().next().ok_or(E_FAIL)?;
+    let path = format!("{USER_PROFILE}\\{tag}");
+    let existing = open_key(HKEY_CURRENT_USER, &path).map(|key| values(&key)).unwrap_or_default();
+    if existing.iter().any(|(name, _)| name.eq_ignore_ascii_case(&tip_string())) {
+        return Ok(format!("{tag}: already listed"));
+    }
+    let order = existing
+        .iter()
+        .filter(|(name, _)| name.contains(':'))
+        .filter_map(|(_, order)| *order)
+        .max()
+        .unwrap_or(0)
+        + 1;
+    let key = create_key(HKEY_CURRENT_USER, &path)?;
+    set_dword(&key, &tip_string(), order)?;
+    broadcast_international();
+    Ok(format!("HKCU\\{path} {}={order}", tip_string()))
+}
+
+/// Removes only our value, from every language that has it.
+fn remove_from_language_list() -> Option<std::result::Result<String, HRESULT>> {
+    let tags = language_tags(false);
+    if tags.is_empty() {
+        return None;
+    }
+    let value = HSTRING::from(tip_string());
+    for tag in &tags {
+        let path = HSTRING::from(format!("{USER_PROFILE}\\{tag}"));
+        if let Err(hr) = win32(unsafe { RegDeleteKeyValueW(HKEY_CURRENT_USER, &path, &value) }) {
+            return Some(Err(hr));
+        }
+    }
+    broadcast_international();
+    Some(Ok(tags.join(",")))
+}
+
 fn init_com() {
     unsafe {
         let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
     }
 }
 
-/// Steps 1–4. With `ctf_hkcu`, steps 2–3 fall back to the HKCU registry route when the API refuses.
+/// Steps 1–4. With `ctf_hkcu`, steps 2–3 fall back to the HKCU registry route when the API refuses, in TextVN's order:
+/// InstallLayoutOrTip rewrites this user's CTF tree (on Windows 11 26H2 it removed every HKCU key written before it,
+/// `probe-hkcu --enable` 2026-10-12), so the HKCU profile is written again after step 4, the categories only after it, and
+/// step 5 puts the keyboard in the language list.
 pub fn register(dll: &str, ctf_hkcu: bool) -> Report {
     init_com();
     let mut report = Report::default();
     report.push("1 COM server (HKCU)", register_com(dll));
-    match register_profile(dll) {
-        Ok(d) => report.push("2 TSF profile (API)", Ok(d)),
-        Err(hr) if ctf_hkcu => {
-            report.push(
-                "2 TSF profile (API) — refused, using HKCU",
-                Ok(format!("0x{:08X}", hr.0 as u32)),
-            );
+    let profile = register_profile(dll);
+    let cats = register_categories();
+    if !ctf_hkcu {
+        report.push("2 TSF profile (API)", profile);
+        for (name, r) in cats {
+            report.push(format!("3 {name}"), r);
+        }
+        report.push("4 enable for this user (InstallLayoutOrTip)", install_layout(0));
+        return report;
+    }
+    let refused = |r: &std::result::Result<String, HRESULT>| r.as_ref().err().map(|hr| format!("0x{:08X}", hr.0 as u32));
+    let profile_refused = refused(&profile);
+    match &profile_refused {
+        Some(hr) => {
+            report.push("2 TSF profile (API) — refused, using HKCU", Ok(hr.clone()));
             report.push("2 TSF profile (HKCU)", register_profile_hkcu(dll));
         }
-        Err(hr) => report.push("2 TSF profile (API)", Err(hr)),
+        None => report.push("2 TSF profile (API)", profile),
     }
-    let cats = register_categories();
-    let refused = cats.iter().any(|(_, r)| r.is_err());
-    if refused && ctf_hkcu {
-        for (name, r) in cats {
-            report.push(
-                format!("3 {name} (API) — refused, using HKCU"),
-                Ok(format!("{:?}", r.err().map(|h| h.0))),
-            );
-        }
-        for (name, r) in register_categories_hkcu() {
-            report.push(format!("3 {name}"), r);
-        }
-    } else {
-        for (name, r) in cats {
-            report.push(format!("3 {name}"), r);
+    let cats_refused = cats.iter().any(|(_, r)| r.is_err());
+    for (name, r) in cats {
+        match refused(&r) {
+            Some(hr) => report.push(format!("3 {name} (API) — refused, using HKCU after step 4"), Ok(hr)),
+            None => report.push(format!("3 {name} (API)"), r),
         }
     }
     report.push("4 enable for this user (InstallLayoutOrTip)", install_layout(0));
+    if profile_refused.is_some() {
+        report.push("2 TSF profile (HKCU) written again after step 4", register_profile_hkcu(dll));
+    }
+    if cats_refused {
+        for (name, r) in register_categories_hkcu() {
+            report.push(format!("3 {name} after step 4"), r);
+        }
+    }
+    report.push("5 language list (User Profile)", add_to_language_list());
     report
 }
 
@@ -304,6 +456,9 @@ pub fn unregister() -> Report {
     init_com();
     let mut report = Report::default();
     report.push("4 remove from this user's list", install_layout(ILOT_UNINSTALL));
+    if let Some(r) = remove_from_language_list() {
+        report.push("5 language list (User Profile)", r);
+    }
     if let Ok(manager) = categories() {
         for (name, cat) in CATEGORIES {
             let r = unsafe { manager.UnregisterCategory(&CLSID_TEXT_SERVICE, &cat, &CLSID_TEXT_SERVICE) };
@@ -356,6 +511,41 @@ pub fn status() -> Report {
             Err(e) if e.code() == E_FAIL => Ok("absent (GetProfile 0x80004005)".to_string()),
             Err(e) => Err(e.code()),
         },
+    );
+    let listed = profiles().and_then(|m| unsafe {
+        let profiles = m.EnumProfiles(LANGID_KOREAN)?;
+        let mut found = Vec::new();
+        loop {
+            let mut p = [TF_INPUTPROCESSORPROFILE::default()];
+            let mut fetched = 0u32;
+            profiles.Next(&mut p, &mut fetched)?;
+            if fetched == 0 {
+                break;
+            }
+            found.push((p[0].clsid, p[0].guidProfile, p[0].dwFlags));
+        }
+        Ok(found)
+    });
+    report.push(
+        "2 TSF profiles for Korean (EnumProfiles)",
+        listed.map_err(|e| e.code()).map(|found| {
+            let ours = found
+                .iter()
+                .find(|(clsid, profile, _)| *clsid == CLSID_TEXT_SERVICE && *profile == PROFILE);
+            match ours {
+                Some((_, _, flags)) => format!("{} listed; ours flags=0x{flags:x}", found.len()),
+                None => format!("{} listed; ours not listed", found.len()),
+            }
+        }),
+    );
+    let tags = language_tags(false);
+    report.push(
+        "5 language list (User Profile)",
+        Ok(if tags.is_empty() {
+            "absent".to_string()
+        } else {
+            format!("present in {}", tags.join(","))
+        }),
     );
     report
 }
