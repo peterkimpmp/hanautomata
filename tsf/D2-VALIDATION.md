@@ -4,7 +4,7 @@ date: 2026-10-13
 layout: a4
 purpose: technical
 disposition: local-reusable
-status: word-f2-unresolved
+status: word-autocorrect-conflict-candidate-uninstalled
 ---
 
 # D2 관리자 설치는 성공했으나 앱 입력 승인은 보류
@@ -54,10 +54,10 @@ flowchart LR
 | 대상 | 진행 상태 | 남은 증거 |
 |---|---|---|
 | 일반 메모장 | 새 DLL 적재 후 ⇧Space 전환, 합성 `dkssud → 안녕` 조합·Space 확정·F2 재변환 확인 | 실제 키보드 결과 확정·나머지 확정 키·전환 |
-| Chrome | 미실행 | TSF 입력·확정·전환 |
-| Edge | 미실행 | TSF 입력·확정·전환 |
-| Word | F2 후보 적용 후에도 합성 키·실제 키보드 재변환은 반응 없음. 보존 단축키 콜백은 도달 | 재변환 상태 추적·해결 후 재시험·나머지 전환 |
-| 시작 검색 | 미실행 | AppContainer 입력·확정 |
+| Chrome | 미실행; 허용된 Aside 실행면에서 Chrome 시험을 수행하지 못함 | TSF 입력·확정·전환 |
+| Edge | 미실행; 허용된 Aside 실행면에서 Edge 시험을 수행하지 못함 | TSF 입력·확정·전환 |
+| Word | 추적판에서 Auto 모드·F2 처리 확인. 한/영 자동 고침 OFF일 때 왕복 성공, 원래 ON 복원 후 다시 실패. F12 일시정지·복귀 확인 | 교정 플래그 후보의 실제 앱 시험·나머지 전환 |
+| 시작 검색 | SearchHost 실행이 화면 도구의 제품 정책으로 차단됨 | AppContainer 입력·확정 |
 | 관리자 메모장 | 미실행 | 관리자 앱의 TSF 입력·확정 |
 
 기본 조합·Space 확정을 관찰한 앱은 **2/6(Word·메모장)**, 모든 동작을 승인한 앱은 여전히 **0/6**이다. 합성 키의 통과를 물리 키보드 검증으로 대체하지 않는다. S0-5 전환·보정 키, S0-6 관리자/AppContainer, S0-7 트레이 공존은 아직 남아 있다.
@@ -118,19 +118,44 @@ Word에서 자동 판별 `dkssud + Space → 안녕 ` 확정 직후 F2를 눌러
 
 트레이 앱을 정상 종료하고 한오토마타로 전환한 뒤, 기존 Word 문서를 닫지 않고 `/w`로 새 프로세스(PID 24832, 문서2)를 열었다. 이 프로세스에서 `d2-f2-20261012/x64/hanautomata_tsf.dll` 적재를 확인했다. 기존 Word 프로세스는 이전 DLL을 유지하므로 시험 대상으로 쓰지 않았다.
 
-새 문서의 합성 키 `dkssud + Space`는 `안녕 `으로 조합·확정됐으나 F2 뒤에도 그대로였다. 로그에는 `preserved F2 handled=false`가 기록됐다. 사용자가 같은 문서에서 실제 키보드로 Enter → `dkssud` → Space → F2를 연속 입력한 결과도 **“안녕 그대로”**라고 확인했다. 이 응답은 이전 메모장 시험의 모호한 정정을 대신하지 않는다. 추가 합성 키 `hello + Space`는 `hello `로 확정됐지만 F2는 역시 미처리였다. 한글 고정 모드만으로 현상을 설명할 수 없으며, 재변환 단어가 없는지·전달받은 서비스가 다른지·처리 제한 상태인지는 기존 로그로 구분하지 못했다.
+새 문서의 합성 키 `dkssud + Space`는 `안녕 `으로 조합·확정됐으나 F2 뒤에도 그대로였다. 로그에는 `preserved F2 handled=false`가 기록됐다. 사용자가 같은 문서에서 실제 키보드로 Enter → `dkssud` → Space → F2를 연속 입력한 결과도 **“안녕 그대로”**라고 확인했다. 이 응답은 이전 메모장 시험의 모호한 정정을 대신하지 않는다. 추가 합성 키 `hello + Space`는 `hello `로 확정됐지만 F2는 역시 미처리였다. 당시에는 모드·수신 서비스·재변환 상태를 구분할 로그가 없었다. **`hello` 결과만으로 Auto 모드를 추론한 해석은 후속 시험에서 철회했다. Word의 자동 고침도 출력에 영향을 준다.**
 
 따라서 **F2 보존 콜백 전달은 확인됐지만 Word 재변환 문제는 미해결**이다. 일반 키 이벤트가 Word에 선점되는 것만이 원인이라는 가설은 해결 근거로 사용할 수 없다. 앱 승인 수는 0/6이다. 비교 화면 `word-preserved-f2-first.png`는 앞선 비공개 scratch에 보관했다.
 
 추측으로 입력 동작을 다시 바꾸지 않고, 로컬 `build/tsf/d2-f2-trace-20261013`에 상태 추적용 후보를 준비한다. 일반 Word에서 `%LOCALAPPDATA%/Hanautomata/tsf-diagnostics.enabled` 파일이 있을 때만 서비스 ID·스레드 ID·모드·조합 여부·재변환 가능 여부·pass-through·일시정지·보존 키 등록 여부를 기록한다. Space/F2 처리 전후, 포커스·조합 종료·모드 알림을 비교한다. 입력 문자·키 코드·문서명·선택 내용은 기록하지 않으며 비밀번호 필드의 상태 추적은 생략한다. 서비스 재활성화 시 표식 존재 여부를 읽으므로 진단 종료 때 표식을 제거하고 시험 앱을 다시 연다. 이 후보는 원인 규명을 위한 진단판이며 Word 해결본으로 부르지 않는다.
 
+## 2026-10-13 추적판 적용과 Word 자동 고침 A/B 시험
+
+사용자가 적용한 `d2-f2-trace-20261013` receipt는 **2026-10-13 05:27:21 KST**, `updated-restart-apps-required`다. 설치 파일 4개의 SHA256이 묶음 manifest와 일치했고 일반 사용자의 등록 COM·활성화·언어 목록 검사가 통과했다. 기존 문서를 보존하며 `/w`로 연 새 Word(PID 25680, 문서3)가 이 revision의 x64 DLL을 적재했음을 확인했다. 기존 Word 프로세스 두 개는 이전 DLL을 유지했다.
+
+| 구분 | 추적 및 화면 관찰 | 해석 범위 |
+|---|---|---|
+| 최초 실행 모드 | 활성화 직후 Word의 입력 모드 알림이 Auto를 English로 바꿈. ⇧Space 후 Korean, Space 확정 뒤 `fresh=false`, F2 `handled=false` | 이 시도의 미처리는 한글 고정 모드에서 재변환 단어를 만들지 않는 동작으로 설명됨. 앞선 사용자 시험의 모드까지 소급 확정하지 않음 |
+| 열린 Word에서 입력기 재선택 | Microsoft IME로 전환한 뒤 한오토마타를 다시 선택하자 Auto 유지. Space 뒤 `fresh=true`, F2도 같은 서비스 1·스레드 17932에서 `handled=true` | 새 서비스가 확정 단어를 없앴다는 가설과 구분됨. 화면의 `안녕`은 그대로였음 |
+| 한/영 자동 고침 OFF | 문장 중간의 `gksrmf + Space`가 `한글`, F2로 `gksrmf`, 다시 F2로 `한글` | 같은 설치 DLL에서 합성 키 왕복 성공 |
+| 원래 ON으로 복원 | 같은 문장 중간 입력 뒤 F2가 처리됐지만 화면은 `한글` 그대로 | Word 자동 고침과 재변환의 충돌을 A/B/A로 재현. 최종 사용자 설정은 원래 ON |
+| 문장 첫 글자 대문자화 | `Dkssud`로 바뀐 단어에서는 `reconversion skipped: text before the caret changed` | 호스트가 바꾼 텍스트를 덮어쓰지 않는 안전 검사 동작. 대소문자 차이를 무시하도록 완화하지 않음 |
+| F12 | 일시정지 시 `paused=true`, 다시 누른 후 `paused=false`; 저장 대화상자 없음 | 이 Word 합성 키 시도에서 일시정지·복귀 관찰 |
+
+[Word의 CorrectKeyboardSetting 설명](https://learn.microsoft.com/en-us/office/vba/api/word.autocorrect.correctkeyboardsetting)은 언어와 자판이 다른 단어를 해당 알파벳으로 자동 전환하는 설정을 설명한다. 실제 충돌 판단은 문서 설명만이 아니라 위 ON/OFF/ON 화면 대조에 근거한다. 시험 중 한/영 자동 고침만 일시 변경했고 원래 ON으로 복원했다. 사용자 문서를 닫거나 저장하지 않았다.
+
+비공개 scratch에는 `word-autocorrect-before.png`, `word-f2-hangul-to-latin.png`, `word-f2-latin-to-hangul.png`, `word-f2-autocorrect-restored.png`와 PID 25680의 상태 로그를 보관한다. 입력기 로그 자체는 입력 문자를 기록하지 않는다. 화면에는 시험 문서와 사용자 창 제목이 있으므로 공개 저장소에 넣지 않는다. 현재 메모장은 이전 DLL을 적재하고 있어 추적판의 메모장 검증으로 계산하지 않는다.
+
+### 교정 플래그 후보 — 빌드 통과, 설치·효과 미검증
+
+F2와 Shift+F2가 확정된 텍스트를 바꿀 때 `ITfRange::SetText`에 `TF_ST_CORRECTION`을 전달하도록 두 호출을 수정했다. [공식 SetText 문서](https://learn.microsoft.com/en-us/windows/win32/api/msctf/nf-msctf-itfrange-settext)에 따르면 이 플래그는 기존 내용의 교정임을 표시하며 원래 텍스트 속성을 보존한다. **Word 자동 고침을 억제한다고 문서가 보증하지 않으며, 이번 충돌에 효과가 있는지는 설치 후 재시험해야 한다.** Auto 초기화 문제와 문장 첫 글자 대문자화는 이 후보가 해결했다고 주장하지 않는다.
+
+수정 전 실패 근거는 위 실제 Word A/B/A 시험이다. 수정 후 `build.ps1 -Test -X86`가 종료 코드 0으로 완료됐고 공통 엔진 52·키 로직 14·등록 3·서비스 격리 1, **70개 검사**, x64·x86 release 빌드와 DLL selftest가 통과했다. `git diff --check`도 통과했다. 로컬 적용 묶음은 `build/tsf/d2-word-correction-20261013`이며 기존 DLL을 보관하는 새 revision 방식이다. 4개 파일의 복사 전후 SHA256과 manifest가 일치했고 `-CheckOnly`는 `preflight-passed`, `changes=none`이었다. **설치된 것은 여전히 추적판이고 교정 후보는 미설치다.** Word 설정 변경을 제품 해결책이나 앱 승인으로 계산하지 않는다.
+
+진단 종료 때 Microsoft 한국어 입력기 복원 API의 `S_OK`와 후속 활성 TIP를 확인했다. 기존 Hanautomata 트레이 실행 파일의 프로세스를 확인했고, 이번 진단에서 새로 만든 표식만 제거했다. 이미 활성화된 서비스는 진단 여부를 캐시할 수 있으므로 표식 제거를 기존 서비스의 즉시 기록 중단 보장으로 해석하지 않는다. 한오토마타 사용자 목록·시스템 등록·Word 시험 문서·이전 DLL은 보존했다. 문서 점검은 두 파일 모두 PASS였으며 가독성 경고는 남아 있다.
+
 ## 재개·복구 절차
 
-1. 메뉴 수정·서비스 격리·F2 보존 단축키 후보의 관리자 적용은 완료했다. 같은 revision의 적용 스크립트를 반복하지 않는다.
-2. 현재 설치 receipt는 `Program Files/Hanautomata-TSF-S0/revisions/d2-f2-20261012/update-result.json`이다. 일반 사용자 활성화는 유지돼 있다.
-3. F2 후보를 적재한 새 Word에서 실제 키보드 재변환 실패를 확인했다. 진단판 적용 후 새 Word 프로세스의 DLL 경로·서비스 ID·스레드 ID·Space 확정과 F2 사이 상태를 비교한다. 자동 종료·로그오프·재부팅은 하지 않는다.
-4. 진단판은 별도 `build/tsf/d2-f2-trace-20261013/apply-admin.ps1`을 화면의 관리자 PowerShell에서 적용한다. 기존 DLL은 보관하고 새 revision `d2-f2-trace-20261013`으로 등록한다. 진단 표식은 실제 사용할 일반 계정에서 켠다. 현재 원인이나 해결 완료를 주장하지 않는다.
-5. Word 원인을 확인해 수정·재검증하고, 메모장 실제 키보드 결과와 6종 앱의 나머지 항목을 검증한다. API 성공이나 합성 키 결과만으로 승인하지 않는다.
+1. 메뉴 수정·서비스 격리·F2 보존 단축키·추적판의 관리자 적용은 완료했다. 같은 revision의 적용 스크립트를 반복하지 않는다.
+2. 현재 설치 receipt는 `Program Files/Hanautomata-TSF-S0/revisions/d2-f2-trace-20261013/update-result.json`이다. 일반 사용자 활성화는 유지돼 있다.
+3. 교정 후보는 별도 `build/tsf/d2-word-correction-20261013/apply-admin.ps1`이며 관리자 실행이 필요하다. 현재 에이전트는 일반 사용자이므로 적용하지 않았다. 보이지 않는 UAC를 반복 요청하거나 관리자 터미널을 화면 자동화하지 않는다.
+4. 새 revision 적용 후 새 Word 프로세스의 DLL 경로와 Auto 모드를 확인하고, 원래 한/영 자동 고침 ON 상태에서 문장 중간 F2 왕복을 먼저 시험한다. 자동 종료·로그오프·재부팅은 하지 않는다.
+5. 메모장 실제 키보드 결과와 6종 앱의 나머지 항목을 검증한다. Chrome·Edge 실행면 확보, 시작 검색 도구 정책 제한, 관리자 메모장 권한은 미검증 조건이다. API 성공이나 합성 키 결과만으로 승인하지 않는다.
 6. 기존 입력기로 복원하고 트레이 앱을 다시 실행한다. S0 시험을 종료할 때 일반 창에서 `disable-user`, 관리자 창에서 `install-machine.ps1 -Action Unregister`로 제거한다.
 
 설치 스크립트는 등록 중 실패 시 등록 해제를 시도하고 파일과 진단 기록을 보관한다. **관리자 제거·실패 자동 복구의 실제 실행 검증은 아직 남아 있다.** 이번 기록은 설치 성공을 제품 동작 승인이나 공개 릴리즈 승인으로 확대하지 않는다.

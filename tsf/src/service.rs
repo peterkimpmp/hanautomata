@@ -407,7 +407,9 @@ impl TextService {
             let mut moved = 0i32;
             unsafe { range.ShiftStart(ec, -want, &mut moved, std::ptr::null())? };
             if moved == -want && edit::text(ec, &range, want as usize + 1)? == old {
-                unsafe { range.SetText(ec, 0, &edit::utf16(new))? };
+                // This replaces a committed word, not new typing. Preserve the host's text properties and identify
+                // the operation as correction (Word can otherwise auto-correct the chosen Latin text back to Hangul).
+                unsafe { range.SetText(ec, TF_ST_CORRECTION, &edit::utf16(new))? };
                 edit::caret_after(ec, context, &range)?;
                 return Ok(true);
             }
@@ -424,7 +426,7 @@ impl TextService {
         let text = edit::text(ec, &range, 4096)?;
         let flipped = self.state.borrow().shell.as_ref().and_then(|s| s.flip(&text));
         if let Some(flipped) = flipped {
-            unsafe { range.SetText(ec, 0, &edit::utf16(&flipped))? };
+            unsafe { range.SetText(ec, TF_ST_CORRECTION, &edit::utf16(&flipped))? };
         }
         Ok(())
     }
