@@ -49,7 +49,10 @@ try {
         New-Item -ItemType Directory -Force $x86dir | Out-Null
         $built = Join-Path $target 'i686-pc-windows-gnu\release'
         Copy-Item (Join-Path $built 'hanautomata_tsf.dll'), (Join-Path $built 'hanautomata-ime-setup.exe') $x86dir -Force
-        Invoke-Checked (Join-Path $x86dir 'hanautomata-ime-setup.exe') @('selftest')
+        # PowerShell 7 refuses to start this 32-bit console tool inside a pipeline ("StandardOutputEncoding is only
+        # supported when standard output is redirected", Windows 365, 2026-10-12); cmd starts it.
+        cmd /c "`"$(Join-Path $x86dir 'hanautomata-ime-setup.exe')`" selftest"
+        if ($LASTEXITCODE -ne 0) { throw "x86 selftest failed with exit code $LASTEXITCODE" }
     }
     if ($Package) {
         $commit = (git -C $root rev-parse --short HEAD).Trim()
