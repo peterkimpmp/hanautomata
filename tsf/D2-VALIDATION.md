@@ -167,3 +167,5 @@ F2와 Shift+F2가 확정된 텍스트를 바꿀 때 `ITfRange::SetText`에 `TF_S
 `Get-WinUserLanguageList`는 이 호스트에서 열거되지 않는 List를 반환한다. 바로 `Select-Object LanguageTag,InputMethodTips`로 보내면 null 필드가 나왔다. 권한 거부 회귀 검사는 전체 List를 `ConvertTo-Json -Depth 5`로 직렬화하도록 수정하고 재실행했다. 최초 언어 목록 JSON의 null 값은 복구 기준으로 사용하지 않는다.
 
 Windows PowerShell 5.1에서 Rust UTF-8 출력을 OEM 코드 페이지로 읽어 최초 설치 로그의 한글이 깨졌다. 후속 설치 스크립트는 UTF-8로 읽는다. HRESULT와 ASCII 등록 단계는 최초 기록에서도 판독 가능하다.
+
+2026-10-13 후속 확인에서 메모장의 파일 → 새 창은 별도 창만 만들고 기존 PID 22616을 재사용했다. 이 프로세스가 적재한 DLL은 여전히 `d2-session-20261012`였다. 새 창을 최신 런타임 검증으로 계산하지 않았으며, 시험을 위해 만든 0자 빈 창만 닫고 기존 탭은 보존했다. 메모장 최신 DLL 시험에는 기존 문서의 안전한 보존과 프로세스 재시작이 필요하다. 같은 확인 시점에 교정 후보 설치 receipt는 없었고 두 비트수의 HKLM 경로는 추적판을 유지했으며, 에이전트의 권한은 일반 사용자였다.
