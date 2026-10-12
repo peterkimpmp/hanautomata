@@ -151,7 +151,7 @@ namespace Hanautomata
             FormBorderStyle = FormBorderStyle.FixedDialog; MaximizeBox = false; MinimizeBox = false; ShowInTaskbar = false;
             StartPosition = FormStartPosition.CenterScreen;
             BackColor = Color.FromArgb(246, 248, 252); Font = new Font("Malgun Gothic", 14, FontStyle.Regular, GraphicsUnit.Pixel);
-            AddLabel("Hanautomata", 28, 20, 460, 40, 22, true, Color.FromArgb(21, 32, 53));
+            AddLabel("Hanautomata", 28, 20, 460, 44, 22, true, Color.FromArgb(21, 32, 53));
             AddLabel("v" + About.Version + " 베타 · 한영 모드 없는 입력", 30, 64, 460, 26, 11, false, Color.FromArgb(65, 80, 101));
             AddLink("GitHub — " + About.Repository.Substring("https://".Length), About.Repository, 30, 108);
             AddLink("릴리스 노트·새 판", About.Repository + "/releases", 30, 138);
