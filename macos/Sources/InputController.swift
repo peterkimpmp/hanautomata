@@ -13,40 +13,65 @@ final class IMKClient: TextClient {
         base = input
     }
 
-    var bundleIdentifier: String { input.bundleIdentifier() ?? "" }
+    /// The client's app, asked once per client: every key reads it (exclusion, profiles, diagnostics) and the call goes to
+    /// the app.
+    var bundleIdentifier: String {
+        let id = ObjectIdentifier(base)
+        if let cached = IMKClient.lastBundle, cached.client == id { return cached.bundle }
+        let bundle = IMKClient.timed { input.bundleIdentifier() } ?? ""
+        IMKClient.lastBundle = (id, bundle)
+        return bundle
+    }
+
+    private static var lastBundle: (client: ObjectIdentifier, bundle: String)?
+
+    /// A new client may reuse a gone client's address: forget the cached app whenever a client activates.
+    static func forgetBundle() { lastBundle = nil }
 
     private static let notFound = NSRange(location: NSNotFound, length: NSNotFound)
 
+    /// Time spent waiting for the app to answer InputMethodKit calls since the last reset: each call is a round trip to
+    /// the app, so this part of a key's latency is the app's (C-OPS-05).
+    static var waited: UInt64 = 0
+
+    private static func timed<T>(_ call: () -> T) -> T {
+        let start = DispatchTime.now().uptimeNanoseconds
+        defer { waited += DispatchTime.now().uptimeNanoseconds - start }
+        return call()
+    }
+
     func insert(_ text: String, replacing range: NSRange?) {
-        input.insertText(text, replacementRange: range ?? IMKClient.notFound)
+        IMKClient.timed { input.insertText(text, replacementRange: range ?? IMKClient.notFound) }
     }
 
     func setMarked(_ text: String, uncertain: Bool) {
         var style = NSUnderlineStyle.single
         if uncertain { style.insert(.patternDot) }
         let marked = NSAttributedString(string: text, attributes: text.isEmpty ? [:] : [.underlineStyle: style.rawValue])
-        input.setMarkedText(marked, selectionRange: NSRange(location: text.utf16.count, length: 0),
-                            replacementRange: IMKClient.notFound)
+        IMKClient.timed {
+            input.setMarkedText(marked, selectionRange: NSRange(location: text.utf16.count, length: 0),
+                                replacementRange: IMKClient.notFound)
+        }
     }
 
     func selectedRange() -> NSRange? {
-        let range = input.selectedRange()
+        let range = IMKClient.timed { input.selectedRange() }
         return range.location == NSNotFound ? nil : range
     }
 
     func text(in range: NSRange) -> String? {
-        input.attributedSubstring(from: range)?.string
+        IMKClient.timed { input.attributedSubstring(from: range)?.string }
     }
 
     func caretRect() -> CGRect? {
         var rect = NSRect.zero
-        _ = input.attributes(forCharacterIndex: 0, lineHeightRectangle: &rect)
+        _ = IMKClient.timed { input.attributes(forCharacterIndex: 0, lineHeightRectangle: &rect) }
         return rect == .zero ? nil : rect
     }
 
     func selectMode(_ id: String) -> Bool {
         guard InputSources.isEnabled(id) else { return false }
-        input.selectMode(id)
+        IMKClient.timed { input.selectMode(id) }
         return true
     }
 }
@@ -113,6 +138,7 @@ final class HanautomataInputController: IMKInputController {
     }
 
     override func activateServer(_ sender: Any!) {
+        IMKClient.forgetBundle()
         guard let client = IMKClient(sender) else { return }
         Shell.activate(client)
     }
@@ -142,19 +168,20 @@ final class HanautomataInputController: IMKInputController {
                                            time: event.timestamp, client: client)
         case .keyDown:
             let started = DispatchTime.now().uptimeNanoseconds
+            IMKClient.waited = 0
             let modifiers = Modifiers(event.modifierFlags)
             let expected = KeyboardLayout.characters(keyCode: event.keyCode, shift: modifiers.contains(.shift),
                                                      capsLock: modifiers.contains(.capsLock))
             let injected = modifiers.intersection([.command, .control, .option]).isEmpty
                 && KeyMap.isInjected(keyCode: event.keyCode, characters: event.characters, expected: expected)
             if let source = event.cgEvent?.getIntegerValueField(.eventSourceStateID) {
-                Shell.core.diagnostics.source(hardware: source == Int64(CGEventSourceStateID.hidSystemState.rawValue))
+                Shell.core.diagnostics.source(state: source)
             }
             let handled = Shell.core.keyDown(keyCode: event.keyCode, modifiers: modifiers, isRepeat: event.isARepeat,
                                              injected: injected, client: client)
             let elapsed = DispatchTime.now().uptimeNanoseconds - started
             Shell.latency.record(nanoseconds: elapsed)
-            Shell.core.diagnostics.latency(nanoseconds: elapsed)
+            Shell.core.diagnostics.latency(nanoseconds: elapsed, waiting: min(IMKClient.waited, elapsed))
             return handled
         case .leftMouseDown, .rightMouseDown, .otherMouseDown:
             Shell.core.commitPending(client)

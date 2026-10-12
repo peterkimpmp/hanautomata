@@ -64,18 +64,18 @@ final class Window: Feedback {
     var mode: String?
     var choices: (items: [String], selected: Int)?
 
-    func showMode(_ text: String, near rect: CGRect?) { mode = text }
+    func showMode(_ text: String, near rect: @escaping Caret) { mode = text }
 
-    func showChoices(_ items: [String], selected: Int, title: String, near rect: CGRect?) {
+    func showChoices(_ items: [String], selected: Int, title: String, near rect: @escaping Caret) {
         choices = (items, selected)
     }
 
-    func showCandidate(_ text: String, hint: String, near rect: CGRect?) {
+    func showCandidate(_ text: String, hint: String, near rect: @escaping Caret) {
         candidate = (text, hint)
         notice = nil
     }
 
-    func showNotice(_ text: String, near rect: CGRect?, sticky: Bool) {
+    func showNotice(_ text: String, near rect: @escaping Caret, sticky: Bool) {
         notice = text
         candidate = nil
     }
@@ -451,9 +451,17 @@ appB = a.client("com.example.b")
 check(a.engine.mode() == .auto, "app B gets its automatic mode back")
 let vm = a.client("com.vmware.fusion")
 check(a.engine.mode() == .english, "a virtual machine starts in English (built-in profile)")
+check(Settings.mode == .auto, "a profile's start mode is not saved as the user's mode")
 _ = vm
 let term = a.client("com.apple.Terminal")
-check(a.engine.mode() == .english, "a terminal's profile has no start mode: the current mode stays")
+check(a.engine.mode() == .auto, "a terminal's profile has no start mode: the user's mode returns, not the VM's English")
+a.core.setMode(.english, client: term)
+_ = a.client("com.vmware.fusion")
+let plain = a.client("com.example.other")
+check(a.engine.mode() == .english && Settings.mode == .english, "a mode the user chose is global for apps without one")
+a.core.setMode(.auto, client: plain)
+_ = a.client("com.apple.Terminal")
+check(a.engine.mode() == .english && Settings.mode == .auto, "restoring an app's remembered mode leaves the user's mode")
 check(a.engine.sensitivity() == "conservative", "a terminal judges conservatively (built-in profile)")
 let editor = a.client("com.example.editor")
 check(a.engine.sensitivity() == Settings.sensitivity, "other apps use the global sensitivity")
@@ -532,8 +540,16 @@ v.type("dkssud", vb)
 check(!v.key(53, [], vb) && vb.all == "안녕" && v.engine.mode() == .english, "Esc: commit, English, Esc passes")
 check(!v.key(codes["d"]!, [], vb), "vim commands pass in English")
 check(v.shiftSpace(vb) && v.engine.mode() == .auto && v.core.viReturn == nil, "⇧Space returns to the previous mode")
+Settings.perAppMode = true
 v.type("gksrmf", vb)
 check(!v.key(33, [.control], vb) && v.engine.mode() == .english && vb.all.hasSuffix("한글"), "⌃[ works like Esc")
+check(Settings.mode == .auto, "vi mode's English is not saved as the user's mode")
+_ = v.client("com.example.notes")
+check(v.engine.mode() == .auto, "the next app gets the user's mode, not vi mode's English")
+_ = v.client("com.apple.Terminal")
+check(v.engine.mode() == .english, "the terminal gets its vi English back")
+Settings.perAppMode = false
+Settings.appModes = [:]
 v.core.setMode(.auto, client: vb)
 Settings.escVi = "apps"
 let vOther = v.client("com.example.editor")
@@ -754,6 +770,18 @@ if !koreanKeys.isEmpty && !englishWords.isEmpty {
     check(Diagnostics.load(from: saved) == snapshot, "diagnostics round-trip through the file")
     print("  replay: \(typed.count) keys · \(buffers.count) fields · events \(events.sorted { $0.key < $1.key })")
     print("  " + Diagnostics.report(snapshot).split(separator: "\n").prefix(6).joined(separator: "\n  "))
+}
+
+// C-OPS-05: the input method's own share of a key leaves out the time the app takes to answer.
+do {
+    let d = Diagnostics()
+    d.latency(nanoseconds: 3_000_000, waiting: 2_900_000)
+    d.latency(nanoseconds: 4_000_000, waiting: 3_950_000)
+    let s = d.snapshot
+    check(s.latency.percentile(0.99) == 4_000 && s.own?.percentile(0.99) == 100 && s.own?.maxMicros == 100,
+          "latency splits into the total and the input method's own share, never reported above the maximum")
+    check(Diagnostics.report(s).contains("without waiting for the app: p50 ≤ 0.05ms · p99 ≤ 0.10ms"),
+          "--diagnose shows the own share")
 }
 
 // C-OPS-05: shell key handling (InputCore + engine, the text buffer as client) over 10,000 keys.

@@ -21,15 +21,19 @@ protocol TextClient: AnyObject {
     func selectMode(_ id: String) -> Bool
 }
 
+/// Where the caret is, asked only when the window is drawn: the client call it needs can be slow, so it stays off the key
+/// path (C-OPS-05).
+typealias Caret = () -> CGRect?
+
 /// The small window near the caret: a candidate with its evidence (C-CMP-02) or a short notice.
 protocol Feedback: AnyObject {
-    func showCandidate(_ text: String, hint: String, near rect: CGRect?)
+    func showCandidate(_ text: String, hint: String, near rect: @escaping Caret)
     /// `sticky` stays until the next key; otherwise it fades by itself.
-    func showNotice(_ text: String, near rect: CGRect?, sticky: Bool)
+    func showNotice(_ text: String, near rect: @escaping Caret, sticky: Bool)
     /// The new mode next to the caret for about a second, without taking input (C-MOD-08).
-    func showMode(_ text: String, near rect: CGRect?)
+    func showMode(_ text: String, near rect: @escaping Caret)
     /// Numbered choices (hanja, C-LEX-06): the current page of `items`, `selected` highlighted.
-    func showChoices(_ items: [String], selected: Int, title: String, near rect: CGRect?)
+    func showChoices(_ items: [String], selected: Int, title: String, near rect: @escaping Caret)
     func hide()
 }
 
@@ -150,6 +154,10 @@ final class InputCore {
     private(set) var activeApp = ""
     /// Esc switched to the English mode (vi mode); the switch key returns to this mode (C-MOD-07).
     private(set) var viReturn: InputMode?
+    /// An app activation is setting its remembered or start mode: not a choice to save as the user's mode.
+    private var restoringMode = false
+    /// vi mode's English (Esc): remembered for the app, but not the user's mode for other apps.
+    private var appOnlyMode = false
 
     /// Hanja candidates being chosen for one syllable (C-LEX-06 · M-08).
     private struct Choice {
@@ -181,10 +189,14 @@ final class InputCore {
         if app != activeApp {
             activeApp = app
             viReturn = nil
-            // C-MOD-05 · C-MOD-06: the app's last mode, else its profile's start mode.
+            // C-MOD-05 · C-MOD-06: the app's last mode, else its profile's start mode, else the mode the user last chose.
+            // Only the last is global: a remote desktop's English start must not follow the user into the next app.
             let saved = Settings.perAppMode ? Settings.appModes[app].flatMap(AppProfile.mode(named:)) : nil
-            if let mode = saved ?? profile?.inputMode, mode != engine.mode() {
+            let mode = saved ?? profile?.inputMode ?? Settings.mode
+            if mode != engine.mode() {
+                restoringMode = true
                 apply(engine.setMode(mode: mode), to: client, announce: false)
+                restoringMode = false
             }
         }
     }
@@ -260,7 +272,7 @@ final class InputCore {
             if !isRepeat {
                 setPaused(!engine.paused(), client: client)
                 feedback?.showNotice(engine.paused() ? "일시정지 — 그대로 입력합니다 (F12로 다시 켜기)" : "다시 판별합니다",
-                                     near: client.caretRect(), sticky: false)
+                                     near: { client.caretRect() }, sticky: false)
             }
             return true
         }
@@ -322,7 +334,9 @@ final class InputCore {
             _ = shiftSpace.keyDown(isSpace: false)
             if engine.mode() != .english {
                 viReturn = engine.mode()
+                appOnlyMode = true
                 apply(engine.setMode(mode: .english), to: client, path: "escape")
+                appOnlyMode = false
             }
             return false
         }
@@ -523,12 +537,14 @@ final class InputCore {
         let mode = engine.mode()
         guard mode != currentMode else { return }
         currentMode = mode
-        Settings.mode = mode
-        rememberAppMode(mode)
+        if !restoringMode {
+            if !appOnlyMode { Settings.mode = mode }
+            rememberAppMode(mode)
+        }
         let id = ModeID.id(mode)
         if let client, client.selectMode(id) { reportedMode = id }
         if announce, Settings.modeNotice, let client, !engine.isComposing() {
-            feedback?.showMode(modeBadge(mode), near: client.caretRect())
+            feedback?.showMode(modeBadge(mode), near: { client.caretRect() })
         }
     }
 
@@ -553,7 +569,7 @@ final class InputCore {
     private func failReconversion(_ client: TextClient) {
         engine.forgetReconversion()
         diagnostics.correction("reconvertFailed")
-        feedback?.showNotice("직전 단어를 찾지 못해 바꾸지 않았습니다", near: client.caretRect(), sticky: false)
+        feedback?.showNotice("직전 단어를 찾지 못해 바꾸지 않았습니다", near: { client.caretRect() }, sticky: false)
     }
 
     /// Shift+F2: flip the selection between Hangul and QWERTY keys in place, without the clipboard. The app's undo
@@ -575,7 +591,7 @@ final class InputCore {
     }
 
     private func notice(_ text: String, _ client: TextClient) {
-        feedback?.showNotice(text, near: client.caretRect(), sticky: false)
+        feedback?.showNotice(text, near: { client.caretRect() }, sticky: false)
     }
 
     /// The last three words before the caret flip between Hangul and QWERTY keys at once (C-COR-04), within the line.
@@ -638,7 +654,7 @@ final class InputCore {
         let pages = (choice.items.count + Choice.page - 1) / Choice.page
         let title = "\(choice.syllable) → 한자 · 숫자·↩ 고르기 · ←→ 이동 · Esc 취소"
             + (pages > 1 ? " · \(first / Choice.page + 1)/\(pages)쪽" : "")
-        feedback?.showChoices(page, selected: choice.index - first, title: title, near: client.caretRect())
+        feedback?.showChoices(page, selected: choice.index - first, title: title, near: { client.caretRect() })
     }
 
     /// A key while choosing hanja: true/false = consumed or not; nil = the choice ended and the key is handled normally.
@@ -714,7 +730,7 @@ final class InputCore {
             }
             show(result, client)
             if result.failed {
-                feedback?.showNotice("입력기 오류로 일시정지했습니다. 입력 메뉴에서 다시 켜세요", near: client.caretRect(),
+                feedback?.showNotice("입력기 오류로 일시정지했습니다. 입력 메뉴에서 다시 켜세요", near: { client.caretRect() },
                                      sticky: false)
             }
         }
@@ -731,9 +747,9 @@ final class InputCore {
             let keys = Settings.semicolon && engine.mode() == .auto ? "; / F2 → " : "F2 → "
             let evidence = result.label.isEmpty ? "" : result.label + " · "
             feedback.showCandidate(result.marked, hint: evidence + keys + result.alternative + "   Space 확정",
-                                   near: client.caretRect())
+                                   near: { client.caretRect() })
         } else if result.marked.isEmpty, let korean = engine.reserved() {
-            feedback.showNotice(korean ? "다음 단어 한글" : "다음 단어 영문", near: client.caretRect(), sticky: true)
+            feedback.showNotice(korean ? "다음 단어 한글" : "다음 단어 영문", near: { client.caretRect() }, sticky: true)
         } else {
             feedback.hide()
         }

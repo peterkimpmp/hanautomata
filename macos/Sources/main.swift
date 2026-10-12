@@ -14,7 +14,8 @@ if CommandLine.arguments.contains("--register") {
         FileHandle.standardError.write(Data("input source \(ModeID.base) not found; log out and back in, then run again\n".utf8))
         exit(1)
     }
-    for source in sources {
+    // Enabling a source that is already enabled brings an open System Settings window to the front (2026-10-12).
+    for source in sources where !InputSources.flag(source, kTISPropertyInputSourceIsEnabled) {
         let status = TISEnableInputSource(source)
         if status != noErr { FileHandle.standardError.write(Data("enable: status \(status)\n".utf8)) }
     }

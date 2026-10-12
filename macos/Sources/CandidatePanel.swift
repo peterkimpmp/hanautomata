@@ -3,7 +3,8 @@ import Cocoa
 /// The window under the caret (C-CMP-02): the candidate, its evidence and keys, a short notice, the new mode (C-MOD-08)
 /// or numbered hanja (C-LEX-06). It never takes focus or clicks, and moves above the line when there is no room below,
 /// so it does not cover the caret. Text size and appearance follow the settings (C-CMP-10); VoiceOver reads what it shows
-/// (C-OPS-06).
+/// (C-OPS-06). Drawing waits for the key to return and only the latest request is drawn, so the window never adds to key
+/// latency (C-OPS-05).
 final class CandidatePanel: Feedback {
     static let shared = CandidatePanel()
 
@@ -11,6 +12,8 @@ final class CandidatePanel: Feedback {
     private let title = NSTextField(labelWithString: "")
     private let detail = NSTextField(labelWithString: "")
     private var fade: DispatchWorkItem?
+    /// The latest request, drawn on the next turn of the main loop.
+    private var pending: DispatchWorkItem?
 
     private init() {
         panel = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
@@ -55,22 +58,40 @@ final class CandidatePanel: Feedback {
         }
     }
 
-    func showCandidate(_ text: String, hint: String, near rect: CGRect?) {
-        show(text, detail: hint, size: 15, near: rect, seconds: nil)
-        announce("\(text), \(hint)")
+    func showCandidate(_ text: String, hint: String, near rect: @escaping Caret) {
+        later {
+            self.show(text, detail: hint, size: 15, near: rect(), seconds: nil)
+            self.announce("\(text), \(hint)")
+        }
     }
 
-    func showNotice(_ text: String, near rect: CGRect?, sticky: Bool) {
-        show(text, detail: nil, size: 12, near: rect ?? mouse(sticky: sticky), seconds: sticky ? nil : 2)
-        announce(text)
+    func showNotice(_ text: String, near rect: @escaping Caret, sticky: Bool) {
+        later {
+            self.show(text, detail: nil, size: 12, near: rect() ?? self.mouse(sticky: sticky), seconds: sticky ? nil : 2)
+            self.announce(text)
+        }
     }
 
-    func showMode(_ text: String, near rect: CGRect?) {
-        show(text, detail: nil, size: 13, near: rect ?? mouse(sticky: false), seconds: 1)
-        announce(text)
+    func showMode(_ text: String, near rect: @escaping Caret) {
+        later {
+            self.show(text, detail: nil, size: 13, near: rect() ?? self.mouse(sticky: false), seconds: 1)
+            self.announce(text)
+        }
     }
 
-    func showChoices(_ items: [String], selected: Int, title text: String, near rect: CGRect?) {
+    /// Replaces any request not drawn yet with this one, to run after the current key returns.
+    private func later(_ draw: @escaping () -> Void) {
+        pending?.cancel()
+        let work = DispatchWorkItem(block: draw)
+        pending = work
+        DispatchQueue.main.async(execute: work)
+    }
+
+    func showChoices(_ items: [String], selected: Int, title text: String, near rect: @escaping Caret) {
+        later { self.drawChoices(items, selected: selected, title: text, near: rect()) }
+    }
+
+    private func drawChoices(_ items: [String], selected: Int, title text: String, near rect: CGRect?) {
         let line = NSMutableAttributedString()
         let font = NSFont.systemFont(ofSize: 17 * scale)
         for (i, item) in items.enumerated() {
@@ -86,9 +107,11 @@ final class CandidatePanel: Feedback {
     }
 
     func hide() {
+        pending?.cancel()
+        pending = nil
         fade?.cancel()
         fade = nil
-        panel.orderOut(nil)
+        if panel.isVisible { panel.orderOut(nil) }
     }
 
     private func show(_ text: String, attributed: NSAttributedString? = nil, detail hint: String?, size: CGFloat,

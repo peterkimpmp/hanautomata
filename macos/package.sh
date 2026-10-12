@@ -12,12 +12,12 @@ dist="$here/build/dist"
 zip="$dist/Hanautomata-$version-macos.zip"
 mkdir -p "$dist"
 rm -f "$zip"
-ditto -c -k --keepParent "$app" "$zip"
+ditto -c -k --norsrc --noextattr --keepParent "$app" "$zip"
 if [ -n "${HANAUTOMATA_SIGN_ID:-}" ] && [ -n "${HANAUTOMATA_NOTARY_PROFILE:-}" ]; then
     xcrun notarytool submit "$zip" --keychain-profile "$HANAUTOMATA_NOTARY_PROFILE" --wait
     xcrun stapler staple "$app"
     rm -f "$zip"
-    ditto -c -k --keepParent "$app" "$zip"
+    ditto -c -k --norsrc --noextattr --keepParent "$app" "$zip"
     signed="Developer ID, notarized"
 elif [ -n "${HANAUTOMATA_SIGN_ID:-}" ]; then
     signed="Developer ID, not notarized"

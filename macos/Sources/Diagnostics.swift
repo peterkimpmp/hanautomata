@@ -23,15 +23,14 @@ final class Diagnostics {
             maxMicros = max(maxMicros, micros)
         }
 
-        /// The bucket bound that `fraction` of the samples stay under (nil without samples; the maximum for the last
-        /// bucket).
+        /// The bucket bound that `fraction` of the samples stay under, never above the maximum (nil without samples).
         func percentile(_ fraction: Double) -> Int? {
             guard count > 0 else { return nil }
             let target = Int((Double(count) * fraction).rounded(.up))
             var seen = 0
             for (index, n) in buckets.enumerated() {
                 seen += n
-                if seen >= target { return index < Latency.bounds.count ? Latency.bounds[index] : maxMicros }
+                if seen >= target { return index < Latency.bounds.count ? min(Latency.bounds[index], maxMicros) : maxMicros }
             }
             return maxMicros
         }
@@ -50,12 +49,17 @@ final class Diagnostics {
         var decisions: [String: Int] = [:]
         /// candidate · switch · reconvert · reconvertFailed · flip · flipFailed.
         var corrections: [String: Int] = [:]
-        /// Key event sources: hid (the keyboard) · other (another program) — C-CTX-08 evidence.
+        /// Key events by their CGEvent source state ID as InputMethodKit hands them over ("state 1" is the HID system
+        /// state). Evidence for C-CTX-08: on 2026-10-12 physical typing arrived with a state other than 1, so this cannot
+        /// tell keyboards from programs on its own.
         var sources: [String: Int] = [:]
         /// Keys typed while a secure field had focus (learning suspended, C-CTX-01).
         var secureKeys = 0
         var failures = 0
         var latency = Latency()
+        /// The same keys without the time spent waiting for the app to answer InputMethodKit calls: the input method's own
+        /// share, which C-OPS-05 limits. Missing in files from before 2026-10-12.
+        var own: Latency?
         var apps: [String: App] = [:]
     }
 
@@ -88,7 +92,7 @@ final class Diagnostics {
         bump(&snapshot.decisions, (confidence.isEmpty ? "fixed" : confidence) + (korean ? " ko" : " en"))
     }
     func correction(_ kind: String) { bump(&snapshot.corrections, kind) }
-    func source(hardware: Bool) { bump(&snapshot.sources, hardware ? "hid" : "other") }
+    func source(state: Int64) { bump(&snapshot.sources, "state \(state)") }
 
     func secureKey() {
         snapshot.secureKeys += 1
@@ -100,8 +104,11 @@ final class Diagnostics {
         dirty = true
     }
 
-    func latency(nanoseconds: UInt64) {
+    /// `waiting`: the part of `nanoseconds` the app took to answer.
+    func latency(nanoseconds: UInt64, waiting: UInt64 = 0) {
         snapshot.latency.record(micros: Int(nanoseconds / 1_000))
+        snapshot.own = snapshot.own ?? Latency()
+        snapshot.own?.record(micros: Int((nanoseconds - min(waiting, nanoseconds)) / 1_000))
         dirty = true
     }
 
@@ -147,6 +154,8 @@ final class Diagnostics {
             "keys \(s.keys) · passed: \(table(s.passed)) · secure-field keys \(s.secureKeys) · engine failures \(s.failures)",
             "latency (\(s.latency.count) keys): p50 ≤ \(ms(s.latency.percentile(0.5))) · p99 ≤ \(ms(s.latency.percentile(0.99)))"
                 + " · max \(ms(s.latency.count > 0 ? s.latency.maxMicros : nil))",
+            "  without waiting for the app: p50 ≤ \(ms(s.own?.percentile(0.5))) · p99 ≤ \(ms(s.own?.percentile(0.99)))"
+                + " · max \(ms(s.own.flatMap { $0.count > 0 ? $0.maxMicros : nil }))",
             "commits: \(table(s.commits))",
             "decisions: \(table(s.decisions))",
             "corrections: \(table(s.corrections))",
