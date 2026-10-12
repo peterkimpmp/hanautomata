@@ -146,6 +146,13 @@ enum Settings {
         set { defaults.set(newValue, forKey: "caretContext") }
     }
 
+    /// In search fields the composition goes in as text, so the app searches as you type (C-CTX-07, experimental). Telling
+    /// a search field needs accessibility access for Hanautomata, which the user gives in System Settings.
+    static var searchInline: Bool {
+        get { bool("searchInline", false) }
+        set { defaults.set(newValue, forKey: "searchInline") }
+    }
+
     /// Restore each app's last mode when it gets focus again (C-MOD-05).
     static var perAppMode: Bool {
         get { bool("perAppMode", true) }
@@ -283,7 +290,7 @@ enum Settings {
         "mode", "sensitivity", "switchKind", "shiftSpace", "capsLock", "rightCommand", "pauseKey", "semicolon", "learning",
         "learningPaused", "candidateAlways", "excludedApps", "keyboard", "deleteSyllable", "msClusters", "perAppMode",
         "appModes", "builtInProfiles", "escVi", "viApps", "modeNotice", "candidateSize", "candidateTheme", "extraTaps",
-        "bindings", "optionKey", "wonSign", "lockSource", "hanjaExtended", "updateCheck", "caretContext",
+        "bindings", "optionKey", "wonSign", "lockSource", "hanjaExtended", "updateCheck", "caretContext", "searchInline",
     ]
 
     /// The portable settings as a JSON object (profiles as an object, not encoded data).

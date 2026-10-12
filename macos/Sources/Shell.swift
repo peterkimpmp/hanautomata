@@ -40,6 +40,7 @@ enum Shell {
         core.setCapsLock = CapsLock.set
         core.log = { message in log.error("\(message, privacy: .public)") }
         core.secureInput = { IsSecureEventInputEnabled() }
+        core.checkField = { [unowned core] in FieldInspector.check { core.fieldChanged($0) } }
         return core
     }()
 

@@ -115,6 +115,20 @@ enum ModeID {
     }
 }
 
+/// What the focused text field is, when the accessibility tree tells (C-CTX-07). InputMethodKit itself says nothing about
+/// the field; URL, e-mail and number fields are not told apart on macOS (C-DET-07; Windows reads the input scope).
+enum FieldKind: Equatable {
+    case standard, search
+
+    /// Search fields: the AXSearchField subrole (NSSearchField, HTML type=search) and Safari's address-and-search field
+    /// (its identifier as Safari reports it [U]: confirm with `Hanautomata --inspect-field`).
+    static func classify(role: String, subrole: String, identifier: String) -> FieldKind {
+        if subrole == "AXSearchField" { return .search }
+        if identifier == "WEB_BROWSER_ADDRESS_AND_SEARCH_FIELD" { return .search }
+        return .standard
+    }
+}
+
 enum KeyCode {
     static let capsLock: UInt16 = 57
     static let rightCommand: UInt16 = 54
@@ -131,6 +145,9 @@ final class InputCore {
     var log: (String) -> Void = { _ in }
     /// A secure (password) field has focus somewhere; nothing typed may be learned (C-CTX-01).
     var secureInput: () -> Bool = { false }
+    /// Asks, off the key path, what the focused field is; the answer comes back through `fieldChanged` (C-CTX-07).
+    var checkField: () -> Void = {}
+    private(set) var field = FieldKind.standard
     let diagnostics = Diagnostics()
     /// The text committed last outside a live key (focus left, the client went away, the engine failed): the input
     /// method keeps it in memory only, so it can be inserted again (C-CMP-11).
@@ -169,6 +186,10 @@ final class InputCore {
     }
     private var choice: Choice?
 
+    /// C-CTX-07: in a search field the composition goes in as plain text, because apps search only what is committed.
+    /// Where that text is and what it says, so the next change replaces exactly it.
+    private var inline: (range: NSRange, text: String)?
+
     init(engine: Engine) {
         self.engine = engine
         currentMode = engine.mode()
@@ -181,6 +202,9 @@ final class InputCore {
         resetTaps()
         caps.sync(locked: capsLocked)
         hasMarked = false
+        inline = nil
+        field = .standard
+        checkField()
         choice = nil
         let app = client.bundleIdentifier
         let profile = Settings.profile(for: app)
@@ -207,6 +231,11 @@ final class InputCore {
         feedback?.hide()
         shiftSpace.reset()
         resetTaps()
+    }
+
+    /// The answer to `checkField`. A word already started keeps the way it is shown until it ends.
+    func fieldChanged(_ kind: FieldKind) {
+        field = kind
     }
 
     private func resetTaps() {
@@ -717,6 +746,7 @@ final class InputCore {
             shown = (result.confidence, engine.mode() == .korean || result.korean)
         }
         if let client {
+            if !applyInline(result, client) {
             if !result.commit.isEmpty {
                 client.insert(result.commit, replacing: nil)
                 hasMarked = false
@@ -728,6 +758,7 @@ final class InputCore {
                 client.setMarked("", uncertain: false)
                 hasMarked = false
             }
+            }
             show(result, client)
             if result.failed {
                 feedback?.showNotice("입력기 오류로 일시정지했습니다. 입력 메뉴에서 다시 켜세요", near: { client.caretRect() },
@@ -735,7 +766,47 @@ final class InputCore {
             }
         }
         if result.learned { save() }
+        if !result.commit.isEmpty { checkField() }
         syncMode(client, announce: announce)
+    }
+
+    /// C-CTX-07: shows the composition as text in a search field and replaces it as it changes; the commit replaces it
+    /// for good. Returns false when the word goes the usual way: not a search field, the setting off, a word that started
+    /// as a composition, or a client that cannot say where the caret is. If the app changed the text in the meantime
+    /// (autocomplete, a click), that text stays and the rest of the word is shown as a composition: no key is lost.
+    private func applyInline(_ result: KeyResult, _ client: TextClient) -> Bool {
+        if inline == nil {
+            guard field == .search, Settings.searchInline, !hasMarked, !result.marked.isEmpty,
+                  let caret = client.selectedRange() else { return false }
+            if !result.commit.isEmpty { client.insert(result.commit, replacing: nil) }
+            let start = client.selectedRange()?.location ?? caret.location + (result.commit as NSString).length
+            client.insert(result.marked, replacing: nil)
+            inline = (NSRange(location: start, length: (result.marked as NSString).length), result.marked)
+            return true
+        }
+        guard let current = inline else { return false }
+        // A client that cannot read its text back is trusted; one that reads something else changed it.
+        if let now = client.text(in: current.range), now != current.text {
+            log("search field: the app changed the text being composed; keeping it")
+            inline = nil
+            return false
+        }
+        if !result.commit.isEmpty {
+            client.insert(result.commit, replacing: current.range)
+            inline = nil
+            guard !result.marked.isEmpty else { return true }
+            var next = result
+            next.commit = ""
+            if !applyInline(next, client) {
+                client.setMarked(result.marked, uncertain: result.uncertain)
+                hasMarked = true
+            }
+            return true
+        }
+        client.insert(result.marked, replacing: current.range)
+        inline = result.marked.isEmpty ? nil
+            : (NSRange(location: current.range.location, length: (result.marked as NSString).length), result.marked)
+        return true
     }
 
     /// Candidate window (D12: only when the decision is uncertain, unless the user wants it always) or the reservation

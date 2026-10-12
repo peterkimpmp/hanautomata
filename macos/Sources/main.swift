@@ -58,6 +58,18 @@ if CommandLine.arguments.contains("--diagnose") {
     exit(0)
 }
 
+// `--inspect-field [seconds]` waits (3 s by default), then prints what the accessibility tree says about the focused field
+// and the kind the input method would see (the C-CTX-07 spike). Needs accessibility access for the terminal running it.
+if let index = CommandLine.arguments.firstIndex(of: "--inspect-field") {
+    let next = CommandLine.arguments.dropFirst(index + 1).first.flatMap(Double.init)
+    print("accessibility access: " + (FieldInspector.trusted ? "yes" : "no — allow the terminal in System Settings > Privacy & Security > Accessibility"))
+    print("focus a text field within \(Int(next ?? 3)) s …")
+    Thread.sleep(forTimeInterval: next ?? 3)
+    for (name, value) in FieldInspector.focusedAttributes().sorted(by: { $0.key < $1.key }) { print("\(name): \(value)") }
+    print("kind: \(FieldInspector.focusedKind())")
+    exit(0)
+}
+
 if CommandLine.arguments.contains("--unregister") {
     for source in InputSources.all() { TISDisableInputSource(source) }
     print("disabled \(ModeID.base) and its modes")

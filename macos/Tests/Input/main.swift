@@ -642,6 +642,79 @@ check(Settings.imported("not json") == 0, "a broken settings object changes noth
 Settings.sensitivity = "balanced"
 Settings.profiles = [:]
 
+// Search fields (C-CTX-07, experimental): the composition goes in as text the app's search sees, replaced as it changes.
+check(FieldKind.classify(role: "AXTextField", subrole: "AXSearchField", identifier: "") == .search, "AXSearchField is a search field")
+check(FieldKind.classify(role: "AXTextField", subrole: "", identifier: "WEB_BROWSER_ADDRESS_AND_SEARCH_FIELD") == .search,
+      "Safari's address-and-search field is one")
+check(FieldKind.classify(role: "AXTextField", subrole: "", identifier: "") == .standard, "a plain text field is not")
+do {
+    Settings.searchInline = true
+    let plain = Harness("search-plain"), search = Harness("search-inline")
+    var asked = 0
+    search.core.checkField = { asked += 1 }
+    let p = plain.client("com.apple.Safari"), q = search.client("com.apple.Safari")
+    check(asked == 1, "activation asks what the field is")
+    search.core.fieldChanged(.search)
+    // Whatever the composition would show, the search field holds as text: after every key, through commits, Backspace,
+    // F2 swaps, punctuation and digits.
+    var keys: [UInt16] = []
+    for word in ["dkssudgktpdy", "hello", "rkfk,", "123", "gksrmf", "test."] {
+        keys += word.map { codes[$0]! } + [Code.space]
+    }
+    keys.insert(contentsOf: [Code.f2], at: 13)
+    keys += [codes["r"]!, codes["k"]!, Code.backspace, Code.backspace, codes["d"]!, codes["k"]!, Code.backspace]
+    var same = true
+    for key in keys {
+        plain.key(key, [], p)
+        search.key(key, [], q)
+        if q.all != p.all + p.marked || !q.marked.isEmpty { same = false }
+    }
+    check(same, "a search field shows as text exactly what the composition shows, key by key")
+    check(q.all == p.all + p.marked && q.all.hasPrefix("dkssudgktpdy hello "), "same text at the end, F2 swap included (\(q.all))")
+    check(asked > 3, "each commit asks again (field changes are seen between words)")
+    plain.core.deactivate(p)
+    search.core.deactivate(q)
+    check(q.all == p.all && q.marked.isEmpty, "and the same after focus leaves")
+
+    // The app changes the text under the composition (autocomplete, a click): it stays, the rest is a composition.
+    var r = search.client("com.apple.Safari")
+    search.core.fieldChanged(.search)
+    search.type("dk", r)
+    r.text.replaceCharacters(in: NSRange(location: 0, length: 1), with: "X")
+    search.type("s", r)
+    check(r.all == "X" && r.marked == "안", "a changed field keeps its text and shows the rest as a composition")
+    search.key(Code.space, [], r)
+    check(r.all == "X안 " && r.marked == "", "nothing typed is lost")
+
+    // A word that started as a composition stays one; the setting off or an unreadable client keeps compositions.
+    r = search.client("com.apple.Safari")
+    search.type("dk", r)
+    search.core.fieldChanged(.search)
+    search.type("s", r)
+    check(r.all == "" && r.marked == "안", "a word already shown as a composition keeps that form")
+    search.key(Code.space, [], r)
+    search.core.fieldChanged(.search)
+    r.readable = false
+    search.type("dk", r)
+    check(r.marked == "아", "a client that cannot say where the caret is gets a composition")
+    search.key(Code.space, [], r)
+    r.readable = true
+    Settings.searchInline = false
+    search.type("dk", r)
+    check(r.marked == "아", "the setting off: compositions as before")
+    search.key(Code.space, [], r)
+    Settings.searchInline = true
+
+    // Focus leaving commits the text in place, once.
+    r = search.client("com.apple.Safari")
+    search.core.fieldChanged(.search)
+    search.type("dkssud", r)
+    search.core.deactivate(r)
+    check(r.all == "안녕" && r.marked == "", "focus leaving commits in place")
+    check(search.client("com.apple.Safari") != nil && search.core.field == .standard, "a new client starts as a plain field")
+    Settings.searchInline = false
+}
+
 // C-CTX-06 replay: 500 sentences of held-out words typed with switch keys, F2 swaps, clicks, focus moves and key repeats.
 // The app's text, read back as keys (Hangul runs decomposed), must be exactly what was typed: nothing lost, duplicated or
 // reordered.

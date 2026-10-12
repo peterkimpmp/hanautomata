@@ -60,6 +60,7 @@ final class SettingsModel: ObservableObject {
         }
     }
     @Published var caretContext = Settings.caretContext { didSet { Settings.caretContext = caretContext } }
+    @Published var searchInline = Settings.searchInline { didSet { Settings.searchInline = searchInline } }
     @Published var optionKey = Settings.optionKey { didSet { Settings.optionKey = optionKey } }
     @Published var wonSign = Settings.wonSign { didSet { Settings.wonSign = wonSign } }
     @Published var learning = Shell.engine.learningEnabled() {
@@ -308,6 +309,18 @@ struct InputSection: View {
             if model.caretContext {
                 Caption("커서를 옮긴 뒤 첫 단어가 애매하면 앞 문장 언어를 따릅니다. 검사에서 한글 단어 놓침은 1,000개 중 15→6으로 줄었고, "
                         + "한글 문장 속 영어 단어 1,000개 중 4개가 한글로 바뀌었습니다.")
+            }
+            Toggle("검색 칸에서 조합 중인 글자도 바로 검색되게 (실험)", isOn: $model.searchInline)
+            if model.searchInline {
+                Caption("검색 칸에서는 밑줄 조합 대신 글자를 바로 넣고 바뀔 때마다 고칩니다. 검색 칸을 알아보려면 시스템 설정 > 개인정보 보호 및 보안 > "
+                        + "손쉬운 사용에서 Hanautomata를 켜야 합니다. 지금: " + (FieldInspector.trusted ? "허용됨" : "허용 안 됨"))
+                if !FieldInspector.trusted {
+                    Button("손쉬운 사용 설정 열기") {
+                        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }
+                }
             }
             Toggle("Backspace로 글자(음절) 단위 지우기 (끄면 낱자 단위)", isOn: $model.deleteSyllable)
             Toggle("자음만 이어 치면 겹자음으로 (ㄱ+ㅅ → ㄳ, Windows 방식)", isOn: $model.msClusters)
