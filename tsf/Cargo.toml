@@ -1,0 +1,43 @@
+[package]
+name = "hanautomata-tsf"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.89"
+license = "MIT"
+description = "Hanautomata Windows input method (S0 build): the shared Rust engine behind a TSF text service, and its setup tool."
+publish = false
+
+[lib]
+name = "hanautomata_tsf"
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "hanautomata-ime-setup"
+path = "src/bin/setup.rs"
+
+[dependencies]
+hanautomata-ffi = { path = "../ffi" }
+
+[target.'cfg(windows)'.dependencies]
+windows-core = "0.62"
+windows = { version = "0.62.2", features = [
+    "Win32_Foundation",
+    "Win32_Globalization",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_System_Com",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Ole",
+    "Win32_System_Registry",
+    "Win32_System_SystemInformation",
+    "Win32_System_SystemServices",
+    "Win32_System_Threading",
+    "Win32_System_Variant",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_TextServices",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[profile.release]
+lto = true
+codegen-units = 1
