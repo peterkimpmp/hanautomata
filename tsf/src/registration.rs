@@ -8,10 +8,10 @@
 //! steps 2–3 written under HKCU\Software\Microsoft\CTF\TIP, again after step 4, then 5 the value in the language list
 //! Settings reads) is only an S0 experiment for when the API refuses.
 //!
-//! `cli` is the `hanautomata-ime-setup` tool: register · unregister · status · selftest.
+//! `cli` is the `hanautomata-ime-setup` tool: register · unregister · status · selftest · active · activate.
 
 use windows::core::{Interface, GUID, HRESULT, HSTRING, PCSTR, PCWSTR, PWSTR};
-use windows::Win32::Foundation::{ERROR_SUCCESS, E_FAIL, LPARAM, WIN32_ERROR, WPARAM};
+use windows::Win32::Foundation::{ERROR_SUCCESS, E_FAIL, E_INVALIDARG, LPARAM, WIN32_ERROR, WPARAM};
 use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED};
 use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
 use windows::Win32::System::Registry::{
@@ -554,6 +554,70 @@ pub fn status() -> Report {
     report
 }
 
+/// The keyboard input method active in this session, as a token `activate --to` takes back:
+/// `type:langid:{clsid}:{profile}:hkl` (type 1 = text service, 2 = keyboard layout).
+pub fn active() -> Report {
+    init_com();
+    let mut report = Report::default();
+    let current = profiles().and_then(|m| unsafe {
+        let mut p = TF_INPUTPROCESSORPROFILE::default();
+        m.GetActiveProfile(&GUID_TFCAT_TIP_KEYBOARD, &mut p)?;
+        Ok(format!(
+            "{}:{:04X}:{}:{}:{:X}",
+            p.dwProfileType,
+            p.langid,
+            braced(&p.clsid),
+            braced(&p.guidProfile),
+            p.hkl.0 as usize
+        ))
+    });
+    report.push("active keyboard input method", current.map_err(|e| e.code()));
+    report
+}
+
+fn parse_token(token: &str) -> std::result::Result<(u32, u16, GUID, GUID, usize), HRESULT> {
+    let parts: Vec<&str> = token.split(':').collect();
+    let guid = |s: &str| GUID::try_from(s.trim_matches(|c| c == '{' || c == '}')).map_err(|_| E_INVALIDARG);
+    match parts.as_slice() {
+        [kind, lang, clsid, profile, hkl] => Ok((
+            kind.parse().map_err(|_| E_INVALIDARG)?,
+            u16::from_str_radix(lang, 16).map_err(|_| E_INVALIDARG)?,
+            guid(clsid)?,
+            guid(profile)?,
+            usize::from_str_radix(hkl, 16).map_err(|_| E_INVALIDARG)?,
+        )),
+        _ => Err(E_INVALIDARG),
+    }
+}
+
+/// S0-4 without the screen: switches this session's keyboard input method to ours, or with `to` back to what `active`
+/// printed before. The same switch Win+Space makes.
+pub fn activate(to: Option<&str>) -> Report {
+    init_com();
+    let mut report = Report::default();
+    let target = match to {
+        None => Ok((TF_PROFILETYPE_INPUTPROCESSOR, LANGID_KOREAN, CLSID_TEXT_SERVICE, PROFILE, 0)),
+        Some(token) => parse_token(token),
+    };
+    let switched = target.and_then(|(kind, lang, clsid, profile, hkl)| unsafe {
+        profiles()
+            .and_then(|m| {
+                m.ActivateProfile(
+                    kind,
+                    lang,
+                    &clsid,
+                    &profile,
+                    HKL(hkl as *mut core::ffi::c_void),
+                    TF_IPPMF_FORSESSION | TF_IPPMF_DONTCARECURRENTINPUTLANGUAGE,
+                )
+            })
+            .map(|_| format!("{lang:04X} {} {}", braced(&clsid), braced(&profile)))
+            .map_err(|e| e.code())
+    });
+    report.push("activate for this session", switched);
+    report
+}
+
 /// S0 experiment: writes the HKCU CTF keys (and the HKCU COM server), optionally enables the profile for the user, and
 /// watches for 10 s whether the CTF keys stay; then removes everything it wrote. On Windows 365 (2026-10-12) the keys
 /// written by `register --ctf-hkcu` were gone by the next `status`: this tells whether the system removes them by itself
@@ -692,9 +756,11 @@ pub fn cli(args: Vec<String>) -> i32 {
         "status" => status(),
         "selftest" => selftest(&dll),
         "probe-hkcu" => probe_hkcu(&dll, args.iter().any(|a| a == "--enable")),
+        "active" => active(),
+        "activate" => activate(args.windows(2).find(|w| w[0] == "--to").map(|w| w[1].as_str())),
         _ => {
             eprintln!(
-                "usage: hanautomata-ime-setup <register [--ctf-hkcu] | unregister | status | selftest | probe-hkcu [--enable]> [--dll PATH]"
+                "usage: hanautomata-ime-setup <register [--ctf-hkcu] | unregister | status | selftest | probe-hkcu [--enable] | active | activate [--to TOKEN]> [--dll PATH]"
             );
             return 2;
         }

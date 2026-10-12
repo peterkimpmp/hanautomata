@@ -35,6 +35,8 @@ Mac에서 하는 검사: `cargo test --release`(키 로직 12개, held-out 재�
 #   TextVN 순서: 4 뒤에 HKCU 프로필을 다시 쓰고 카테고리를 쓴 뒤, 5 언어 목록(User Profile\ko)에 값을 더한다. unregister가 5도 지운다
 .\build\tsf\x64\hanautomata-ime-setup.exe unregister
 .\build\tsf\x64\hanautomata-ime-setup.exe probe-hkcu [--enable]   # HKCU CTF 키가 남는지 10초 지켜본 뒤 스스로 지움(S0 실험)
+.\build\tsf\x64\hanautomata-ime-setup.exe active                  # 지금 세션의 입력기를 토큰으로 출력(되돌릴 때 씀)
+.\build\tsf\x64\hanautomata-ime-setup.exe activate [--to TOKEN]   # 세션 입력기를 우리 것으로(또는 토큰으로 되돌림) — Win+Space와 같은 전환
 ```
 
 - 각 단계의 ok/FAIL과 HRESULT를 기록한다. 이것이 결정 D2(사용자별 등록 / 관리자 1회 설치)의 근거다.
