@@ -24,11 +24,20 @@ function Use-SelfContained([string]$toolchain, [string]$triple) {
     if (Test-Path (Join-Path $dir 'dlltool.exe')) { $env:Path = "$dir;$env:Path" }
 }
 
+function Test-Ascii([string]$text) { return $text -notmatch '[^\x00-\x7F]' }
+
 Push-Location $here
 $target = if ($env:CARGO_TARGET_DIR) { $env:CARGO_TARGET_DIR } else { Join-Path $here 'target' }
-$path = $env:Path
+$path, $temp, $tmp = $env:Path, $env:TEMP, $env:TMP
 try {
     Use-SelfContained '' 'x86_64-pc-windows-gnu'
+    # MinGW dlltool cannot create its temporary files under a non-ASCII folder (C:\Users\<Korean name>\...): use one
+    # inside the ASCII target folder for this build only.
+    if (-not (Test-Ascii $target)) { Write-Warning "CARGO_TARGET_DIR $target is not ASCII; MinGW tools may fail. See README." }
+    if (-not (Test-Ascii $env:TEMP) -and (Test-Ascii $target)) {
+        $env:TEMP = $env:TMP = Join-Path $target 'tmp'
+        New-Item -ItemType Directory -Force $env:TEMP | Out-Null
+    }
     if ($Test) {
         Push-Location (Join-Path $root 'core')
         try { Invoke-Checked cargo @('test', '--release') } finally { Pop-Location }
@@ -69,6 +78,6 @@ try {
         Write-Output "packaged $zip ($((Get-Item $zip).Length) bytes) SHA256 $hash"
     }
 } finally {
-    $env:Path = $path
+    $env:Path, $env:TEMP, $env:TMP = $path, $temp, $tmp
     Pop-Location
 }

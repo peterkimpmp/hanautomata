@@ -7,6 +7,7 @@ Windows의 `build.ps1`(Framework csc) 없이도 같은 소스를 검증한다. 2
 | `Hanautomata.App.Net48/` | net48 · C# 5 | `src/*.cs` 전체를 .NET Framework 4.8 참조 어셈블리(NuGet `Microsoft.NETFramework.ReferenceAssemblies`)로 컴파일. `build.ps1`과 같은 리소스 이름 | 실행 불가 — 후크·UI Automation·SendInput 동작은 Windows에서만 |
 | `Hanautomata.Tests/` | net9.0 실행 + net48 컴파일 | `Core.cs`·`PreferenceStore.cs`·`tests/CoreTests.cs`를 `HANAUTOMATA_TESTS`로 빌드해 실행. 모델·fixture 리소스 포함 | Windows 파일 공유 잠금 검사 3건은 비Windows에서 건너뜀 |
 | `Hanautomata.Golden/` | net9.0 실행 | `Core.cs` 결과를 기준값(gzip JSON Lines)으로 추출해 Rust 코어 동등성 게이트 G1에 공급. `--latency`로 엔진 지연 측정 · 사용법은 [core/README](../../core/README.md) | net48(Windows 런타임) 문자 표와의 차이 |
+| `UnicodeNet48/` | Windows 기본 csc(net48) · C# 5 | Rust 코어가 쓰는 .NET 문자 표(`core/src/unicode_tables.rs`, .NET 9·ICU에서 생성)를 .NET Framework 4.8(NLS) 실제 값과 대조. 표마다 한쪽에만 있는 코드 포인트를 출력, 같으면 `IDENTICAL`·종료 코드 0 | 보조 평면 문자(두 런타임 모두 대리 쌍으로 다룬다) |
 
 ```sh
 # .NET SDK 9 (사용자 영역, 관리자 권한 없음)
@@ -32,6 +33,13 @@ Windows에서도 같은 Hanautomata 루트에서 실행한다.
 .\build.ps1 -Test -Integration -OutputDirectory .\build\windows-candidate
 .\verify-corpus.ps1 -OutputPrefix .\build\windows-candidate\corpus
 .\install.ps1 -SourceDirectory .\build\windows-candidate
+```
+
+net48 문자 표 대조(계획 21 S0 · SDK 없이 Windows 기본 컴파일러로):
+
+```powershell
+& "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /nologo /out:build\unicode-net48.exe tests\dotnet\UnicodeNet48\UnicodeNet48.cs
+.\build\unicode-net48.exe core\src\unicode_tables.rs build\unicode-net48-tables.rs
 ```
 
 각 검사 실패 시 다음 단계로 진행하지 않는다. 설치 전 EXE를 백업하고, 통과한 EXE와 설치본의 SHA-256을 대조한다.

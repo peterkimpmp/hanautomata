@@ -20,7 +20,7 @@ cd tsf
 .\build.ps1 -Test -X86 -Package   # 엔진·키 로직 검사 → x64·x86 DLL → selftest(등록 없음) → zip
 ```
 
-사용자 폴더 이름에 한글이 있으면 MinGW 링커가 경로를 못 읽을 수 있다. 그때는 `RUSTUP_HOME`·`CARGO_HOME`·`CARGO_TARGET_DIR`을 영문 경로(예: `C:\dev\…`)로 두고 빌드한다. `build.ps1`은 `CARGO_TARGET_DIR`을 따르고, 툴체인에 들어 있는 MinGW 도구(`bin\self-contained`의 dlltool)를 PATH 앞에 붙인다.
+사용자 폴더 이름에 한글이 있으면 MinGW 링커가 경로를 못 읽을 수 있다. 그때는 `RUSTUP_HOME`·`CARGO_HOME`·`CARGO_TARGET_DIR`을 영문 경로(예: `C:\dev\…`)로 두고 빌드한다. `build.ps1`은 `CARGO_TARGET_DIR`을 따르고, 툴체인에 들어 있는 MinGW 도구(`bin\self-contained`의 dlltool)를 PATH 앞에 붙인다. `TEMP`에 한글이 있으면 빌드 동안만 대상 폴더 안의 `tmp`를 쓴다(dlltool이 한글 경로에 임시 파일을 못 만든다 · 2026-10-12 Windows 365 실측).
 
 Mac에서 하는 검사: `cargo test --release`(키 로직 12개, held-out 재생 약 2만 키) · `cargo check --target x86_64-pc-windows-gnu` · `cargo clippy --target x86_64-pc-windows-gnu --all-targets`.
 
