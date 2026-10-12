@@ -11,7 +11,7 @@
 //! `cli` is the `hanautomata-ime-setup` tool: register · unregister · status · selftest · active · activate.
 
 use windows::core::{Interface, GUID, HRESULT, HSTRING, PCSTR, PCWSTR, PWSTR};
-use windows::Win32::Foundation::{ERROR_SUCCESS, E_FAIL, E_INVALIDARG, LPARAM, WIN32_ERROR, WPARAM};
+use windows::Win32::Foundation::{ERROR_SUCCESS, E_ACCESSDENIED, E_FAIL, E_INVALIDARG, LPARAM, WIN32_ERROR, WPARAM};
 use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED};
 use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
 use windows::Win32::System::Registry::{
@@ -206,12 +206,16 @@ fn ctf_key() -> String {
 
 /// Step 1: the in-process COM server for this user.
 fn register_com(dll: &str) -> std::result::Result<String, HRESULT> {
-    let base = create_key(HKEY_CURRENT_USER, &com_key())?;
+    register_com_at(HKEY_CURRENT_USER, "HKCU", dll)
+}
+
+fn register_com_at(root: HKEY, label: &str, dll: &str) -> std::result::Result<String, HRESULT> {
+    let base = create_key(root, &com_key())?;
     set_string(&base, None, DESCRIPTION)?;
-    let server = create_key(HKEY_CURRENT_USER, &format!("{}\\InprocServer32", com_key()))?;
+    let server = create_key(root, &format!("{}\\InprocServer32", com_key()))?;
     set_string(&server, None, dll)?;
     set_string(&server, Some("ThreadingModel"), "Apartment")?;
-    Ok(format!("HKCU\\{}", com_key()))
+    Ok(format!("{label}\\{}", com_key()))
 }
 
 fn profiles() -> windows::core::Result<ITfInputProcessorProfileMgr> {
@@ -223,7 +227,7 @@ fn categories() -> windows::core::Result<ITfCategoryMgr> {
 }
 
 /// Step 2: the TSF profile through the API.
-fn register_profile(dll: &str) -> std::result::Result<String, HRESULT> {
+fn register_profile(dll: &str, enabled_by_default: bool) -> std::result::Result<String, HRESULT> {
     let manager = profiles().map_err(|e| e.code())?;
     unsafe {
         manager
@@ -236,7 +240,7 @@ fn register_profile(dll: &str) -> std::result::Result<String, HRESULT> {
                 0,
                 HKL::default(),
                 0,
-                true,
+                enabled_by_default,
                 0,
             )
             .map_err(|e| e.code())?;
@@ -413,7 +417,7 @@ pub fn register(dll: &str, ctf_hkcu: bool) -> Report {
     init_com();
     let mut report = Report::default();
     report.push("1 COM server (HKCU)", register_com(dll));
-    let profile = register_profile(dll);
+    let profile = register_profile(dll, true);
     let cats = register_categories();
     if !ctf_hkcu {
         report.push("2 TSF profile (API)", profile);
@@ -449,6 +453,96 @@ pub fn register(dll: &str, ctf_hkcu: bool) -> Report {
         }
     }
     report.push("5 language list (User Profile)", add_to_language_list());
+    report
+}
+
+/// D2: machine registration must not alter the administrator account's language list.
+/// The native x64/x86 tools each write their own COM registry view.
+pub fn register_machine(dll: &str) -> Report {
+    let mut report = Report::default();
+    if !crate::system::elevated() {
+        report.push("machine registration requires elevation; no changes made", Err(E_ACCESSDENIED));
+        return report;
+    }
+    // Validate before making any registration changes.
+    report.push(
+        "DLL exists",
+        if std::path::Path::new(dll).is_file() { Ok(dll.into()) } else { Err(E_INVALIDARG) },
+    );
+    if !report.ok() {
+        return report;
+    }
+    init_com();
+    report.push("COM server (HKLM)", register_com_at(HKEY_LOCAL_MACHINE, "HKLM", dll));
+    if !report.ok() {
+        return report;
+    }
+    // Match Microsoft's SampleIME: eligible by default, without changing the admin's selected input method.
+    report.push("TSF profile (API; enabled by default)", register_profile(dll, true));
+    if !report.ok() {
+        return report;
+    }
+    for (name, result) in register_categories() {
+        report.push(name, result);
+    }
+    report
+}
+
+/// Run in the intended user's normal session, after machine registration.
+pub fn enable_user(enable: bool) -> Report {
+    let mut report = Report::default();
+    if crate::system::elevated() {
+        report.push("user activation requires the intended user's non-elevated session", Err(E_ACCESSDENIED));
+        return report;
+    }
+    if enable && (!key_exists(HKEY_LOCAL_MACHINE, &com_key()) || !key_exists(HKEY_LOCAL_MACHINE, &ctf_key())) {
+        report.push("machine registration must exist before user activation", Err(E_FAIL));
+        return report;
+    }
+    init_com();
+    // InstallLayoutOrTip can rewrite per-user CTF state; apply the requested enable state last.
+    report.push("InstallLayoutOrTip (current user)", install_layout(if enable { 0 } else { ILOT_UNINSTALL }));
+    if enable && !report.ok() {
+        return report;
+    }
+    let result = profiles().and_then(|m| {
+        let p: ITfInputProcessorProfiles = m.cast()?;
+        unsafe { p.EnableLanguageProfile(&CLSID_TEXT_SERVICE, LANGID_KOREAN, &PROFILE, enable) }
+    });
+    report.push("EnableLanguageProfile (current user)", result.map(|_| enable.to_string()).map_err(|e| e.code()));
+    if !enable {
+        if let Some(result) = remove_from_language_list() {
+            report.push("remove own language-list entry", result);
+        }
+    }
+    report
+}
+
+/// D2 rollback: removes this service's machine registration only, without editing the admin user's list.
+pub fn unregister_machine() -> Report {
+    let mut report = Report::default();
+    if !crate::system::elevated() {
+        report.push("machine unregistration requires elevation; no changes made", Err(E_ACCESSDENIED));
+        return report;
+    }
+    init_com();
+    if key_exists(HKEY_LOCAL_MACHINE, &ctf_key()) {
+        match categories() {
+            Ok(manager) => {
+                for (name, cat) in CATEGORIES {
+                    let result = unsafe { manager.UnregisterCategory(&CLSID_TEXT_SERVICE, &cat, &CLSID_TEXT_SERVICE) };
+                    report.push(format!("category {name}"), result.map(|_| String::new()).map_err(|e| e.code()));
+                }
+            }
+            Err(e) => report.push("categories", Err(e.code())),
+        }
+        let result = profiles().and_then(|m| unsafe { m.UnregisterProfile(&CLSID_TEXT_SERVICE, LANGID_KOREAN, &PROFILE, 0) });
+        report.push("TSF profile", result.map(|_| String::new()).map_err(|e| e.code()));
+    }
+    if key_exists(HKEY_LOCAL_MACHINE, &com_key()) {
+        let path = HSTRING::from(com_key());
+        report.push("COM server (HKLM)", win32(unsafe { RegDeleteTreeW(HKEY_LOCAL_MACHINE, &path) }).map(|_| String::new()));
+    }
     report
 }
 
@@ -601,20 +695,60 @@ pub fn activate(to: Option<&str>) -> Report {
     };
     let switched = target.and_then(|(kind, lang, clsid, profile, hkl)| unsafe {
         profiles()
+            .map_err(|e| e.code())
             .and_then(|m| {
-                m.ActivateProfile(
+                let hr = (m.vtable().ActivateProfile)(
+                    m.as_raw(),
                     kind,
                     lang,
                     &clsid,
                     &profile,
                     HKL(hkl as *mut core::ffi::c_void),
-                    TF_IPPMF_FORSESSION | TF_IPPMF_DONTCARECURRENTINPUTLANGUAGE,
-                )
+                    TF_IPPMF_FORSESSION | TF_IPPMF_DONTCARECURRENTINPUTLANGUAGE
+                        | if to.is_none() { TF_IPPMF_ENABLEPROFILE } else { 0 },
+                );
+                activation_result(hr)
             })
-            .map(|_| format!("{lang:04X} {} {}", braced(&clsid), braced(&profile)))
-            .map_err(|e| e.code())
+            .map(|_| format!("HRESULT=0x00000000 {lang:04X} {} {}", braced(&clsid), braced(&profile)))
     });
     report.push("activate for this session", switched);
+    report
+}
+
+fn activation_result(hr: HRESULT) -> std::result::Result<(), HRESULT> {
+    // S_FALSE (1) is a successful HRESULT, but ActivateProfile defines it as "profile not enabled".
+    if hr.0 == 0 {
+        Ok(())
+    } else {
+        Err(hr)
+    }
+}
+
+#[cfg(test)]
+mod registration_tests {
+    use super::*;
+
+    #[test]
+    fn disabled_profile_is_not_successful_activation() {
+        assert_eq!(activation_result(HRESULT(1)), Err(HRESULT(1))); // S_FALSE: profile not enabled
+        assert_eq!(activation_result(HRESULT(0)), Ok(()));
+        assert_eq!(activation_result(E_FAIL), Err(E_FAIL));
+    }
+}
+
+/// D2 diagnostic: load via registered COM rather than directly loading a DLL file.
+pub fn selftest_registered() -> Report {
+    init_com();
+    let mut report = Report::default();
+    let service: windows::core::Result<ITfTextInputProcessorEx> = unsafe {
+        CoCreateInstance(&CLSID_TEXT_SERVICE, None, CLSCTX_INPROC_SERVER)
+    };
+    report.push("CoCreateInstance registered text service", service.map(|_| "loaded".into()).map_err(|e| e.code()));
+    let enabled = profiles().and_then(|m| {
+        let p: ITfInputProcessorProfiles = m.cast()?;
+        unsafe { p.IsEnabledLanguageProfile(&CLSID_TEXT_SERVICE, LANGID_KOREAN, &PROFILE) }
+    });
+    report.push("IsEnabledLanguageProfile (current user)", enabled.map(|b| b.as_bool().to_string()).map_err(|e| e.code()));
     report
 }
 
@@ -753,14 +887,19 @@ pub fn cli(args: Vec<String>) -> i32 {
     let report = match command {
         "register" => register(&dll, args.iter().any(|a| a == "--ctf-hkcu")),
         "unregister" => unregister(),
+        "register-machine" => register_machine(&dll),
+        "unregister-machine" => unregister_machine(),
+        "enable-user" => enable_user(true),
+        "disable-user" => enable_user(false),
         "status" => status(),
         "selftest" => selftest(&dll),
+        "selftest-registered" => selftest_registered(),
         "probe-hkcu" => probe_hkcu(&dll, args.iter().any(|a| a == "--enable")),
         "active" => active(),
         "activate" => activate(args.windows(2).find(|w| w[0] == "--to").map(|w| w[1].as_str())),
         _ => {
             eprintln!(
-                "usage: hanautomata-ime-setup <register [--ctf-hkcu] | unregister | status | selftest | probe-hkcu [--enable] | active | activate [--to TOKEN]> [--dll PATH]"
+                "usage: hanautomata-ime-setup <register [--ctf-hkcu] | unregister | register-machine | unregister-machine | enable-user | disable-user | status | selftest | selftest-registered | probe-hkcu [--enable] | active | activate [--to TOKEN]> [--dll PATH]"
             );
             return 2;
         }

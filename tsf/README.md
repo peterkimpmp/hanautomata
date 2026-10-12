@@ -42,7 +42,41 @@ Mac에서 하는 검사: `cargo test --release`(키 로직 12개, held-out 재�
 
 `s0-live.ps1`의 합성 키(SendKeys) 통과는 물리 키보드 결과가 아니다. Windows가 입력기를 적재해 돌리는지만 답한다. 시험 창이 활성 창일 때만 키를 보낸다. 원격 셸에서 띄운 창은 활성 창이 되지 못하므로 화면 앞의 PowerShell 창에서 돌린다.
 
-2026-10-12 Windows 11 26H2(표준 사용자)에서 `register --ctf-hkcu`는 언어 목록까지 들어갔지만 전환(`ActivateProfile`)이 `0x80004005`로 거부됐다. 같은 셸에서 영어 자판·MS IME 전환은 ok였다. 그래서 앱 시험은 관리자 PowerShell로 `register`(HKLM)를 한 뒤 일반 창에서 `s0-live.ps1 -Registered`로 한다.
+2026-10-12 Windows 11 26H2(표준 사용자)에서 `register --ctf-hkcu`는 언어 목록까지 들어갔지만 전환(`ActivateProfile`)이 `0x80004005`로 거부됐다. 같은 셸에서 영어 자판·MS IME 전환은 ok였다. 기존 `register`는 관리자 실행에서도 COM을 HKCU에 쓰므로, 다른 관리자 계정으로 설치하는 D2에는 아래의 별도 절차를 쓴다.
+
+### D2: 관리자 1회 설치 + 실제 사용자 활성화
+
+진행 근거와 미검증 항목: [D2 검증 기록](D2-VALIDATION.md). 설치 성공과 6개 앱 동작 승인은 구분한다.
+
+S0 시험용이며 정식 설치 프로그램이 아니다. x64·x86 DLL을 `Program Files\Hanautomata-TSF-S0`에 보관하고 각 비트수의 HKLM COM과 TSF 프로필·카테고리를 등록한다. 프로필은 Microsoft SampleIME처럼 기본 사용 가능 상태로 등록하되, 관리자 계정의 언어 목록이나 선택된 입력기는 바꾸지 않는다. 사용할 계정의 목록 추가·선택은 일반 창에서 별도로 한다. 기존 등록이나 설치 폴더가 있으면 교체를 거부한다.
+
+```powershell
+# 빌드 후 일반 PowerShell: 설치할 4개 파일의 해시 목록
+$hashes = [ordered]@{}
+foreach ($arch in @('x64','x86')) {
+    foreach ($name in @('hanautomata-ime-setup.exe','hanautomata_tsf.dll')) {
+        $hashes["$arch/$name"] = (Get-FileHash "./build/tsf/$arch/$name" -Algorithm SHA256).Hash
+    }
+}
+$hashes | ConvertTo-Json | Set-Content ./build/tsf/sha256.json -Encoding ASCII
+
+# 관리자 PowerShell (표준 계정 PC이면 관리자의 인증 필요)
+.\tsf\install-machine.ps1
+
+# 실제 사용할 계정의 일반 PowerShell
+$setup = "$env:ProgramFiles\Hanautomata-TSF-S0\x64\hanautomata-ime-setup.exe"
+& $setup enable-user
+& $setup status
+& $setup selftest-registered
+# 기존 트레이 앱을 종료한 후 입력기를 선택하여 6개 앱을 시험
+# 종료 시 기존 입력기로 전환한 뒤:
+& $setup disable-user
+
+# 관리자 PowerShell에서 시스템 등록을 제거 (진단 파일은 보관)
+& "$env:ProgramFiles\Hanautomata-TSF-S0\install-machine.ps1" -Action Unregister
+```
+
+설치 결과는 설치 폴더의 `install-result.json`이다. 중간 등록 실패 시 시도한 비트수의 등록을 되돌리고 파일·오류 기록을 남긴다. 관리자 명령의 권한 거부 경로는 일반 PowerShell의 `.\tsf\test-machine-registration.ps1`로 검사한다. `enable-user`/`disable-user`는 현재 사용자에게만 적용되므로 관리자 창에서 실행하면 거부한다. 이때 쓰는 공식 API는 [EnableLanguageProfile](https://learn.microsoft.com/en-us/windows/win32/api/msctf/nf-msctf-itfinputprocessorprofiles-enablelanguageprofile)과 [RegisterProfile](https://learn.microsoft.com/en-us/windows/win32/api/msctf/nf-msctf-itfinputprocessorprofilemgr-registerprofile)이다.
 
 - 각 단계의 ok/FAIL과 HRESULT를 기록한다. 이것이 결정 D2(사용자별 등록 / 관리자 1회 설치)의 근거다.
 - 입력기를 고른 뒤 메모장·Chrome·Edge·Word·시작 검색·관리자 권한 메모장에서 다음을 확인한다.
