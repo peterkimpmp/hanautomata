@@ -16,9 +16,19 @@ function Invoke-Checked([string]$exe, [string[]]$argv) {
     if ($LASTEXITCODE -ne 0) { throw "$exe $($argv -join ' ') failed with exit code $LASTEXITCODE" }
 }
 
+# The GNU toolchain carries its own MinGW tools (gcc, ld, dlltool) in bin\self-contained, but rustc looks for dlltool
+# (raw-dylib imports of the windows crate) on PATH. Put the toolchain's own folder first.
+function Use-SelfContained([string]$toolchain, [string]$triple) {
+    $sysroot = if ($toolchain) { (& rustc "+$toolchain" --print sysroot) } else { (& rustc --print sysroot) }
+    $dir = Join-Path $sysroot.Trim() "lib\rustlib\$triple\bin\self-contained"
+    if (Test-Path (Join-Path $dir 'dlltool.exe')) { $env:Path = "$dir;$env:Path" }
+}
+
 Push-Location $here
 $target = if ($env:CARGO_TARGET_DIR) { $env:CARGO_TARGET_DIR } else { Join-Path $here 'target' }
+$path = $env:Path
 try {
+    Use-SelfContained '' 'x86_64-pc-windows-gnu'
     if ($Test) {
         Push-Location (Join-Path $root 'core')
         try { Invoke-Checked cargo @('test', '--release') } finally { Pop-Location }
@@ -30,8 +40,12 @@ try {
     Copy-Item (Join-Path $target 'release\hanautomata_tsf.dll'), (Join-Path $target 'release\hanautomata-ime-setup.exe') $x64 -Force
     if ($X86) {
         $argv = @('build', '--release', '--lib', '--target', 'i686-pc-windows-gnu')
-        if (rustup toolchain list | Select-String -SimpleMatch 'stable-i686-pc-windows-gnu') { $argv = @('+stable-i686-pc-windows-gnu') + $argv }
-        Invoke-Checked cargo $argv
+        $x64path = $env:Path
+        if (rustup toolchain list | Select-String -SimpleMatch 'stable-i686-pc-windows-gnu') {
+            $argv = @('+stable-i686-pc-windows-gnu') + $argv
+            Use-SelfContained 'stable-i686-pc-windows-gnu' 'i686-pc-windows-gnu'
+        }
+        try { Invoke-Checked cargo $argv } finally { $env:Path = $x64path }
         $x86dir = Join-Path $root 'build\tsf\x86'
         New-Item -ItemType Directory -Force $x86dir | Out-Null
         Copy-Item (Join-Path $target 'i686-pc-windows-gnu\release\hanautomata_tsf.dll') $x86dir -Force
@@ -55,5 +69,6 @@ try {
         Write-Output "packaged $zip ($((Get-Item $zip).Length) bytes) SHA256 $hash"
     }
 } finally {
+    $env:Path = $path
     Pop-Location
 }
