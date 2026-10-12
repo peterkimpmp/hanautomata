@@ -514,6 +514,8 @@ pub fn enable_user(enable: bool) -> Report {
         if let Some(result) = remove_from_language_list() {
             report.push("remove own language-list entry", result);
         }
+    } else if report.ok() {
+        report.steps.extend(user_readiness().steps);
     }
     report
 }
@@ -734,6 +736,42 @@ mod registration_tests {
         assert_eq!(activation_result(HRESULT(0)), Ok(()));
         assert_eq!(activation_result(E_FAIL), Err(E_FAIL));
     }
+
+    #[test]
+    fn disabled_user_profile_fails_readiness_even_when_query_succeeds() {
+        let report = user_readiness_report(Ok(false), &["ko".into()]);
+        assert!(!report.ok(), "A successful query of false must not pass selftest-registered");
+    }
+
+    #[test]
+    fn enabled_profile_missing_from_language_list_fails_readiness() {
+        assert!(!user_readiness_report(Ok(true), &[]).ok());
+        assert!(user_readiness_report(Ok(true), &["ko".into()]).ok());
+        assert!(!user_readiness_report(Err(E_ACCESSDENIED), &["ko".into()]).ok());
+    }
+}
+
+fn user_readiness_report(enabled: std::result::Result<bool, HRESULT>, tags: &[String]) -> Report {
+    let mut report = Report::default();
+    match enabled {
+        Ok(true) => report.push("IsEnabledLanguageProfile (current user)", Ok("true".into())),
+        Ok(false) => report.push("current user is disabled; run enable-user in the intended user's normal session", Err(E_FAIL)),
+        Err(hr) => report.push("IsEnabledLanguageProfile (current user)", Err(hr)),
+    }
+    if tags.is_empty() {
+        report.push("current user's language list is missing Hanautomata; run enable-user", Err(E_FAIL));
+    } else {
+        report.push("language list (current user)", Ok(format!("present in {}", tags.join(","))));
+    }
+    report
+}
+
+fn user_readiness() -> Report {
+    let enabled = profiles().and_then(|m| {
+        let p: ITfInputProcessorProfiles = m.cast()?;
+        unsafe { p.IsEnabledLanguageProfile(&CLSID_TEXT_SERVICE, LANGID_KOREAN, &PROFILE) }
+    });
+    user_readiness_report(enabled.map(|b| b.as_bool()).map_err(|e| e.code()), &language_tags(false))
 }
 
 /// D2 diagnostic: load via registered COM rather than directly loading a DLL file.
@@ -744,11 +782,7 @@ pub fn selftest_registered() -> Report {
         CoCreateInstance(&CLSID_TEXT_SERVICE, None, CLSCTX_INPROC_SERVER)
     };
     report.push("CoCreateInstance registered text service", service.map(|_| "loaded".into()).map_err(|e| e.code()));
-    let enabled = profiles().and_then(|m| {
-        let p: ITfInputProcessorProfiles = m.cast()?;
-        unsafe { p.IsEnabledLanguageProfile(&CLSID_TEXT_SERVICE, LANGID_KOREAN, &PROFILE) }
-    });
-    report.push("IsEnabledLanguageProfile (current user)", enabled.map(|b| b.as_bool().to_string()).map_err(|e| e.code()));
+    report.steps.extend(user_readiness().steps);
     report
 }
 

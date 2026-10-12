@@ -66,8 +66,10 @@ $hashes | ConvertTo-Json | Set-Content ./build/tsf/sha256.json -Encoding ASCII
 # 실제 사용할 계정의 일반 PowerShell
 $setup = "$env:ProgramFiles\Hanautomata-TSF-S0\x64\hanautomata-ime-setup.exe"
 & $setup enable-user
-& $setup status
+if ($LASTEXITCODE -ne 0) { throw '현재 사용자 활성화 실패: 위 FAIL 확인' }
 & $setup selftest-registered
+if ($LASTEXITCODE -ne 0) { throw '현재 사용자 준비 상태 실패: 앱 시험 중단' }
+& $setup status
 # 기존 트레이 앱을 종료한 후 입력기를 선택하여 6개 앱을 시험
 # 종료 시 기존 입력기로 전환한 뒤:
 & $setup disable-user
@@ -77,6 +79,8 @@ $setup = "$env:ProgramFiles\Hanautomata-TSF-S0\x64\hanautomata-ime-setup.exe"
 ```
 
 설치 결과는 설치 폴더의 `install-result.json`이다. 중간 등록 실패 시 시도한 비트수의 등록을 되돌리고 파일·오류 기록을 남긴다. 관리자 명령의 권한 거부 경로는 일반 PowerShell의 `.\tsf\test-machine-registration.ps1`로 검사한다. `enable-user`/`disable-user`는 현재 사용자에게만 적용되므로 관리자 창에서 실행하면 거부한다. 이때 쓰는 공식 API는 [EnableLanguageProfile](https://learn.microsoft.com/en-us/windows/win32/api/msctf/nf-msctf-itfinputprocessorprofiles-enablelanguageprofile)과 [RegisterProfile](https://learn.microsoft.com/en-us/windows/win32/api/msctf/nf-msctf-itfinputprocessorprofilemgr-registerprofile)이다.
+
+`enable-user`는 API 호출 뒤 현재 사용자의 활성 상태와 언어 목록을 다시 읽어 확인한다. `selftest-registered`도 COM 적재·사용자 활성화·언어 목록의 세 조건을 모두 요구한다. 비활성(`false`) 또는 목록 누락이면 `FAIL`과 종료 코드 1이다. 이전 도구는 `IsEnabledLanguageProfile=false`도 조회 성공이라는 뜻의 `ok`로 출력했으므로 그 결과를 준비 완료로 해석하면 안 된다. `status`는 존재 여부를 보여 주는 진단 명령이며, 종료 코드만으로 준비 상태를 판단하지 않는다. 이 검사들은 실제 메뉴 표시·선택·앱 입력을 보증하지 않는다.
 
 - 각 단계의 ok/FAIL과 HRESULT를 기록한다. 이것이 결정 D2(사용자별 등록 / 관리자 1회 설치)의 근거다.
 - 입력기를 고른 뒤 메모장·Chrome·Edge·Word·시작 검색·관리자 권한 메모장에서 다음을 확인한다.
