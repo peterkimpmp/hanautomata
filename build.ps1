@@ -31,9 +31,7 @@ if (-not $Test -or $Integration) {
     & $compiler /nologo /utf8output /target:winexe /main:Hanautomata.Program /platform:anycpu /optimize+ "/win32manifest:$appRoot/app.manifest" "/out:$OutputDirectory/Hanautomata.exe" /reference:Microsoft.CSharp.dll /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Core.dll /reference:System.Web.Extensions.dll /reference:System.Runtime.Serialization.dll /reference:System.Xml.Linq.dll "/reference:$framework/WPF/UIAutomationClient.dll" "/reference:$framework/WPF/UIAutomationTypes.dll" "/reference:$framework/WPF/WindowsBase.dll" @modelResources @sources
     if ($LASTEXITCODE -ne 0) { throw 'Application compilation failed.' }
     Copy-Item -LiteralPath (Join-Path $appRoot 'app.config') -Destination (Join-Path $OutputDirectory 'Hanautomata.exe.config')
-    & $compiler /nologo /utf8output /target:winexe /main:Hanautomata.ImeOptionsProgram /platform:anycpu /optimize+ "/win32manifest:$appRoot/app.manifest" "/out:$OutputDirectory/Hanautomata.ImeOptions.exe" /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Core.dll /reference:System.Web.Extensions.dll /reference:System.Runtime.Serialization.dll /reference:System.Xml.Linq.dll (Join-Path $appRoot 'src/ImeSettings.cs') (Join-Path $appRoot 'src/ImeSharedAccess.cs') (Join-Path $appRoot 'src/ImeOptions.cs') (Join-Path $appRoot 'src/AssemblyInfo.cs')
-    if ($LASTEXITCODE -ne 0) { throw 'IME options compilation failed.' }
-    Copy-Item -LiteralPath (Join-Path $appRoot 'app.config') -Destination (Join-Path $OutputDirectory 'Hanautomata.ImeOptions.exe.config')
+    & (Join-Path $appRoot 'tsf/build-options.ps1') -OutputDirectory $OutputDirectory
     Write-Output (Join-Path $OutputDirectory 'Hanautomata.exe')
 }
 if ($Integration) {

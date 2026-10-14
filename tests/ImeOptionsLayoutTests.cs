@@ -27,6 +27,8 @@ internal static class ImeOptionsLayoutTests
     static int Main()
     {
         Application.EnableVisualStyles(); Application.SetCompatibleTextRenderingDefault(false);
+        string denied = Path.Combine(Path.GetTempPath(), "hanautomata-denied-" + Guid.NewGuid().ToString("N"), "settings.json");
+        Check("administrator preparation refuses before writing", ImeOptionsProgram.PrepareUser(denied, true) == 3 && !Directory.Exists(Path.GetDirectoryName(denied)), "no administrator settings created");
         using (var form = new ImeOptionsWindow(Path.Combine(Path.GetTempPath(), "hanautomata-layout-" + Guid.NewGuid().ToString("N"), "settings.json")))
         {
             form.PerformLayout();

@@ -3,7 +3,7 @@
 #   .\build.ps1 -Test      also the shared engine tests (core) and the Windows key-logic tests (tsf)
 #   .\build.ps1 -X86       also the 32-bit DLL and setup tool for 32-bit applications (W-03) -> build\tsf\x86, and their
 #                          selftest; uses the stable-i686-pc-windows-gnu toolchain when installed (its own 32-bit linker)
-#   .\build.ps1 -Package   zip + SHA-256 -> deliverables\Hanautomata-tsf-s0-<commit>.zip
+#   .\build.ps1 -X86 -Package  six-file payload + installer dependencies + SHA-256 -> deliverables\Hanautomata-tsf-s0-<commit>-<id>.zip
 # Registration is a separate, deliberate step: build\tsf\x64\hanautomata-ime-setup.exe register (see README.md).
 # CARGO_TARGET_DIR is honoured: point it at an ASCII path when the user folder has non-ASCII characters (MinGW linker).
 # No dlltool is needed: the crates link through prebuilt import libraries (Cargo.toml explains the windows 0.59 pin).
@@ -11,6 +11,9 @@ param([switch]$Test, [switch]$X86, [switch]$Package)
 $ErrorActionPreference = 'Stop'
 $here = $PSScriptRoot
 $root = Split-Path $here
+if ($Package -and -not $X86) { throw 'Installable packages require both architectures: use -X86 -Package.' }
+. (Join-Path $here 'payload.ps1')
+& (Join-Path $here 'build-options.ps1') -OutputDirectory (Join-Path $root 'build/tsf/ui')
 
 function Invoke-Checked([string]$exe, [string[]]$argv) {
     & $exe @argv
@@ -53,28 +56,16 @@ try {
         if ($LASTEXITCODE -ne 0) { throw "x86 selftest failed with exit code $LASTEXITCODE" }
         $x86dir = Join-Path $root 'build\tsf\x86'
         New-Item -ItemType Directory -Force $x86dir | Out-Null
-        try { Copy-Item $x86files $x86dir -Force -ErrorAction Stop }
-        catch { Write-Warning "build\tsf\x86 not refreshed ($($_.Exception.Message)); the package takes the files from $built" }
+        Copy-Item $x86files $x86dir -Force -ErrorAction Stop
     }
+    $hashes = [ordered]@{}
+    foreach ($relative in Get-HanautomataPayloadFiles) {
+        if (-not $X86 -and $relative.StartsWith('x86/')) { continue }
+        $hashes[$relative] = (Get-FileHash -LiteralPath (Join-Path $root "build/tsf/$relative") -Algorithm SHA256).Hash
+    }
+    $hashes | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $root 'build/tsf/sha256.json') -Encoding ascii
     if ($Package) {
-        $commit = (git -C $root rev-parse --short HEAD).Trim()
-        $dist = Join-Path $root 'deliverables'
-        New-Item -ItemType Directory -Force $dist | Out-Null
-        $zip = Join-Path $dist "Hanautomata-tsf-s0-$commit.zip"
-        $stage = Join-Path $root 'build\tsf\package'
-        Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue
-        New-Item -ItemType Directory -Force $stage | Out-Null
-        Copy-Item $x64 (Join-Path $stage 'x64') -Recurse
-        if ($X86) {
-            New-Item -ItemType Directory -Force (Join-Path $stage 'x86') | Out-Null
-            Copy-Item $x86files (Join-Path $stage 'x86')
-        }
-        Copy-Item 'README.md' $stage
-        Remove-Item $zip -Force -ErrorAction SilentlyContinue
-        Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip
-        $hash = (Get-FileHash $zip -Algorithm SHA256).Hash
-        "$hash  $(Split-Path $zip -Leaf)" | Set-Content "$zip.sha256" -Encoding ascii
-        Write-Output "packaged $zip ($((Get-Item $zip).Length) bytes) SHA256 $hash"
+        & (Join-Path $here 'package.ps1') -Source (Join-Path $root 'build/tsf')
     }
 } finally {
     $env:TEMP, $env:TMP = $temp, $tmp

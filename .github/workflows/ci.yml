@@ -30,6 +30,9 @@ jobs:
       - name: IME settings persistence and editor build
         shell: pwsh
         run: .\tests\ImeSettingsTests.ps1 -BuildPreview
+      - name: TSF payload and isolated user preparation
+        shell: pwsh
+        run: .\tests\TsfPayloadTests.ps1 -OptionsExecutable .\build\Hanautomata.ImeOptions.exe
       - name: Portable installation and packaging regression tests
         shell: pwsh
         run: .\tests\ReleaseTests.ps1

@@ -5,7 +5,8 @@ Windows 정식 입력기(계획 21의 P3)로 가기 전, **등록 권한 시험(
 | 파일 | 내용 |
 |---|---|
 | `hanautomata_tsf.dll` | TSF 텍스트 서비스. 키 이벤트 → 엔진 → 조합 표시·확정(편집 세션), 표시 속성(밑줄), 시스템 입력 표시기 가/A |
-| `hanautomata-ime-setup.exe` | `register` · `unregister` · `status` · `selftest` — 단계별 결과 출력 |
+| `hanautomata-ime-setup.exe` | 등록·활성화·검사와 `options` — 단계별 결과 출력 |
+| `ui/Hanautomata.ImeOptions.exe` · `.config` | 후크 없는 설정 편집기·일반 사용자 설정 준비 도구 |
 | `src/shell.rs` | TSF와 떼어 낸 키 로직. Mac에서도 검사가 돈다(재생 검사 포함) |
 
 ## 빌드
@@ -51,25 +52,23 @@ Mac에서 하는 검사: `cargo test --release`(키 로직 12개, held-out 재�
 S0 시험용이며 정식 설치 프로그램이 아니다. x64·x86 DLL을 `Program Files\Hanautomata-TSF-S0`에 보관하고 각 비트수의 HKLM COM과 TSF 프로필·카테고리를 등록한다. 프로필은 Microsoft SampleIME처럼 기본 사용 가능 상태로 등록하되, 관리자 계정의 언어 목록이나 선택된 입력기는 바꾸지 않는다. 사용할 계정의 목록 추가·선택은 일반 창에서 별도로 한다. 기존 등록이나 설치 폴더가 있으면 교체를 거부한다.
 
 ```powershell
-# 빌드 후 일반 PowerShell: 설치할 4개 파일의 해시 목록
-$hashes = [ordered]@{}
-foreach ($arch in @('x64','x86')) {
-    foreach ($name in @('hanautomata-ime-setup.exe','hanautomata_tsf.dll')) {
-        $hashes["$arch/$name"] = (Get-FileHash "./build/tsf/$arch/$name" -Algorithm SHA256).Hash
-    }
-}
-$hashes | ConvertTo-Json | Set-Content ./build/tsf/sha256.json -Encoding ASCII
+# 일반 PowerShell: 양쪽 런타임·설정 편집기 6개 파일과 sha256.json 생성
+.\tsf\build.ps1 -Test -X86
+# 설치 가능한 ZIP에는 두 비트수 모두 필요. 설치/갱신 스크립트와 의존 파일도 포함
+.\tsf\package.ps1 -Source .\build\tsf
 
 # 관리자 PowerShell (표준 계정 PC이면 관리자의 인증 필요)
 .\tsf\install-machine.ps1
 
 # 실제 사용할 계정의 일반 PowerShell
+# 아래 경로는 최초 설치용. 갱신 후에는 새 receipt의 destination/x64 도구 사용!
 $setup = "$env:ProgramFiles\Hanautomata-TSF-S0\x64\hanautomata-ime-setup.exe"
 & $setup enable-user
 if ($LASTEXITCODE -ne 0) { throw '현재 사용자 활성화 실패: 위 FAIL 확인' }
 & $setup selftest-registered
 if ($LASTEXITCODE -ne 0) { throw '현재 사용자 준비 상태 실패: 앱 시험 중단' }
 & $setup status
+& $setup options  # 같은 설치 revision의 설정 편집기를 일반 사용자로 열기
 # 기존 트레이 앱을 종료한 후 입력기를 선택하여 6개 앱을 시험
 # 종료 시 기존 입력기로 전환한 뒤:
 & $setup disable-user
@@ -79,6 +78,16 @@ if ($LASTEXITCODE -ne 0) { throw '현재 사용자 준비 상태 실패: 앱 시
 ```
 
 설치 결과는 설치 폴더의 `install-result.json`이다. 중간 등록 실패 시 시도한 비트수의 등록을 되돌리고 파일·오류 기록을 남긴다. 관리자 명령의 권한 거부 경로는 일반 PowerShell의 `.\tsf\test-machine-registration.ps1`로 검사한다. `enable-user`/`disable-user`는 현재 사용자에게만 적용되므로 관리자 창에서 실행하면 거부한다. 이때 쓰는 공식 API는 [EnableLanguageProfile](https://learn.microsoft.com/en-us/windows/win32/api/msctf/nf-msctf-itfinputprocessorprofiles-enablelanguageprofile)과 [RegisterProfile](https://learn.microsoft.com/en-us/windows/win32/api/msctf/nf-msctf-itfinputprocessorprofilemgr-registerprofile)이다.
+
+새 개발 설치·갱신 스크립트는 x64/x86의 setup·DLL, `ui`의 편집기·`.config`를 모두 요구하며 복사 전후 해시를 검사한다. 4개 런타임 파일만 있던 구형 묶음은 새 스크립트에서 거부한다. 압축을 푼 폴더에서는 설치·갱신 스크립트의 기본 Source가 그 폴더다. 기존 revision 파일은 덮어쓰지 않는다. 관리자 설치는 사용자 설정 파일을 만들거나 편집기를 실행하지 않는다.
+
+새 setup의 `enable-user`는 언어 목록을 쓰기 전에 같은 묶음의 편집기를 `--prepare-user`로 실행한다. 실제 사용할 일반 계정에서만 실행하며 관리자 계정에서는 거부한다. 첫 실행 기본 설정을 만들고, 유효한 기존 파일은 내용·제외 목록·백업을 바꾸지 않은 채 AppContainer 읽기 권한을 준비한다. 손상·용량 초과·복구 대기 상태에서는 활성화를 시작하지 않으며 `options`에서 파일 상태를 확인해야 한다. 준비 성공 이후 Windows 활성화 API가 실패하면 준비한 설정은 보존된다. 이 단계는 Windows 설정의 입력기 메뉴에 옵션 화면을 연결한 것은 아니다.
+
+설정 내용이 유효해도 읽기 권한 보강이 실패하면 준비 종료 코드 1로 활성화를 보류한다. 편집기에서 경고를 확인하고 권한 문제를 해결한 뒤 다시 저장·준비해야 한다. 파일을 자동 초기화하여 권한 문제를 덮지 않는다.
+
+갱신 뒤에는 **각 사용자가 새 receipt의 destination 아래 `x64/hanautomata-ime-setup.exe enable-user`를 다시 실행**해야 한다. 이전 버전에서 만든 설정의 권한을 관리자 계정에서 대신 고치지 않는다. 새 도구는 HKLM의 현재 등록된 DLL과 자기 위치가 같은 revision인지 확인하므로 이전 revision의 도구로 새 설정을 준비하거나 편집하는 것을 거부한다. 갱신 실패 복구에는 새 도구가 아닌 이전 DLL 옆의 setup을 사용하며, 이전 도구가 없으면 갱신 사전 점검에서 중단한다.
+
+준비가 15초 안에 끝났다고 확인되지 않으면 활성화를 시작하지 않고 PID를 보고한다. 쓰기 도중인 준비 프로세스를 강제 종료하지 않으며, 해당 프로세스가 끝난 뒤 재시도한다. 전원 손실·프로세스 충돌로 첫 저장 중단 표시만 남았을 때도 자동 초기화하지 않는다. 설정 화면에서 보관 파일을 복원하거나 명시적으로 기본값을 선택해 저장한다. 설치/갱신이 등록 전에 실패하면 receipt는 `failed-before-registration`이고, 진단 폴더를 보존하므로 내용을 확인하기 전 같은 위치에 재설치하지 않는다.
 
 `enable-user`는 API 호출 뒤 현재 사용자의 활성 상태와 언어 목록을 다시 읽어 확인한다. `selftest-registered`도 COM 적재·사용자 활성화·언어 목록의 세 조건을 모두 요구한다. 비활성(`false`) 또는 목록 누락이면 `FAIL`과 종료 코드 1이다. 이전 도구는 `IsEnabledLanguageProfile=false`도 조회 성공이라는 뜻의 `ok`로 출력했으므로 그 결과를 준비 완료로 해석하면 안 된다. `status`는 존재 여부를 보여 주는 진단 명령이며, 종료 코드만으로 준비 상태를 판단하지 않는다. 이 검사들은 실제 메뉴 표시·선택·앱 입력을 보증하지 않는다.
 
@@ -92,7 +101,7 @@ if ($LASTEXITCODE -ne 0) { throw '현재 사용자 준비 상태 실패: 앱 시
 
 ## 개발 중인 설정 화면
 
-`codex/windows-quality` 개발 소스에는 입력 후크를 실행하지 않는 전용 설정 앱이 있습니다. 저장 형식은 `%LOCALAPPDATA%\Hanautomata\tsf-settings.json`이며 기존 트레이 앱의 `settings.json`과 분리됩니다. 아직 S0 설치·갱신 묶음과 Windows 입력기 메뉴에는 연결하지 않았습니다.
+`codex/windows-quality` 개발 소스에는 입력 후크를 실행하지 않는 전용 설정 앱이 있습니다. 저장 형식은 `%LOCALAPPDATA%\Hanautomata\tsf-settings.json`이며 기존 트레이 앱의 `settings.json`과 분리됩니다. S0 개발 설치·갱신 묶음에는 포함했고 setup의 `options` 명령으로 열 수 있습니다. Windows 입력기 메뉴 연결과 실제 관리자 설치 검증은 남아 있습니다.
 
 ```powershell
 # 저장소 루트에서 .NET Framework 설정 앱과 기존 트레이 앱 빌드
@@ -114,13 +123,13 @@ if ($LASTEXITCODE -ne 0) { throw '현재 사용자 준비 상태 실패: 앱 시
 
 다른 편집 창의 일반 저장은 `.previous`를 교체할 수 있습니다. 복원 미리보기 중 충돌하면 화면의 옵션을 유지하고, 최신 파일을 별도로 백업한 뒤 미리보기로 바꿀지 확인합니다. 동의 후에도 다시 충돌하면 저장을 거부합니다. 복원 성공 안내에는 복원 전 백업 위치가 표시됩니다. 복원 백업을 자동 삭제하지 않으므로 필요 없어진 백업은 사용자가 정리합니다. 파일 이름으로 제외하므로 이름을 바꾼 사본·별도 하드 링크를 같은 앱으로 식별하지는 않습니다. `~`를 포함한 이름의 확장에 실패하면 이 역시 알 수 없는 이름으로 처리합니다.
 
-AppContainer·패키지 앱·관리자 앱에서 편집기와 동일한 사용자 설정 경로를 읽는지는 아직 검증하지 않았습니다. 이 접근성과 실제 UI 검증 전에는 새 설정 지원 DLL을 설치 후보로 승인하지 않습니다. 제외 앱은 TSF를 적재한 프로세스 이름에 해당하므로 콘솔에서는 명령 프로그램 이름과 입력을 담당하는 호스트 이름이 다를 수 있습니다.
+일반 AppContainer 시험 프로세스에서는 편집기와 동일한 경로의 설정 읽기·쓰기 거부를 확인했습니다. LPAC·실제 패키지 앱·관리자 앱은 별도 미검증이며 실제 UI 검증 전에는 새 설정 지원 DLL을 설치 후보로 승인하지 않습니다. 범위와 근거는 [Windows 결과 원장](../docs/WINDOWS-QUALITY-RESULTS.md)에 기록합니다. 제외 앱은 TSF를 적재한 프로세스 이름에 해당하므로 콘솔에서는 명령 프로그램 이름과 입력을 담당하는 호스트 이름이 다를 수 있습니다.
 
 설정의 새 학습은 현재 세션에만 유지됩니다. 아래 영속 학습·후보 UI는 아직 미구현이며 이 화면이 기능 완성을 뜻하지 않습니다. 실제 UI 저장·재열기와 DPI 검수도 남아 있습니다.
 
 ## 아직 없는 것(P3에서)
 
-- 후보창(C-CMP-02), 설정 창의 설치·메뉴 연결 및 실제 화면 검증(W-23)
+- 후보창(C-CMP-02), 설정 창의 실제 설치·Windows 메뉴 연결 및 화면 검증(W-23)
 - 학습 저장: 앱마다 DLL이 하나씩 올라오는 구조라 S0 뒤 저장 방식을 정한다(`core/src/store.rs`)
 - ARM64 DLL과 코드 서명(D15)
 - 첫 실행 설정(C-OPS-07)과 후크판 학습 이전(W-17 이전 부분)

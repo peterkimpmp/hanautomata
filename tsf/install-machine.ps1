@@ -1,7 +1,7 @@
 # S0 only. Run once as administrator; enable-user runs separately as the intended normal user.
 param(
     [ValidateSet('Install', 'Unregister')][string]$Action = 'Install',
-    [string]$Source = (Join-Path (Split-Path $PSScriptRoot) 'build/tsf')
+    [string]$Source
 )
 $ErrorActionPreference = 'Stop'
 # Rust writes UTF-8. Windows PowerShell 5.1 otherwise decodes native output with the OEM code page.
@@ -11,6 +11,8 @@ if (-not (New-Object Security.Principal.WindowsPrincipal($identity)).IsInRole([S
     throw 'Run this script from an elevated PowerShell. No changes made.'
 }
 if (-not [Environment]::Is64BitProcess) { throw 'Use 64-bit PowerShell for installation.' }
+. (Join-Path $PSScriptRoot 'payload.ps1')
+if (-not $Source) { $Source = if (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'sha256.json')) { $PSScriptRoot } else { Join-Path (Split-Path $PSScriptRoot) 'build/tsf' } }
 $destination = Join-Path $env:ProgramFiles 'Hanautomata-TSF-S0'
 $receiptPath = Join-Path $destination 'install-result.json'
 $guid = '{AC481E74-0295-436A-B0B8-AFA81FE9CBF1}'
@@ -34,30 +36,14 @@ if ($Action -eq 'Install') {
         if (Test-Path -LiteralPath $key) { throw "Existing registration; refusing to replace $key" }
     }
     if (Test-Path -LiteralPath $destination) { throw "Existing staging folder; inspect before replacing: $destination" }
-    $manifest = Get-Content -LiteralPath (Join-Path $Source 'sha256.json') -Raw | ConvertFrom-Json
-    foreach ($arch in @('x64','x86')) {
-        foreach ($name in @('hanautomata-ime-setup.exe','hanautomata_tsf.dll')) {
-            $relative = "$arch/$name"
-            $expected = $manifest.$relative
-            if (-not $expected -or (Get-FileHash -LiteralPath (Join-Path $Source $relative) -Algorithm SHA256).Hash -ne $expected) {
-                throw "Payload hash mismatch: $relative"
-            }
-        }
-    }
-    New-Item -ItemType Directory -Path $destination | Out-Null
+    $null = Assert-HanautomataPayload $Source
     try {
+        Copy-HanautomataPayload $Source $destination
         foreach ($arch in @('x64','x86')) {
-            New-Item -ItemType Directory -Path (Join-Path $destination $arch) | Out-Null
-            foreach ($name in @('hanautomata-ime-setup.exe','hanautomata_tsf.dll')) {
-                $relative = "$arch/$name"
-                $targetFile = Join-Path $destination $relative
-                Copy-Item -LiteralPath (Join-Path $Source $relative) -Destination $targetFile
-                if ((Get-FileHash -LiteralPath $targetFile -Algorithm SHA256).Hash -ne $manifest.$relative) { throw "Staged hash mismatch: $relative" }
-            }
             Invoke-Setup $arch 'selftest'
         }
         Copy-Item -LiteralPath $PSCommandPath -Destination (Join-Path $destination 'install-machine.ps1')
-        Copy-Item -LiteralPath (Join-Path $Source 'sha256.json') -Destination (Join-Path $destination 'sha256.json')
+        Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'payload.ps1') -Destination (Join-Path $destination 'payload.ps1')
         foreach ($arch in @('x64','x86')) {
             $attempted += $arch
             Invoke-Setup $arch 'register-machine'
@@ -69,7 +55,7 @@ if ($Action -eq 'Install') {
         foreach ($arch in $attempted) {
             try { Invoke-Setup $arch 'unregister-machine' } catch { $rollbackFailed = $true; $events.Add($_.Exception.Message) }
         }
-        Write-Receipt $(if ($rollbackFailed) { 'rollback-incomplete' } else { 'failed-registration-rolled-back' }) $reason
+        if (Test-Path -LiteralPath $destination) { Write-Receipt $(if ($rollbackFailed) { 'rollback-incomplete' } elseif ($attempted.Count -eq 0) { 'failed-before-registration' } else { 'failed-registration-rolled-back' }) $reason }
         # Keep staged files and receipt for diagnosis; never delete a potentially loaded DLL.
         throw $reason
     }

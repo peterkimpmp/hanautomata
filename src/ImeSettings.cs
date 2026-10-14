@@ -174,6 +174,23 @@ namespace Hanautomata
             catch (FileNotFoundException) { return false; }
             catch (DirectoryNotFoundException) { return false; }
         }
+        // Explicit first-use/migration action in the intended normal user's session. Never repair invalid bytes silently.
+        internal static ImeSettingsSnapshot PrepareUser(string path)
+        {
+            path = Path.GetFullPath(path);
+            var observed = Load(path);
+            if (observed.Error != null || observed.Value == null) throw new IOException(observed.Error ?? "설정을 확인할 수 없습니다.");
+            if (observed.Fingerprint == "missing") return Save(path, observed.Value, observed.Fingerprint);
+            bool created;
+            using (var guard = Lock(path + ".lock", out created))
+            {
+                byte[] current = Read(path);
+                if (Fingerprint(current) != observed.Fingerprint) throw new ImeSettingsConflictException();
+                ImeSettings.Parse(current);
+                // Preserve formatting, omitted defaults, exclusions and every recovery file byte-for-byte.
+                return Published(path, current, null, ImeSharedAccess.GrantSettingsRead);
+            }
+        }
         internal static ImeSettings ReadRecovery(string path)
         {
             byte[] bytes = Read(path);

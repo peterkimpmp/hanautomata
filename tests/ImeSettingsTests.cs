@@ -17,6 +17,10 @@ internal static class ImeSettingsTests
         catch (Exception e) { failed++; Console.WriteLine("FAIL " + name + ": " + e.Message); }
     }
     static void Reject(Action run) { bool rejected = false; try { run(); } catch (Exception) { rejected = true; } Check(rejected, "invalid input accepted"); }
+    static ImeSettingsSnapshot Prepare(string path)
+    {
+        return ImeSettingsStore.PrepareUser(path);
+    }
     static bool HasPackageRead(string path)
     {
         var rules = File.GetAccessControl(path, AccessControlSections.Access).GetAccessRules(true, true, typeof(SecurityIdentifier)).Cast<FileSystemAccessRule>();
@@ -38,6 +42,30 @@ internal static class ImeSettingsTests
         Directory.CreateDirectory(dir);
         try
         {
+            Test("user preparation creates defaults once and preserves existing bytes and history", delegate {
+                string path = Path.Combine(dir, "prepare.json");
+                var first = Prepare(path);
+                Check(first.Warning == null && first.Value.InputMode == "Auto" && HasPackageRead(path), "first activation did not prepare readable defaults");
+                byte[] custom = System.Text.Encoding.UTF8.GetBytes("{ \"InputMode\":\"English\", \"ExcludedApps\":[\"private.exe\"] }\n");
+                File.WriteAllBytes(path, custom); File.WriteAllText(path + ".previous", "private recovery bytes");
+                var prepared = Prepare(path);
+                Check(prepared.Value.InputMode == "English" && prepared.Value.ExcludedApps.Single() == "private.exe", "existing options reset");
+                Check(File.ReadAllBytes(path).SequenceEqual(custom) && File.ReadAllText(path + ".previous") == "private recovery bytes", "preparation rewrote configuration or backup");
+                Check(prepared.BackupPath == null && HasPackageRead(path), "preparation rotated history or omitted read access");
+            });
+            Test("user preparation refuses corrupt oversized and missing-after-save settings", delegate {
+                // Check the entry point outside Reject so a missing implementation cannot pass the rejection cases.
+                Prepare(Path.Combine(dir, "prepare-entry.json"));
+                string path = Path.Combine(dir, "prepare-invalid.json");
+                foreach (byte[] bytes in new[] { System.Text.Encoding.UTF8.GetBytes("{broken"), new byte[65537] })
+                {
+                    File.WriteAllBytes(path, bytes); Reject(delegate { Prepare(path); });
+                    Check(File.ReadAllBytes(path).SequenceEqual(bytes), "preparation replaced invalid settings");
+                }
+                File.Delete(path); File.WriteAllText(path + ".lock", "history");
+                Reject(delegate { Prepare(path); });
+                Check(!File.Exists(path) && File.ReadAllText(path + ".lock") == "history", "preparation erased a repair state");
+            });
             Test("new settings and atomic replacement keep package read without write", delegate {
                 string path = Path.Combine(dir, "shared.json");
                 var first = ImeSettingsStore.Save(path, new ImeSettings(), "missing");

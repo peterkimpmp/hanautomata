@@ -499,6 +499,10 @@ pub fn enable_user(enable: bool) -> Report {
         report.push("machine registration must exist before user activation", Err(E_FAIL));
         return report;
     }
+    if enable {
+        report.steps.extend(options_command(true).steps);
+        if !report.ok() { return report; } // Do not add a profile whose settings could not be prepared.
+    }
     init_com();
     // InstallLayoutOrTip can rewrite per-user CTF state; apply the requested enable state last.
     report.push("InstallLayoutOrTip (current user)", install_layout(if enable { 0 } else { ILOT_UNINSTALL }));
@@ -517,6 +521,78 @@ pub fn enable_user(enable: bool) -> Report {
     } else if report.ok() {
         report.steps.extend(user_readiness().steps);
     }
+    report
+}
+
+fn options_executable(setup: &std::path::Path) -> Option<std::path::PathBuf> {
+    let arch = setup.parent()?;
+    let name = arch.file_name()?.to_str()?;
+    if !name.eq_ignore_ascii_case("x64") && !name.eq_ignore_ascii_case("x86") { return None; }
+    Some(arch.parent()?.join("ui").join("Hanautomata.ImeOptions.exe"))
+}
+fn registered_options_executable(setup: &std::path::Path, registered_dll: &std::path::Path) -> Option<std::path::PathBuf> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows::Win32::Globalization::{CompareStringOrdinal, CSTR_EQUAL};
+    if !setup.file_name()?.to_str()?.eq_ignore_ascii_case("hanautomata-ime-setup.exe") { return None; }
+    let canonical_setup = std::fs::canonicalize(setup).ok()?;
+    let canonical_dll = std::fs::canonicalize(registered_dll).ok()?;
+    let setup_dir: Vec<u16> = canonical_setup.parent()?.as_os_str().encode_wide().collect();
+    let dll_dir: Vec<u16> = canonical_dll.parent()?.as_os_str().encode_wide().collect();
+    if unsafe { CompareStringOrdinal(&setup_dir, &dll_dir, true) } != CSTR_EQUAL { return None; }
+    options_executable(&registered_dll.with_file_name("hanautomata-ime-setup.exe"))
+}
+
+fn registered_machine_dll() -> Option<std::path::PathBuf> {
+    use std::os::windows::ffi::OsStringExt;
+    use windows::Win32::System::Registry::{RegGetValueW, RRF_RT_REG_SZ};
+    let key = HSTRING::from(format!("{}\\InprocServer32", com_key()));
+    let mut data = vec![0u16; 32768]; let mut bytes = (data.len() * 2) as u32;
+    if unsafe { RegGetValueW(HKEY_LOCAL_MACHINE, &key, PCWSTR::null(), RRF_RT_REG_SZ, None,
+        Some(data.as_mut_ptr().cast()), Some(&mut bytes)) } != ERROR_SUCCESS { return None; }
+    if bytes < 4 || bytes % 2 != 0 || bytes as usize > data.len() * 2 { return None; }
+    data.truncate(bytes as usize / 2);
+    if data.pop() != Some(0) || data.contains(&0) { return None; }
+    let path = std::path::PathBuf::from(std::ffi::OsString::from_wide(&data));
+    path.is_absolute().then_some(path)
+}
+
+/// Explicit utility command only; no editor or child process is launched from the input service.
+fn options_command(prepare: bool) -> Report {
+    use std::os::windows::process::CommandExt;
+    let mut report = Report::default();
+    if crate::system::elevated() {
+        report.push("settings require the intended user's non-elevated session", Err(E_ACCESSDENIED));
+        return report;
+    }
+    let exe = std::env::current_exe().ok().zip(registered_machine_dll())
+        .and_then(|(setup, dll)| registered_options_executable(&setup, &dll));
+    let Some(exe) = exe.filter(|p| p.is_file() && p.with_extension("exe.config").is_file()) else {
+        report.push("use the setup tool in the currently registered revision with its complete ui payload", Err(E_FAIL));
+        return report;
+    };
+    let mut command = std::process::Command::new(&exe);
+    command.stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null());
+    if prepare { command.arg("--prepare-user").creation_flags(0x08000000); } // CREATE_NO_WINDOW
+    let mut step = if prepare { "prepare current-user settings" } else { "open settings editor" }.to_string();
+    let result = (|| -> Result<String, HRESULT> {
+        let mut child = command.spawn().map_err(|_| E_FAIL)?;
+        if !prepare { return Ok(format!("opened {}", exe.display())); }
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+        loop {
+            match child.try_wait() {
+                Ok(Some(exit)) if exit.success() => return Ok("existing options preserved; settings prepared for this user".into()),
+                Ok(Some(exit)) => { step = format!("settings preparation exited {exit}; open options to repair settings"); return Err(E_FAIL); }
+                Ok(None) if std::time::Instant::now() < deadline => std::thread::sleep(std::time::Duration::from_millis(25)),
+                _ => {
+                    // Do not terminate a writer mid-publication. No activation is attempted; the owned
+                    // headless child may finish normally and a later enable-user can retry.
+                    step = format!("preparation not confirmed complete (pid {}); no activation performed; allow it to finish before retrying", child.id());
+                    return Err(E_FAIL);
+                }
+            }
+        }
+    })();
+    report.push(step, result);
     report
 }
 
@@ -729,6 +805,32 @@ fn activation_result(hr: HRESULT) -> std::result::Result<(), HRESULT> {
 #[cfg(test)]
 mod registration_tests {
     use super::*;
+    #[test]
+    fn editor_belongs_to_the_same_architecture_payload_revision() {
+        for arch in ["x64", "x86"] {
+            let root = std::path::Path::new(r"C:\Program Files\한오토마타\revisions\test");
+            assert_eq!(options_executable(&root.join(arch).join("hanautomata-ime-setup.exe")), Some(root.join("ui").join("Hanautomata.ImeOptions.exe")));
+        }
+        assert!(options_executable(std::path::Path::new(r"C:\unrelated\hanautomata-ime-setup.exe")).is_none());
+    }
+    #[test]
+    fn an_old_setup_cannot_prepare_options_for_a_new_registered_revision() {
+        let nonce = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let root = std::env::temp_dir().join(format!("hanautomata-revision-test-{}-{nonce}", std::process::id()));
+        let old = root.join("old").join("x64"); let new = root.join("new").join("x64");
+        std::fs::create_dir_all(&old).unwrap(); std::fs::create_dir_all(&new).unwrap();
+        let setup = old.join("hanautomata-ime-setup.exe"); let dll = new.join(DLL_NAME);
+        std::fs::write(&setup, b"fixture").unwrap(); std::fs::write(&dll, b"fixture").unwrap();
+        let result = registered_options_executable(&setup, &dll);
+        let same_dll = old.join(DLL_NAME); std::fs::write(&same_dll, b"fixture").unwrap();
+        let same_revision = registered_options_executable(&setup, &same_dll);
+        std::fs::remove_file(same_dll).unwrap();
+        std::fs::remove_file(setup).unwrap(); std::fs::remove_file(dll).unwrap();
+        std::fs::remove_dir(&old).unwrap(); std::fs::remove_dir(old.parent().unwrap()).unwrap();
+        std::fs::remove_dir(&new).unwrap(); std::fs::remove_dir(new.parent().unwrap()).unwrap(); std::fs::remove_dir(root).unwrap();
+        assert!(result.is_none(), "a stale editor must not prepare the active revision's settings");
+        assert!(same_revision.is_some(), "the registered revision must retain access to its own editor");
+    }
 
     #[test]
     fn disabled_profile_is_not_successful_activation() {
@@ -925,6 +1027,7 @@ pub fn cli(args: Vec<String>) -> i32 {
         "unregister-machine" => unregister_machine(),
         "enable-user" => enable_user(true),
         "disable-user" => enable_user(false),
+        "options" => options_command(false),
         "status" => status(),
         "selftest" => selftest(&dll),
         "selftest-registered" => selftest_registered(),
@@ -933,7 +1036,7 @@ pub fn cli(args: Vec<String>) -> i32 {
         "activate" => activate(args.windows(2).find(|w| w[0] == "--to").map(|w| w[1].as_str())),
         _ => {
             eprintln!(
-                "usage: hanautomata-ime-setup <register [--ctf-hkcu] | unregister | register-machine | unregister-machine | enable-user | disable-user | status | selftest | selftest-registered | probe-hkcu [--enable] | active | activate [--to TOKEN]> [--dll PATH]"
+                "usage: hanautomata-ime-setup <register [--ctf-hkcu] | unregister | register-machine | unregister-machine | enable-user | disable-user | options | status | selftest | selftest-registered | probe-hkcu [--enable] | active | activate [--to TOKEN]> [--dll PATH]"
             );
             eprintln!("https://github.com/peterkimpmp/hanautomata");
             return 2;

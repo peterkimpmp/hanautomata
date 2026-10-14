@@ -12,7 +12,7 @@ disposition: local-reusable
 
 - C# 단위 단언 26,391개가 현재 기준 소스에서 통과했다.
 - 트레이 통합 시험은 TSF 동시 처리 제거 후 106/106이다.
-- TSF 131개 검사와 양쪽 빌드를 통과했으며 실제 앱 검증이 남아 있다.
+- TSF 133개 검사와 양쪽 빌드를 통과했으며 실제 앱 검증이 남아 있다.
 - Word 언어 속성 후보의 실제 효과와 6종 앱 승인은 미검증이다.
 
 ## 판정과 검증 경로
@@ -338,3 +338,29 @@ cargo build --release --manifest-path tsf/Cargo.toml --features quality-probes -
 같은 새 EXE의 패키징·해시·설치 사전 확인은 `ReleaseTests.ps1 -SourceDirectory build/windows-quality/options-layout-products`에서 **21개 통과**했다(`options-layout-release.log`). 실제 설치·로그인 시험으로 합산하지 않는다. 최종 UI 소스·빌드 연결은 `options-layout-build-record-20261015.json`에 별도로 보관한다.
 
 이후 Windows 화면 도구가 `failed to activate captured window` 및 복구 시 `Could not capture the given monitor (0x80070057)`로 실패했다. 수정본의 시각 검수는 사용자에게 새 시험 창 열기를 요청한 상태다. 배치 회귀는 **실제 화면의 DPI 100/150/200% 통과 증거가 아니다**. 위 독립 소스 검토 이후의 UI 배치 변경도 검토 범위와 구별한다. 실제 앱 승인은 계속 **0/6**, WQ-07과 전체 목표는 진행 중이다.
+
+## 설정 편집기 배포와 일반 사용자 준비 — 2026-10-15
+
+설정 편집기를 TSF 개발 묶음의 `ui` 폴더에 포함했다. `tsf/build.ps1 -X86`은 x64/x86 setup·DLL과 편집기·`.config`의 6개 파일 및 해시 목록을 만든다. `tsf/package.ps1`은 이 파일들과 설치·갱신 스크립트, 공통 payload 검사, README를 포함해 11개 파일의 ZIP을 만든다. 고유 파일명과 검증된 임시 폴더를 사용하며 기존 설치 묶음을 덮어쓰지 않는다. 새 설치/갱신 스크립트는 6개 파일을 복사 전후 검사하고 기존 설치 폴더·revision을 거부한다. 기존 네 파일만 있는 묶음은 새 스크립트의 입력으로 인정하지 않는다.
+
+관리자 단계에서는 편집기를 실행하거나 사용자 설정을 만들지 않는다. 새 setup의 `enable-user`가 일반 사용자 설정을 먼저 준비하고, 실패하면 언어 목록/활성화 API를 호출하기 전에 반환한다. 유효한 기존 설정은 공백·생략된 기본값·제외 앱·백업을 원문 그대로 보존하며 읽기 권한만 보강한다. 새 사용자만 기본 파일을 생성한다. 손상·용량 초과·저장 이력만 남은 상태는 자동 초기화하지 않는다. `options` 명령은 같은 revision의 편집기를 명시적으로 여는 진입점이다. TSF 입력 서비스에서 앱을 실행하지 않으며 **Windows 입력기 메뉴 연동은 아직 남아 있다**.
+
+| 검증 | 증거 (`build/windows-quality/`) | 판정 범위 |
+|---|---|---|
+| 사용자 준비 회귀 | `user-prepare-before.log` → `user-prepare-after.log` | 미구현 2개 실패 후 설정 **28개 통과**, 관리자 준비 거부·배치 **6개 통과** |
+| 실제 C# 준비 명령 | `payload-prepare-tests-final.log`, `payload-prepare-tests-final-ps51.log` | 실제 묶음의 편집기 실행. 일반 사용자 PowerShell 7/5.1 각각 **21개 통과**, 한글·공백 시험 경로에서 기존 바이트·백업 보존 및 패키지 읽기 전용 권한 확인 |
+| 묶음 실패 검사 | 같은 두 payload 로그 | 편집기 변조·config 누락은 목적 폴더 생성 전 거부, 기존 목적지 거부, 미등록 파일 제외, ZIP 해시·임시 폴더 정리 확인. 합성 파일이며 설치 실행 아님 |
+| TSF 개발 빌드 | `user-prepare-final-tsf-build.log` | **133개(52+64+17)**, x64/x86 release·DLL selftest 통과 |
+| 실제 갱신 사전 확인 | `user-prepare-preflight-final.log` | `-CheckOnly` 통과, 목적 revision 부재 확인. 실제 HKLM 양쪽 경로와 롤백 도구는 `d2-word-correction-20261013`이며 변경 없음 |
+| 비관리자 시스템 등록 | `user-prepare-admin-denial.log` | 등록/제거가 E_ACCESSDENIED로 거부되고 사용자 언어 목록·관측한 등록 키 존재 여부 불변 |
+| 개발 ZIP | `user-prepare-package-path.txt`, `user-prepare-package-entries.json` | 실제 빌드 파일 6개와 설치 의존 파일 포함. 설치·갱신·롤백 실기 시험은 미실행 |
+
+처음 Rust 실행은 PowerShell의 작업 폴더 변경 중 상대 로그 경로가 잘못 해석되어 BrokenPipe로 끝났다. 성공 증거에서 제외했고 절대 로그 경로로 전체 명령을 다시 실행한 위 로그만 채택했다. GitHub Windows 실행 계정이 관리자이면 payload CI는 준비 명령의 **거부 경계**를 검사하며, 일반 사용자 성공 증거는 위 로컬 실행으로 구분한다.
+
+첫 독립 소스 검토(`user-prepare-review.json`)의 지적을 반영했다. 이전 도구로 새 revision의 설정을 준비하는 회귀를 먼저 실패로 재현했고(`user-prepare-stale-revision-before.log`), 현재 HKLM DLL과 도구의 실제 경로가 같은 revision일 때만 설정 준비·열기를 허용한다. [RegGetValueW](https://learn.microsoft.com/windows/win32/api/winreg/nf-winreg-reggetvaluew)로 해당 비트수의 REG_SZ 경로만 읽으며 조회/경로 확인 실패는 거부한다. 갱신 실패 시 이전 DLL 옆의 setup으로 복구하고, 그 도구가 없으면 사전 점검부터 거부한다. 기존 활성 사용자의 재준비도 새 receipt와 README에 명시했다.
+
+준비 대기 시간이 지나도 파일 쓰기 중인 자식을 강제 종료하지 않고 활성화를 보류한다. [Rust Child](https://doc.rust-lang.org/std/process/struct.Child.html)의 핸들을 놓아도 자식이 종료되지 않는 동작을 사용하며 PID를 보고한다. 이후 충돌/전원 손실로 저장 이력만 남으면 자동 초기화하지 않는 기존 복구 정책을 유지한다. 실제 앱 manifest는 `asInvoker`·`uiAccess=false`이며 일반 사용자 CLI 실행도 확인했다. 등록 전 실패 receipt와 편집기 표준 입출력 상속도 보강했다. 최종 C# 앱의 기존 패키징 검사는 `user-prepare-release-tests.log`에서 **21개 통과**다.
+
+후속 독립 소스 검토(`user-prepare-followup-review.json`)는 Medium 5개 모두 반영됐고 잔여 High/구체적 Medium이 없다고 판정했다. 실제 설치나 시험을 실행한 검토가 아니다. 남은 낮은 심각도·후속 게이트는 중단/대기 안내, 무프로필 경로 처리, 미래 설정 스키마의 다운그레이드 정책, 장시간 준비의 실제 타임아웃, 모니터 간 DPI, 설치/롤백 실기다. 시험 도구는 대상 EXE 경로를 필수로 받고, 로컬은 실제 TSF 묶음의 편집기, CI는 그 작업에서 새로 빌드한 C# 편집기를 명시한다.
+
+이 변경으로 실제 앱·등록·Word F2 승인을 늘리지 않는다. 동결된 사용자 적용 후보도 그대로 보존한다. 일반 AppContainer 자원 검증과 실제 호스트 검증, 관리자 설치/실패 롤백, Windows 메뉴 연결, 수정본 UI·DPI 검수, 후보창·영속 학습·로그인·장기 성능은 각각 별도 게이트다.

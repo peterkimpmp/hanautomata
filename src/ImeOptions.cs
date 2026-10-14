@@ -12,9 +12,28 @@ namespace Hanautomata
         [STAThread]
         static int Main(string[] args)
         {
+            if (args.Length == 1 && args[0] == "--prepare-user") return PrepareUser(ImeSettingsStore.DefaultPath, IsElevated());
+            if (args.Length == 3 && args[0] == "--prepare-user" && args[1] == "--settings-file") return PrepareUser(args[2], IsElevated());
             if (args.Length == 0) return Run(ImeSettingsStore.DefaultPath);
             if (args.Length == 2 && args[0] == "--settings-file") return Run(args[1]);
             return 2;
+        }
+        static bool IsElevated()
+        {
+            using (var identity = System.Security.Principal.WindowsIdentity.GetCurrent())
+                return new System.Security.Principal.WindowsPrincipal(identity).IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
+        }
+        internal static int PrepareUser(string path, bool elevated)
+        {
+            if (elevated) return 3; // Do not initialize the UAC administrator's separate profile.
+            try { return ImeSettingsStore.PrepareUser(path).Warning == null ? 0 : 1; }
+            catch (Exception e)
+            {
+                if (!(e is IOException || e is UnauthorizedAccessException || e is ArgumentException || e is NotSupportedException || e is System.Security.SecurityException
+                    || e is FormatException || e is System.Xml.XmlException || e is InvalidOperationException || e is System.Runtime.Serialization.SerializationException)) throw;
+                Console.Error.WriteLine("설정 준비 실패. 설정 편집기에서 파일 상태와 접근 권한을 확인해 주세요. " + e.Message);
+                return 1;
+            }
         }
         internal static int Run(string path)
         {
