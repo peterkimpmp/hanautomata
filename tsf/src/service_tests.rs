@@ -24,6 +24,12 @@ struct Host {
     read_only: Cell<bool>,
     selection_failure: Cell<bool>,
     scope_value_failure: Cell<bool>,
+    scope_value_error: Cell<Option<HRESULT>>,
+    keyboard_disabled: Cell<bool>,
+    empty_context: Cell<bool>,
+    language_property: Cell<bool>,
+    language: Cell<Option<i32>>,
+    language_at_write: Cell<Option<i32>>,
     deny_read: Cell<bool>,
     write_requests: Cell<u32>,
     caret_selection: Cell<bool>,
@@ -65,7 +71,10 @@ impl ITfContext_Impl for Context_Impl {
         if self.0.status_failure.get() { return Err(E_FAIL.into()); }
         Ok(TS_STATUS { dwDynamicFlags: if self.0.read_only.get() { TF_SD_READONLY } else { 0 }, ..TS_STATUS::default() })
     }
-    fn GetProperty(&self, _: *const GUID) -> Result<ITfProperty> { Err(E_NOTIMPL.into()) }
+    fn GetProperty(&self, guid: *const GUID) -> Result<ITfProperty> {
+        if unsafe { *guid == GUID_PROP_LANGID } && self.0.language_property.get() { Ok(LanguageProperty(self.0.clone()).into()) }
+        else { Err(E_NOTIMPL.into()) }
+    }
     fn GetAppProperty(&self, _: *const GUID) -> Result<ITfReadOnlyProperty> {
         // The generated COM adapter returns this HRESULT without writing the caller's null output.
         // S_FALSE is the documented "owner does not support the property" result.
@@ -81,17 +90,20 @@ impl ITfContext_Impl for Context_Impl {
 }
 
 impl ITfCompartmentMgr_Impl for Context_Impl {
-    fn GetCompartment(&self, _: *const GUID) -> Result<ITfCompartment> {
-        if self.0.scope_valid.get() { Ok(Compartment.into()) } else { Err(E_FAIL.into()) }
+    fn GetCompartment(&self, guid: *const GUID) -> Result<ITfCompartment> {
+        let disabled = unsafe { if *guid == GUID_COMPARTMENT_KEYBOARD_DISABLED {
+            self.0.keyboard_disabled.get()
+        } else if *guid == GUID_COMPARTMENT_EMPTYCONTEXT { self.0.empty_context.get() } else { false } };
+        if self.0.scope_valid.get() { Ok(Compartment(disabled).into()) } else { Err(E_FAIL.into()) }
     }
     fn ClearCompartment(&self, _: u32, _: *const GUID) -> Result<()> { Err(E_NOTIMPL.into()) }
     fn EnumCompartments(&self) -> Result<IEnumGUID> { Err(E_NOTIMPL.into()) }
 }
 #[implement(ITfCompartment)]
-struct Compartment;
+struct Compartment(bool);
 impl ITfCompartment_Impl for Compartment_Impl {
     fn SetValue(&self, _: u32, _: *const VARIANT) -> Result<()> { Err(E_NOTIMPL.into()) }
-    fn GetValue(&self) -> Result<VARIANT> { Ok(VARIANT::default()) }
+    fn GetValue(&self) -> Result<VARIANT> { Ok(edit::variant_i4(self.0 as i32)) }
 }
 #[implement(ITfReadOnlyProperty)]
 struct ScopeProperty(Rc<Host>);
@@ -100,9 +112,29 @@ impl ITfReadOnlyProperty_Impl for ScopeProperty_Impl {
     fn EnumRanges(&self, _: u32, _: OutRef<IEnumTfRanges>, _: Ref<ITfRange>) -> Result<()> { Err(E_NOTIMPL.into()) }
     fn GetValue(&self, _: u32, _: Ref<ITfRange>) -> Result<VARIANT> {
         if self.0.scope_value_failure.get() { return Err(E_FAIL.into()); }
+        if let Some(code) = self.0.scope_value_error.get() { return Err(code.into()); }
         Ok(VARIANT::default())
     }
     fn GetContext(&self) -> Result<ITfContext> { Err(E_NOTIMPL.into()) }
+}
+
+#[implement(ITfProperty)]
+struct LanguageProperty(Rc<Host>);
+impl ITfReadOnlyProperty_Impl for LanguageProperty_Impl {
+    fn GetType(&self) -> Result<GUID> { Ok(GUID_PROP_LANGID) }
+    fn EnumRanges(&self, _: u32, _: OutRef<IEnumTfRanges>, _: Ref<ITfRange>) -> Result<()> { Err(E_NOTIMPL.into()) }
+    fn GetValue(&self, _: u32, _: Ref<ITfRange>) -> Result<VARIANT> {
+        Ok(self.0.language.get().map(edit::variant_i4).unwrap_or_default())
+    }
+    fn GetContext(&self) -> Result<ITfContext> { Err(E_NOTIMPL.into()) }
+}
+impl ITfProperty_Impl for LanguageProperty_Impl {
+    fn FindRange(&self, _: u32, _: Ref<ITfRange>, _: OutRef<ITfRange>, _: TfAnchor) -> Result<()> { Err(E_NOTIMPL.into()) }
+    fn SetValueStore(&self, _: u32, _: Ref<ITfRange>, _: Ref<ITfPropertyStore>) -> Result<()> { Err(E_NOTIMPL.into()) }
+    fn SetValue(&self, _: u32, _: Ref<ITfRange>, value: *const VARIANT) -> Result<()> {
+        self.0.language.set(edit::variant_as_i32(unsafe { &*value })); Ok(())
+    }
+    fn Clear(&self, _: u32, _: Ref<ITfRange>) -> Result<()> { self.0.language.set(None); Ok(()) }
 }
 
 #[implement(ITfRange)]
@@ -117,6 +149,7 @@ impl ITfRange_Impl for Range_Impl {
         Ok(())
     }
     fn SetText(&self, _: u32, _: u32, value: &PCWSTR, n: i32) -> Result<()> {
+        self.host.language_at_write.set(self.host.language.get());
         if self.host.fail_set.replace(false) { return Err(E_FAIL.into()); }
         assert!(n >= 0);
         let mut units: Vec<u16> = self.host.text.borrow().encode_utf16().collect();
@@ -464,9 +497,57 @@ fn field_diagnostics_distinguish_identical_hresult_without_document_contents() {
         host.selection_failure.set(expected == Stage::Selection);
         host.scope_value_failure.set(expected == Stage::ScopeValue);
         let probe = edit::field_probe(1, &context);
-        assert_eq!(probe.access, edit::FieldAccess::Unknown(E_FAIL));
+        assert_eq!(probe.access, if expected == Stage::ScopeValue { edit::FieldAccess::Private } else { edit::FieldAccess::Unknown(E_FAIL) });
         assert_eq!(probe.failure, Some(edit::FieldQueryFailure { stage: expected, code: E_FAIL }));
         assert_eq!(host.writes.get(), 0);
+    }
+}
+
+#[test]
+fn word_scope_value_failure_keeps_typing_private_after_positive_host_checks() {
+    let (service, host, context) = fixture();
+    host.scope_valid.set(true);
+    host.scope_value_failure.set(true);
+    let probe = edit::field_probe(1, &context);
+    assert_eq!(probe.access, edit::FieldAccess::Private);
+    assert_eq!(probe.failure, Some(edit::FieldQueryFailure { stage: edit::FieldQueryStage::ScopeValue, code: E_FAIL }));
+    service.apply_context_policy(probe.access, false, Some((&context, 1))).unwrap();
+    assert!(service.state.borrow().password_field, "no input trace in an unknown scope");
+    seed(&service, &host, &context);
+    let shell_state = service.state.borrow();
+    let shell = shell_state.shell.as_ref().unwrap();
+    assert!(shell.private_context());
+    assert!(shell.engine().learning_paused());
+    drop(shell_state);
+    assert!(paired_key(&service, &context, b' ', probe.access).as_bool());
+    assert_eq!(&*host.text.borrow(), "안녕 ");
+    assert!(service.state.borrow().shell.as_ref().unwrap().engine().learned_words().is_empty());
+}
+
+#[test]
+fn optional_scope_failure_never_overrides_disabled_empty_or_readonly_host() {
+    let (_, host, context) = fixture();
+    host.scope_valid.set(true);
+    host.scope_value_failure.set(true);
+    for flag in [&host.keyboard_disabled, &host.empty_context, &host.read_only] {
+        flag.set(true);
+        assert_eq!(edit::field_access(1, &context), edit::FieldAccess::Protected);
+        flag.set(false);
+    }
+    host.scope_valid.set(false);
+    assert!(edit::field_access(1, &context).blocks_keys());
+    assert_eq!(host.writes.get(), 0);
+}
+
+#[test]
+fn scope_lock_disconnect_and_invalid_argument_errors_still_block_keys() {
+    let (_, host, context) = fixture();
+    host.scope_valid.set(true);
+    for code in [TF_E_NOLOCK, TF_E_DISCONNECTED, E_INVALIDARG, E_NOTIMPL] {
+        host.scope_value_error.set(Some(code));
+        let probe = edit::field_probe(1, &context);
+        assert_eq!(probe.access, edit::FieldAccess::Unknown(code));
+        assert!(probe.access.blocks_keys());
     }
 }
 
@@ -551,6 +632,36 @@ fn reconversion_round_trip_preserves_the_prefix_without_language_property_suppor
     assert_eq!(&*host.text.borrow(), "prefix dkssud ");
     assert!(paired_key(&service, &context, crate::shell::vk::F2 as u8, edit::FieldAccess::Ordinary).as_bool());
     assert_eq!(&*host.text.borrow(), "prefix 안녕 ");
+}
+
+#[test]
+fn correction_language_is_ready_before_the_hosts_implicit_composition_ends() {
+    let (service, host, context) = fixture();
+    seed(&service, &host, &context);
+    assert!(paired_key(&service, &context, b' ', edit::FieldAccess::Ordinary).as_bool());
+    host.caret_selection.set(true);
+    host.language_property.set(true);
+    host.language.set(Some(0x0412));
+    assert!(paired_key(&service, &context, crate::shell::vk::F2 as u8, edit::FieldAccess::Ordinary).as_bool());
+    assert_eq!(host.language_at_write.get(), Some(0x0409), "SetText ends its implicit composition before returning to the caller");
+    assert_eq!(&*host.text.borrow(), "dkssud ");
+}
+
+#[test]
+fn rejected_correction_restores_the_original_language_including_absent_property() {
+    for original in [None, Some(0x0412), Some(0x0809)] {
+        let (service, host, context) = fixture();
+        seed(&service, &host, &context);
+        assert!(paired_key(&service, &context, b' ', edit::FieldAccess::Ordinary).as_bool());
+        host.caret_selection.set(true);
+        host.language_property.set(true);
+        host.language.set(original);
+        host.fail_set.set(true);
+        assert!(!paired_key(&service, &context, crate::shell::vk::F2 as u8, edit::FieldAccess::Ordinary).as_bool());
+        assert_eq!(host.language.get(), original);
+        if original.is_none() { assert!(host.language_at_write.get().is_none(), "absent or mixed language spans must not be flattened"); }
+        assert_eq!(&*host.text.borrow(), "안녕 ");
+    }
 }
 
 #[test]

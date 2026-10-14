@@ -314,7 +314,9 @@ impl TextService_Impl {
         if let Some(failure) = probe.failure {
             let mut st = self.state.borrow_mut();
             if self.diagnostics.get() && st.last_query_failure.as_ref() != Some(&(context.clone(), failure)) {
-                system::log(&format!("field query unavailable stage={:?} code={:?}; current key will pass without entering engine", failure.stage, failure.code));
+                let policy = if probe.access == edit::FieldAccess::Private { "private composition; learning, preview and input trace disabled" }
+                    else { "current key will pass without entering engine" };
+                system::log(&format!("field query unavailable stage={:?} code={:?}; {}", failure.stage, failure.code, policy));
                 st.last_query_failure = Some((context.clone(), failure));
             }
         } else {
@@ -786,11 +788,7 @@ impl TextService {
             let mut moved = 0i32;
             unsafe { range.ShiftStart(ec, -want, &mut moved, std::ptr::null())? };
             if moved == -want && edit::text(ec, &range, want as usize + 1)? == old {
-                // Preserve formatting while correcting the committed word, then update only its language hint.
-                // Word AutoCorrect ON still needs real-app validation; TF_ST_CORRECTION alone failed in D2.
-                unsafe { range.SetText(ec, TF_ST_CORRECTION, &edit::utf16(new))? };
-                { let mut st = self.state.borrow_mut(); st.write_serial = st.write_serial.wrapping_add(1); }
-                self.corrected_language(ec, context, &range, new);
+                self.corrected_text(ec, context, &range, new)?;
                 edit::caret_after(ec, context, &range)?;
                 return Ok(true);
             }
@@ -817,20 +815,30 @@ impl TextService {
         };
         let flipped = self.state.borrow().shell.as_ref().and_then(|s| s.flip(&text));
         if let Some(flipped) = flipped {
-            unsafe { range.SetText(ec, TF_ST_CORRECTION, &edit::utf16(&flipped))? };
-            { let mut st = self.state.borrow_mut(); st.write_serial = st.write_serial.wrapping_add(1); }
-            self.corrected_language(ec, context, &range, &flipped);
+            self.corrected_text(ec, context, &range, &flipped)?;
         }
         Ok(())
     }
 
-    fn corrected_language(&self, ec: u32, context: &ITfContext, range: &ITfRange, text: &str) {
-        match edit::set_correction_language(ec, context, range, text) {
-            Ok(true) => self.trace("correction-language-set"),
-            Ok(false) => {},
-            // Text was already changed. A host without language properties must not cause the key to be replayed.
-            Err(error) => system::log(&format!("correction language property unavailable: {:?}", error.code())),
+    fn corrected_text(&self, ec: u32, context: &ITfContext, range: &ITfRange, text: &str) -> Result<()> {
+        let language = match edit::prepare_correction_language(ec, context, range, text) {
+            Ok(change) => change,
+            Err(error) => {
+                system::log(&format!("correction language property unavailable: {:?}", error.code()));
+                None
+            },
+        };
+        if let Err(error) = unsafe { range.SetText(ec, TF_ST_CORRECTION, &edit::utf16(text)) } {
+            if let Some(change) = language {
+                if let Err(restore) = change.restore(ec, range) {
+                    system::log(&format!("refused correction language restore failed: {:?}", restore.code()));
+                }
+            }
+            return Err(error);
         }
+        { let mut st = self.state.borrow_mut(); st.write_serial = st.write_serial.wrapping_add(1); }
+        if language.is_some() { self.trace("correction-language-set-before-text"); }
+        Ok(())
     }
 }
 

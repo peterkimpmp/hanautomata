@@ -108,18 +108,33 @@ fn read_bounded_selection(limit: usize, mut read: impl FnMut(&mut [u16]) -> Resu
     }
 }
 
-/// Set the language of a deliberately corrected single-script word. TF_ST_CORRECTION preserves the OLD language;
-/// after a Korean-to-Latin F2 that can contradict the new word. Do not relabel mixed or unknown scripts.
-/// This is a host interoperability candidate, not a promise that Word will suppress keyboard AutoCorrect.
-pub fn set_correction_language(ec: u32, context: &ITfContext, range: &ITfRange, text: &str) -> Result<bool> {
-    let Some(langid) = correction_language(text) else { return Ok(false) };
+/// Retain the old property so a refused correction can restore formatting as well as preserve its text.
+pub struct CorrectionLanguage { property: ITfProperty, previous: VARIANT }
+
+impl CorrectionLanguage {
+    pub fn restore(&self, ec: u32, range: &ITfRange) -> Result<()> {
+        unsafe { self.property.SetValue(ec, range, &self.previous) }
+    }
+}
+
+impl Drop for CorrectionLanguage {
+    fn drop(&mut self) { unsafe { let _ = VariantClear(&mut self.previous); } }
+}
+
+/// SetText ends its implicit composition before it returns. Supply the corrected language BEFORE that
+/// boundary; TF_ST_CORRECTION preserves it. Do not relabel mixed scripts or an existing English locale.
+pub fn prepare_correction_language(ec: u32, context: &ITfContext, range: &ITfRange, text: &str) -> Result<Option<CorrectionLanguage>> {
+    let Some(langid) = correction_language(text) else { return Ok(None) };
     let property = unsafe { context.GetProperty(&GUID_PROP_LANGID)? };
-    let mut current = unsafe { property.GetValue(ec, range)? };
-    let keep = same_primary_language(variant_as_i32(&current), langid);
-    unsafe { let _ = VariantClear(&mut current); }
-    if keep { return Ok(false); }
-    unsafe { property.SetValue(ec, range, &variant_i4(langid as i32))?; }
-    Ok(true)
+    let previous = unsafe { property.GetValue(ec, range)? };
+    let change = CorrectionLanguage { property, previous };
+    if same_primary_language(variant_as_i32(&change.previous), langid) { return Ok(None); }
+    let vt = unsafe { change.previous.Anonymous.Anonymous.vt };
+    // VT_EMPTY also means several language spans. Never flatten those or try to restore them by Clear.
+    if vt == VT_EMPTY { return Ok(None); }
+    if vt != VT_I4 { return Err(windows::Win32::Foundation::E_INVALIDARG.into()); }
+    unsafe { change.property.SetValue(ec, range, &variant_i4(langid as i32))?; }
+    Ok(Some(change))
 }
 
 fn same_primary_language(current: Option<i32>, target: u16) -> bool {
@@ -234,6 +249,17 @@ pub fn field_probe(ec: u32, context: &ITfContext) -> FieldProbe {
     };
     match read() {
         Ok(access) => FieldProbe { access, failure: None },
+        // Word can expose the optional property object yet fail GetValue in a writable text context.
+        // E_FAIL is NOT evidence of an ordinary scope. After successful status/disabled/empty/selection
+        // checks, permit composition with the private policy (no learning, preview or input trace).
+        // Password protection is the host's disabled compartment; explicit password/PIN scopes still
+        // block. Lock/disconnection errors and malformed contents remain closed, as do earlier failures.
+        // https://learn.microsoft.com/windows/win32/api/inputscope/ne-inputscope-inputscope (IS_PASSWORD)
+        Err(error) if stage.get() == FieldQueryStage::ScopeValue
+            && error.code() == windows::Win32::Foundation::E_FAIL => FieldProbe {
+                access: FieldAccess::Private,
+                failure: Some(FieldQueryFailure { stage: stage.get(), code: error.code() }),
+            },
         Err(error) => FieldProbe::failed(stage.get(), error.code()),
     }
 }

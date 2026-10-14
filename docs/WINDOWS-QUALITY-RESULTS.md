@@ -681,3 +681,32 @@ TSF는 학습을 즉시 적용하는 대신 문서 작업에 단회성 확인 �
 새 회귀는 정상 확정과 F2 왕복, 쓰기 거부, 커서/조합 종료 실패, 지연·중복 콜백, 호스트의 중간 변경, 학습 일시정지, 초기화·삭제·되돌리기·복구, 다른 엔진 묶음, 용량 초과, 동시 완료를 검증했다. 전체 실행의 ignored 2개는 부모 검사에서 별도 프로세스로 실행하는 fixture이며 226개에 중복 합산하지 않았다. 첫 전체 실행에서 거부된 조합 종료 API도 성공이어야 한다고 작성한 신규 시험이 실패했다. 실제 오류 반환을 유지하도록 시험을 바로잡고 전체를 다시 통과했다.
 
 기존 설치와 동결 후보는 덮어쓰지 않았다. 실제 Word 원인 확인·새 DLL 앱 시험, 저장 브로커·앱별 제한 대기열·인증된 통신·지속 저장·재시작 검증은 남아 있다. **전체 앱 승인 0/6, 목표 진행 중**을 유지한다.
+
+## 사용자별 후보 적재와 실제 Word 입력 복구 — 2026-10-15
+
+기존 시스템 TSF 프로필을 유지하면서 **이 제품의 x64 COM 클래스만 현재 사용자에게 임시 등록**하는 시험 경로를 확보했다. 기존 사용자 클래스가 없음을 확인하고 후보 해시와 복구 영수증을 남겼다. 시스템 등록·DLL·언어 목록은 변경하지 않았다. 새 Word의 모듈 경로로 후보 DLL 적재를 직접 확인했다. 이 경로는 일반 Word 시험의 증거이며 관리자·패키지 앱이나 정식 설치의 승인 근거가 아니다. [HKCR 병합 규칙](https://learn.microsoft.com/en-us/windows/win32/sysinfo/merged-view-of-hkey-classes-root)을 적용했다.
+
+Word PID 25488에서 `wq-learning-confirmation-20261015`를 적재했을 때 정확한 실패는 **ScopeValue / E_FAIL**이었다. 상태·비활성/빈 컨텍스트·선택 조회는 통과했지만 선택 속성인 InputScope 값을 얻지 못했다. `dkssud`→Space에서만 한글이 되고 F2가 처리되지 않았으므로 이 결과는 Word 자동 고침으로 분류한다.
+
+수정은 이 단계의 정확한 `E_FAIL`만 비공개 조합 정책으로 처리한다. 일반 입력란으로 판정하지 않으며 **학습·후보 미리보기·입력 추적을 끈다**. 읽기 전용·비활성/빈 컨텍스트·명시적인 암호/PIN은 계속 차단한다. 앞 단계 조회 실패와 잠금·연결·인수 오류, 잘못된 속성 내용도 차단한다. Microsoft는 [IS_PASSWORD 자체가 보안 경계가 아니며 암호란은 텍스트 서비스를 비활성화해야 한다](https://learn.microsoft.com/en-us/windows/win32/api/inputscope/ne-inputscope-inputscope)고 명시한다. 비활성화를 잘못 구현한 호스트까지 이 정책이 보장한다는 뜻은 아니다.
+
+| 직접 시험 | 결과 |
+|---|---|
+| `word-scope-red.log` | 같은 COM 오류 조건에서 수정 전 `Unknown(E_FAIL)` 재현, exit 101 |
+| `word-scope-build.log` | **229개: core 90 + TSF lib 120 + shell 19** 및 x64/x86 빌드·selftest 통과, exit 0 |
+| Word PID 17988, `wq-word-scope-20261015` | 후보 DLL 적재 확인. Space 전에 `ㅇ → 아 → 안 → 안녕` 조합, Space 확정 확인 |
+| 자동 판별 모드 재활성화 후 F2 | API `handled=true`지만 화면은 `안녕`. Undo의 `자동 고침 취소`를 한 번 실행하면 `dkssud`가 나타남. **F2 후 Word 자동 고침 충돌은 미해결** |
+
+새 문서를 만들 때 Word가 입력 모드를 영어로 바꾸는 동작도 관찰했다. Shift+Space의 고정 한글 모드와 프로필 재활성화 후 자동 판별 모드를 구분하여 시험했다. 따라서 고정 모드에서 F2가 동작하지 않은 결과를 자동 판별의 결함으로 합산하지 않는다. 키 주입 시험이며 물리 키 시험으로 기록하지 않는다.
+
+이전 사용자 시험 문서 두 개와 이번 시험 문서 두 개는 무시된 `build/windows-quality/`에 DOCX로 저장하고 XML 텍스트를 확인한 뒤 해당 창만 닫았다. 숨은 기존 Word 프로세스는 종료하지 않았다. `user-com-trial-20261015.json`과 `user-com-word-scope-20261015.json`은 각 임시 클래스 복구를 기록한다. `word-scope-baseline-25488.log`, `word-scope-baseline-module.json`, `word-scope-fixed-17988.log`, `word-scope-autocorrect-undo-20261015.json/.png`에 원문 증거를 보존한다.
+
+새로 실행한 Word의 PID별 로그는 이번에는 에이전트가 읽는 LocalCache 쪽에서 확인됐다. 앞선 사용자 실행 Word의 네이티브 경로와 다르므로 실행 경로별 파일 관측을 계속 분리한다. 동일한 논리 경로라는 이유로 설정·학습 저장소가 모든 앱에 공유된다고 주장하지 않는다. **전체 앱 승인 0/6**은 유지한다.
+
+### 언어 지정 순서 가설도 Word 자동 고침을 해결하지 못했다
+
+[SetText 계약](https://learn.microsoft.com/en-us/windows/win32/api/msctf/nf-msctf-itfrange-settext)은 명시적인 조합이 없으면 호출 안에서 임시 조합을 시작·종료한다고 설명한다. 기존 코드는 그 뒤에 언어를 지정했다. 순서 회귀 `word-language-order-red.log`에서 SetText 진입 당시 언어가 아직 한국어임을 재현했다. 후보는 교정 전 언어를 준비하고, 쓰기 거부 시 원래 값을 복원한다. 기존 영어 지역과 `VT_EMPTY`(속성 없음 또는 여러 언어 값)는 유지하여 복원 과정에서 섞인 속성을 지우지 않는다.
+
+`word-language-order-build.log`의 **231개(core 90 + TSF lib 122 + shell 19)**와 x64/x86 빌드·selftest는 통과했다. 중간 검토에서 빈/혼합 언어 보존을 보강했으므로 최종 소스의 TSF 122개를 `word-language-order-final-tests.log`로 다시 통과했다. 부모 검사에서 실행하는 자식 fixture 2개는 총수에 중복 합산하지 않는다.
+
+그러나 새 Word PID 27032가 `wq-word-language-order-20261015` DLL을 적재한 실제 시험에서도 **F2 `handled=true`, 화면 `안녕`, Undo `자동 고침 취소`**였다. 언어 지정 순서 가설만으로 충돌을 해결하지 못했다. `word-language-order-f2-20261015.json/.png`, `word-language-order-27032.log`, `word-language-order-module.json`에 실패를 보존했다. 이 후보는 시스템에 설치하지 않았다. 다음 조사는 명시적 교정 조합과 Word가 자동 고침을 실행하는 경계이며, Word 옵션을 끄거나 API 성공만으로 통과시키지 않는다.
