@@ -21,7 +21,7 @@ path = "src/bin/config_probe.rs"
 required-features = ["quality-probes"]
 
 [features]
-quality-probes = ["windows/Win32_Security_Isolation", "dep:sha2"]
+quality-probes = ["windows/Win32_Security_Isolation", "windows/Win32_System_Pipes", "windows/Win32_System_IO", "dep:sha2"]
 
 [dependencies]
 hanautomata-ffi = { path = "../ffi", default-features = false }

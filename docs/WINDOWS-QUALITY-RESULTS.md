@@ -463,3 +463,43 @@ F2는 자동 모드 두벌식의 조합 중에도 후보를 전환하도록 보�
 작성자는 `State`/`PendingFinish` 필드와 서비스 자기 참조 경로에 raw self·윈도 데이터·타이머·후크 역참조가 없음을 확인했다. `this()`는 소유 COM 참조이며 `Deactivate`는 먼저 후보를 비운다. 이 소스 대조는 모든 호스트의 정상 Deactivate 호출이나 나머지 COM 인터페이스의 스레드 안전성을 증명하지 않는다. 비정상 외부 최종 해제의 자원 보유와 Deactivate 생략 경로는 전체 agility 감사·실제 수명 시험에 남긴다.
 
 마지막 wake/게시 오류·편집 closure 폐기 보강의 전체 결과는 `candidate-final-reviewed-build.log`: **178개(52+107+19) 통과 + 자식 fixture 1개 제외**, x64/x86 release·selftest 성공이다. `candidate-final-x86-tests.log`에서도 32비트 라이브러리 **107개 통과 + 같은 fixture 1개 제외**를 확인했다. 마지막 세부 보강은 작성자 회귀로 확인했으며 그 뒤 별도 독립 재검토를 했다고 주장하지 않는다. 기존 설치와 동결 관리자 묶음은 유지하며 **실제 앱 승인 0/6**이다.
+
+## 학습 저장 통신의 실제 AppContainer 시험
+
+2026-10-15, 단일 저장 프로세스와 통신할 수 있는지 확인하는 개발용 파이프 시험을 추가했다. 영속 학습은 여전히 미구현이다. `quality-probes`에서만 빌드되는 실행 파일이 새 프로필·고정 메시지용 파이프 4개를 만들고, capability 없는 실제 비패키지 AppContainer 자식을 실행한다. 제품 DLL·설치 등록·실제 설정·학습 사전은 변경하지 않는다.
+
+최초 x64/x86 시험에서는 `LOCAL` 주소의 두 AppContainer 경로가 모두 오류 2였다. 기본 ACL과 ALL APPLICATION PACKAGES 데이터 ACE를 추가한 ACL의 차이를 확인하기 전에 주소를 찾지 못한 결과다. 이를 접근 거부 통과나 모든 파이프 통신의 불가능으로 해석하지 않았다. 최초 보고서는 `pipe-transport-20261015-050654.json`, `pipe-transport-x86-20261015-051012.json`이다.
+
+최종 비교는 허용 대상을 방금 만든 프로필 SID 하나로 좁혔다. 기본 사용자 ACE에 이 SID의 읽기·쓰기 데이터 권한 `0x0012008b`만 추가한다. 두 조건 모두 같은 낮은 무결성 라벨을 사용한다. 서버 인스턴스 생성·ACL 변경·소유권 변경 권한은 주지 않고 원격 연결을 거부한다. 모든 파이프는 고유한 이름의 최초 인스턴스로만 생성한다.
+
+| 주소·조건 | x64 관측 | x86 관측 | 판정 범위 |
+|---|---|---|---|
+| `LOCAL`, 프로필 SID 허용/미허용 | 둘 다 열기 오류 2 | 둘 다 열기 오류 2 | 주소 형식 실패. ACL 경계 통과로 계산하지 않음 |
+| 직접 주소, SID 미허용 | 오류 5, 서버 연결 없음 | 오류 5, 서버 연결 없음 | 이 자식의 접근 거부 확인 |
+| 직접 주소, SID 허용 | 고정 메시지 왕복·양쪽 PID 일치 | 고정 메시지 왕복·양쪽 PID 일치 | 이 시험 토큰에서만 통신 성립 |
+| 일반 사용자 대조 | 두 ACL 모두 왕복 성공 | 두 ACL 모두 왕복 성공 | 부모 프로세스 대조 |
+| 종료·정리 | 자식 종료, 4개 주소 부재, 프로필/시험 파일 제거 | 동일 | 실행 후 조건 직접 확인 |
+
+파이프 클라이언트가 보고한 PID만 믿지 않는다. 서버에서 `GetNamedPipeClientProcessId`를 읽어 실제 `CreateProcessW`가 반환한 자식 PID와 대조한다. 클라이언트는 서버 PID도 검사한다. 모든 서버 스레드를 합류한 뒤 `WaitNamedPipeW`로 접속 없이 각 주소가 오류 2인지 확인한다. 원시 API의 오류는 문자열 해제나 JSON 할당 전에 보존한다. 자식 종료와 프로필 전체 경로의 부재도 기존 정리 절차로 확인한다. 서버 종료 제한은 자식의 20초 제한과 선행 대조 시간을 충분히 넘기는 60초이며, 정상 취소는 5ms 폴링 단위로 정리한다. 이 폴링 코드는 시험 전용이다.
+
+| 근거 파일 (`build/windows-quality/`) | 결과 |
+|---|---|
+| `pipe-probe-red.log` | 구현 전 이름·판정 회귀 2건 실패 |
+| `pipe-probe-peer-red.log` | 다른 PID의 영수증을 받아들이는 회귀 1건 실패 |
+| `pipe-probe-reviewed-tests.log`, `pipe-probe-reviewed-x86-tests.log` | 각 **10개 통과**(기존 probe 4 + 신규 6). 같은 검사를 20개로 합산하지 않음 |
+| `probe-v2-x64-pipe-transport-20261015-051354.json`, `probe-v2-x86-pipe-transport-20261015-051438.json` | `pipe_transport_failed`, 정리 성공 |
+| `probe-v2-x64-pipe-transport-direct-20261015-051355.json`, `probe-v2-x86-pipe-transport-direct-20261015-051439.json` | `pipe_transport_pass`, PID·정리 포함 |
+| `probe-v2-x64-shared-read-20261015-051355.json` | 기존 설정 읽기/쓰기 거부 경계 `shared_read_pass`, 정리 성공 |
+| `pipe-probe-review.json` | 반대 공급자 Claude의 도구 없는 소스 검토, 213,735ms |
+
+독립 검토는 주소 해석 가능성(High·조건부), 서버 기한(Medium), 종료 관측과 상대 PID 보강을 지적했다. 주소 비교의 실패·성공을 모두 보존하고 나머지 세 항목을 수정했다. 후속 검토(`pipe-probe-followup-review.json`, 177,960ms)는 재현 가능한 High·Medium이나 오통과·정리 회귀를 발견하지 못했다. Low 지적인 종료 관측의 불필요한 연결은 `pipe-probe-absence-red.log`에서 재현해 비접속 조회로 교체했다. 이후의 이 수정과 원시 오류 보존은 작성자 회귀로 확인하며 별도의 독립 재검토를 주장하지 않는다.
+
+최종 원장은 `pipe-probe-sealed-{x64,x86}-tests.log`의 각 **11개 통과**(기존 4 + 신규 7)와 같은 접두사의 빌드 로그다. `pipe-probe-sealed-{x64,x86}-{pipe-transport,pipe-transport-direct}-20261015.json`에 최종 주소 비교와 정리를 기록한다. 앞선 10개 결과와 합산하지 않는다. 기본 `pipe_transport_failed` 판정에는 오류 2를 함께 남겨 주소 조회 실패를 ACL 거부 성공으로 오인하지 않게 한다. 소스·실행 파일 해시는 `pipe-probe-checkpoint-20261015.json`에 보존한다.
+
+이는 범용 브로커 인증 검토가 아니다. 프로세스 재시작·PID 재사용·다른 사용자/로그인 세션·실제 패키지 앱·LPAC를 이 시험으로 승인하지 않는다. 프로필 SID만 허용하는 변경은 새 파이프 시험에 한정한다. 기존 `--shared-read`는 여전히 시험 설정 파일·mutex에만 ALL APPLICATION PACKAGES 읽기/동기화 ACE를 부여한다.
+
+[Microsoft 파이프 권한 문서](https://learn.microsoft.com/en-us/windows/win32/ipc/named-pipe-security-and-access-rights)는 일반 쓰기 권한에 서버 인스턴스 생성 권한도 포함됨을 설명한다. 따라서 개별 데이터 권한을 사용했다. [ConnectNamedPipe 문서](https://learn.microsoft.com/en-us/windows/win32/api/namedpipeapi/nf-namedpipeapi-connectnamedpipe)는 AppContainer의 `LOCAL` 형식 제약을 명시한다. 직접 주소의 이번 관측을 패키지 앱의 지원 계약으로 확대하지 않는다. 구체적 프로필 SID를 허용하는 참고 구현은 [Microsoft testfx RFC 017](https://github.com/microsoft/testfx/blob/main/docs/RFCs/017-TestHost-Launcher.md)이며 문서 상태는 논의·구현 중, 미출시다.
+
+### 설정 화면 관측 한계
+
+동일 진행 턴에서 Sky 목록에 사용자가 열어 둔 시험 설정 창이 확인됐으나, 모니터 캡처가 두 번 모두 `IGraphicsCaptureItemInterop.CreateForMonitor` 오류 `0x80070057`로 실패했다. 입력 동작이나 다른 UI 실행면을 사용하지 않았다. 창이 잠겨 있었다고 추정하지 않으며, 옵션 값·배치·DPI·저장 후 재열기는 미검증으로 유지한다. 메타데이터는 `settings-capture-20261015.json`에 보존했다. **전체 앱 승인 0/6과 목표 활성 상태는 유지한다.**

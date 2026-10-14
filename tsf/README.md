@@ -141,6 +141,23 @@ DLL은 [ITfFnConfigure::Show](https://learn.microsoft.com/en-us/windows/win32/ap
 
 설정의 새 학습은 현재 세션에만 유지됩니다. 영속 학습은 아직 미구현이고 후보 UI는 개발 단계이며 이 화면이 기능 완성을 뜻하지 않습니다. 실제 UI 저장·재열기와 DPI 검수도 남아 있습니다.
 
+## 학습 저장 개발용 통신 시험
+
+`quality-probes`의 `hanautomata-config-probe`는 실제 AppContainer 자식을 만들어 임시 파이프의 왕복 통신을 검사한다. `--pipe-transport`는 `LOCAL` 주소, `--pipe-transport-direct`는 직접 주소를 비교한다. 새 보고서 경로만 허용하며 등록·실제 설정·학습 파일을 변경하지 않는다.
+
+```powershell
+cargo build --release --manifest-path tsf/Cargo.toml --features quality-probes --bin hanautomata-config-probe
+$target = (cargo metadata --manifest-path tsf/Cargo.toml --no-deps --format-version 1 | ConvertFrom-Json).target_directory
+$probe = Join-Path $target 'release/hanautomata-config-probe.exe'
+# 일반 사용자 창에서, 존재하지 않는 보고서 파일 이름을 지정한다.
+& $probe --output .\build\pipe-local.json --pipe-transport
+& $probe --output .\build\pipe-direct.json --pipe-transport-direct
+```
+
+실행마다 생성한 프로필 SID 하나에만 제한된 데이터 권한을 부여한다. 원격 연결과 추가 서버 인스턴스 권한을 막고, 양쪽 PID·왕복 메시지·자식 종료·시험 프로필 및 파이프 정리를 확인한다. 고정 시험 문자열만 주고받으며 실제 입력 내용은 수집하지 않는다.
+
+2026-10-15 x64/x86 시험에서는 직접 주소만 위 경계를 통과했다. `LOCAL` 주소의 오류 2를 접근 거부 성공으로 처리하지 않았다. 이는 비패키지 AppContainer의 관측이며 패키지 앱·LPAC 지원이나 영속 학습 구현을 뜻하지 않는다. 상세 근거와 한계는 [Windows 결과 원장](../docs/WINDOWS-QUALITY-RESULTS.md#학습-저장-통신의-실제-appcontainer-시험)에 있다.
+
 ## 아직 없는 것(P3에서)
 
 - 후보창의 실제 앱·접근성 승인(C-CMP-02), 설정 창의 실제 설치·Windows 메뉴 연결 및 화면 검증(W-23)

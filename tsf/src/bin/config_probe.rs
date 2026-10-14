@@ -1,10 +1,15 @@
 //! Opt-in, unprivileged AppContainer boundary probe. No IME registration, live settings writes or UI.
 //! Optional --shared-read grants read/synchronize only on the newly created synthetic file/mutex, never a live resource.
+//! Optional --pipe-transport tests fresh, fixed-message pipes with explicit diagnostic ACLs; it does not save learning.
 //! The parent creates one uniquely named profile, copies only this probe into it, and removes that owned profile.
 //! Reports contain paths/results for a synthetic configuration, never typed text or live configuration contents.
 
 #[cfg(not(windows))]
 fn main() { eprintln!("This probe requires Windows."); std::process::exit(2); }
+
+#[cfg(windows)]
+#[path = "config_probe/pipe.rs"]
+mod pipe_probe;
 
 #[cfg(windows)]
 fn main() {
@@ -14,6 +19,7 @@ fn main() {
 
 #[cfg(windows)]
 mod probe {
+    use crate::pipe_probe;
     use std::{fs, io::{Read, Seek, SeekFrom, Write}, mem::size_of, path::{Component, Path, PathBuf}, time::{SystemTime, UNIX_EPOCH}};
     use hanautomata_tsf::{settings::Settings, system};
     use std::os::windows::{fs::OpenOptionsExt, io::AsRawHandle};
@@ -226,13 +232,17 @@ mod probe {
             std::thread::sleep(Duration::from_millis(20));
         }
     }
-    fn child(exe: &Path, output: &Path, fixture: &str, mutex: &str, sid: PSID, terminal: &mut bool) -> Result<u32> {
+    fn child(exe: &Path, output: &Path, fixture: &str, mutex: &str, sid: PSID, terminal: &mut bool,
+        child_pid: &mut Option<u32>, pipe_token: Option<(&str, pipe_probe::Namespace)>) -> Result<u32> {
         let attributes = Attributes::new()?;
         let security = SECURITY_CAPABILITIES { AppContainerSid: sid, ..Default::default() };
         unsafe { UpdateProcThreadAttribute(attributes.ptr, 0, PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES as usize,
             Some((&security as *const SECURITY_CAPABILITIES).cast()), size_of::<SECURITY_CAPABILITIES>(), None, None)?; }
         // All arguments are generated paths/names; Windows filenames cannot contain a quote. Never invoke a shell.
-        let command = format!("\"{}\" --child \"{}\" \"{fixture}\" \"{mutex}\"", exe.display(), output.display());
+        let command = match pipe_token {
+            Some((token, namespace)) => format!("\"{}\" --child-pipe \"{}\" \"{fixture}\" \"{mutex}\" \"{token}\" {}", exe.display(), output.display(), namespace.argument()),
+            None => format!("\"{}\" --child \"{}\" \"{fixture}\" \"{mutex}\"", exe.display(), output.display()),
+        };
         let mut command: Vec<u16> = command.encode_utf16().chain(Some(0)).collect();
         let mut start = STARTUPINFOEXW::default();
         start.StartupInfo.cb = size_of::<STARTUPINFOEXW>() as u32;
@@ -244,6 +254,7 @@ mod probe {
             &HSTRING::from(exe.parent().ok_or("missing child folder")?.to_string_lossy().as_ref()),
             (&start as *const STARTUPINFOEXW).cast::<STARTUPINFOW>(), &mut info)?; }
         *terminal = false;
+        *child_pid = Some(info.dwProcessId);
         let process = Handle(info.hProcess); let _thread = Handle(info.hThread);
         if unsafe { WaitForSingleObject(process.0, 20000) } != WAIT_OBJECT_0 {
             unsafe { TerminateProcess(process.0, 124)?; }
@@ -254,7 +265,7 @@ mod probe {
         let mut code = 0; unsafe { GetExitCodeProcess(process.0, &mut code)?; }
         Ok(code)
     }
-    fn parent(output: &Path, shared_read: bool, managed_writer: Option<&Path>) -> Result<i32> {
+    fn parent(output: &Path, shared_read: bool, managed_writer: Option<&Path>, pipe_transport: Option<pipe_probe::Namespace>) -> Result<i32> {
         if output.exists() { return Err("refusing to overwrite an existing probe report".into()); }
         if is_app_container()? || token_flag(TokenElevation)? { return Err("launch the parent from a non-elevated ordinary user process".into()); }
         let token = format!("{}-{}", std::process::id(), SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos());
@@ -265,9 +276,10 @@ mod probe {
         let fixture = base.join("Hanautomata").join(&fixture_name);
         let mut report = json!({"phase": "pending", "parent_pid": std::process::id(), "profile_name": name, "fixture": fixture,
             "shared_read_experiment": shared_read,
+            "pipe_transport_experiment": pipe_transport.map(|namespace| namespace.argument()),
             "managed_writer": managed_writer,
             "container_kind": "non-packaged AppContainer; zero capabilities; not LPAC; inherited environment",
-            "scope": "synthetic fixture/mutex only; optional read/synchronize ACE on these newly created resources; no live settings or ACL changes; real packaged hosts need separate verification"});
+            "scope": "owned synthetic profile/fixture/mutex and optional fixed-message pipes; optional ACLs affect only this run's resources; no live settings or ACL changes; real packaged hosts need separate verification"});
         let mut report_file = fs::OpenOptions::new().write(true).create_new(true).open(output)?;
         update_report(&mut report_file, &report)?;
         println!("pending_report={} profile={} fixture={}", output.display(), name, fixture.display());
@@ -276,8 +288,10 @@ mod probe {
         let mut fixture_created = false;
         let mut directory_created = false;
         let mut child_terminal = true;
+        let mut child_pid = None;
         let mut managed_child = None;
         let mut managed_terminal = true;
+        let mut pipes = None;
         let mut outcome = (|| -> Result<()> {
             let directory = fixture.parent().ok_or("missing fixture folder")?;
             match fs::create_dir(directory) {
@@ -341,16 +355,39 @@ mod probe {
             let mut source = fs::File::open(std::env::current_exe()?)?;
             let mut copied = fs::OpenOptions::new().write(true).create_new(true).open(&exe)?;
             std::io::copy(&mut source, &mut copied)?; copied.sync_all()?; drop(copied); drop(source);
+            if let Some(namespace) = pipe_transport {
+                pipes = Some(pipe_probe::Experiment::start(&token, &sid_string, namespace)?);
+                report["pipe_transport"] = json!({"desktop": pipe_probe::clients(&token, false, namespace)?,
+                    "scope": "four unique local diagnostic pipes; fixed nonce messages only; current user DACL; allowed variant adds narrow data access for this exact profile SID; both variants use a low-integrity label; not a broker authorization design; direct namespace is a diagnostic comparison, not a supported packaged-app claim",
+                    "namespace": namespace.argument(), "authorized_profile_sid": sid_string, "expected_parent_pid": std::process::id(),
+                    "token": token, "client_access": "0x0012008b", "remote_clients": "rejected"});
+                update_report(&mut report_file, &report)?;
+            }
             let child_output = folder.join("probe-result.json");
             let exit = child(&exe, &child_output, &fixture_name, &mutex_name,
-                profile_sid.as_ref().ok_or("profile SID missing")?.0, &mut child_terminal)?;
+                profile_sid.as_ref().ok_or("profile SID missing")?.0, &mut child_terminal, &mut child_pid,
+                pipe_transport.map(|namespace| (token.as_str(), namespace)))?;
             report["child_exit"] = json!(exit);
             if !child_output.is_file() { return Err(format!("child exited {exit:#x} without its report").into()); }
             report["child"] = serde_json::from_slice(&read_bounded(&child_output, 65536)?)?;
             drop(mutex);
-            if exit != 0 || report["child"]["app_container"] != true { return Err("child was not confirmed as an AppContainer".into()); }
+            if exit != 0 || report["child"]["app_container"] != true || report["child"]["pid"] != json!(child_pid) {
+                return Err("child PID and AppContainer result were not confirmed".into());
+            }
             Ok(())
         })();
+        if let Some(pipes) = pipes.as_mut() {
+            report["pipe_transport"]["servers"] = pipes.finish();
+            report["pipe_transport"]["container"] = report["child"]["pipe_transport"].clone();
+        }
+        let mut pipe_cleanup_ok = true;
+        if let Some(namespace) = pipe_transport {
+            report["pipe_transport"]["expected_child_pid"] = json!(child_pid);
+            report["pipe_transport"]["post_cleanup"] = pipe_probe::absence(&token, namespace)
+                .unwrap_or_else(|e| json!({"all_absent": false, "error": e.to_string()}));
+            pipe_cleanup_ok = report["pipe_transport"]["post_cleanup"]["all_absent"] == true && child_terminal;
+            report["pipe_transport"]["handles_closed"] = json!(pipe_cleanup_ok);
+        }
         let mut managed_ok = true;
         if let Some(process) = managed_child.as_mut() {
             let result = stop_managed(process, &mut managed_terminal);
@@ -394,7 +431,7 @@ mod probe {
             if !cleanup_ok { report["manual_cleanup"] = json!({"profile_name": name, "profile_root": root,
                 "instruction": "Confirm the owned probe child has exited and the root still resolves to this exact profile; then use DeleteAppContainerProfile for this name only. No broad directory deletion."}); }
         }
-        cleanup_ok &= managed_ok;
+        cleanup_ok &= managed_ok && pipe_cleanup_ok;
         if fixture_created {
             let result = fs::remove_file(&fixture); // exact create_new file from this run; never recursive cleanup
             report["cleanup_fixture"] = json!(match result { Ok(()) => "removed".to_string(), Err(e) => { cleanup_ok = false; e.to_string() } });
@@ -406,7 +443,7 @@ mod probe {
         }
         let compatible = outcome.is_ok() && report["parent"]["legacy"]["settings_match"] == true
             && report["child"]["legacy"]["settings_match"] == true && report["child"]["controlled_mutex"]["opened"] == true;
-        report["legacy_implementation_compatible"] = if shared_read || managed_writer.is_some() { Value::Null } else { json!(compatible) };
+        report["legacy_implementation_compatible"] = if shared_read || managed_writer.is_some() || pipe_transport.is_some() { Value::Null } else { json!(compatible) };
         let boundary = outcome.is_ok()
             && report["child"]["product_settings"]["settings_match"] == true
             && report["child"]["product_settings"]["sha256"] == report["parent"]["product_settings"]["sha256"]
@@ -420,7 +457,13 @@ mod probe {
             report["shared_read_boundary_pass"] = json!(boundary);
         }
         report["cleanup_ok"] = json!(cleanup_ok);
-        let (mut verdict, code) = evaluation(shared_read || managed_writer.is_some(), outcome.is_ok() && cleanup_ok, compatible, boundary);
+        let (mut verdict, mut code) = evaluation(shared_read || managed_writer.is_some(), outcome.is_ok() && cleanup_ok, compatible, boundary);
+        if pipe_transport.is_some() {
+            let pass = pipe_probe::passed(&report["pipe_transport"], report["child"]["app_container"] == true);
+            report["pipe_transport_boundary_pass"] = json!(pass);
+            (verdict, code) = if outcome.is_err() || !cleanup_ok { ("probe_failed", 2) }
+                else if pass { ("pipe_transport_pass", 0) } else { ("pipe_transport_failed", 1) };
+        }
         if managed_writer.is_some() {
             verdict = match code { 0 => "product_resources_pass", 1 => "product_resources_failed", _ => "probe_failed" };
         }
@@ -434,15 +477,24 @@ mod probe {
     pub fn run() -> Result<i32> {
         let args: Vec<String> = std::env::args().skip(1).collect();
         match args.as_slice() {
-            [flag, output] if flag == "--output" => parent(Path::new(output), false, None),
-            [flag, output, mode] if flag == "--output" && mode == "--shared-read" => parent(Path::new(output), true, None),
-            [flag, output, mode, writer] if flag == "--output" && mode == "--managed-writer" => parent(Path::new(output), false, Some(Path::new(writer))),
+            [flag, output] if flag == "--output" => parent(Path::new(output), false, None, None),
+            [flag, output, mode] if flag == "--output" && mode == "--shared-read" => parent(Path::new(output), true, None, None),
+            [flag, output, mode] if flag == "--output" && mode == "--pipe-transport" => parent(Path::new(output), false, None, Some(pipe_probe::Namespace::Local)),
+            [flag, output, mode] if flag == "--output" && mode == "--pipe-transport-direct" => parent(Path::new(output), false, None, Some(pipe_probe::Namespace::Direct)),
+            [flag, output, mode, writer] if flag == "--output" && mode == "--managed-writer" => parent(Path::new(output), false, Some(Path::new(writer)), None),
+            [flag, output, fixture, mutex, token, namespace] if flag == "--child-pipe" => {
+                if !is_app_container()? { return Err("worker mode requires a real AppContainer token".into()); }
+                let mut report = snapshot(fixture, mutex)?;
+                report["pipe_transport"] = pipe_probe::clients(token, true, pipe_probe::Namespace::parse(namespace)?)?;
+                write_new(Path::new(output), &serde_json::to_vec_pretty(&report)?)?;
+                Ok(0)
+            },
             [flag, output, fixture, mutex] if flag == "--child" => {
                 if !is_app_container()? { return Err("worker mode requires a real AppContainer token".into()); }
                 write_new(Path::new(output), &serde_json::to_vec_pretty(&snapshot(fixture, mutex)?)?)?;
                 Ok(0)
             },
-            _ => Err("usage: hanautomata-config-probe --output <new-report.json> [--shared-read | --managed-writer <test-helper.exe>]".into()),
+            _ => Err("usage: hanautomata-config-probe --output <new-report.json> [--shared-read | --managed-writer <test-helper.exe> | --pipe-transport | --pipe-transport-direct]".into()),
         }
     }
 
