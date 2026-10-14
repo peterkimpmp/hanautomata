@@ -710,3 +710,23 @@ Word PID 25488에서 `wq-learning-confirmation-20261015`를 적재했을 때 정
 `word-language-order-build.log`의 **231개(core 90 + TSF lib 122 + shell 19)**와 x64/x86 빌드·selftest는 통과했다. 중간 검토에서 빈/혼합 언어 보존을 보강했으므로 최종 소스의 TSF 122개를 `word-language-order-final-tests.log`로 다시 통과했다. 부모 검사에서 실행하는 자식 fixture 2개는 총수에 중복 합산하지 않는다.
 
 그러나 새 Word PID 27032가 `wq-word-language-order-20261015` DLL을 적재한 실제 시험에서도 **F2 `handled=true`, 화면 `안녕`, Undo `자동 고침 취소`**였다. 언어 지정 순서 가설만으로 충돌을 해결하지 못했다. `word-language-order-f2-20261015.json/.png`, `word-language-order-27032.log`, `word-language-order-module.json`에 실패를 보존했다. 이 후보는 시스템에 설치하지 않았다. 다음 조사는 명시적 교정 조합과 Word가 자동 고침을 실행하는 경계이며, Word 옵션을 끄거나 API 성공만으로 통과시키지 않는다.
+
+### 명시적 교정 조합 실패와 공백 보존 후보 — 2026-10-15
+
+명시적 조합으로 F2 교정을 감싸는 실험을 만들고 시작 거절·쓰기 실패·종료 재시도 회귀를 먼저 실패시켰다. 수정 후 실험판의 235개 검사와 x64/x86 빌드·selftest는 통과했다. 그러나 실제 Word PID 25960에서 `wq-word-explicit-20261015` DLL 적재를 확인한 뒤 Sky 개별 키로 `d k s s u d`→Space→F2를 실행했을 때, 최종 화면은 여전히 `안녕`이고 Undo는 `자동 고침 취소`였다. **명시적 조합도 해결책이 아니었다.** 추가 복잡성을 현재 소스에 남기지 않고 실험 패치를 무시된 build에 보존했다.
+
+다음 가설은 **F2가 기존 공백까지 다시 쓰면 Word에 새 단어 경계를 전달한다**는 것이다. 후보는 전체 원문과 커서 일치를 확인한 뒤 끝의 공백 하나를 범위에서 제외하고 단어만 교정한다. 원래 공백과 그 뒤의 커서를 유지한다. 범위 축소 실패는 원문을 보존한다. 격리 COM 호스트에서 공백 재입력에 반응하는 자동 고침을 주입하여 수정 전 실패를 재현했다. 이는 실제 Word 원인을 확정한 증거가 아니며, 아직 후보 단계다.
+
+| 증거 | 판정 |
+|---|---|
+| `word-explicit-correction-red.log`, `word-explicit-correction-build.log` | 실험판 회귀 실패→235개·양쪽 빌드 통과. 현재 채택된 소스의 검사 수와 합산하지 않음 |
+| `word-explicit-module.json`, `word-explicit-25960.log` | 해당 Word의 DLL 경로·해시, F2 처리 도달 확인 |
+| `word-explicit-f2-settled-20261015.json/.png` | 실제 화면·Undo에서 자동 고침 충돌 지속 확인 |
+| `word-explicit-correction-experiment.patch` | 효과 없던 실험 구현 보존; 현재 소스에서는 제외 |
+| `word-separator-red.log` | 원문 보존과 공백 재입력 방지 회귀 2개가 수정 전 실패 |
+| `word-separator-build.log` | 현재 후보 **233개: core 90 + TSF lib 124 + shell 19**, x64/x86 빌드·selftest 통과 |
+| `build/tsf/wq-word-separator-20261015/` | 여섯 파일 해시·소스 해시 동결. 시스템·사용자 모두 미적용 |
+
+Word 실패 문서를 저장하던 중 화면 도구의 `failed to activate captured window`에 이어 창 재선택 후 `Could not capture the given monitor (0x80070057)`가 발생했다. `quser`는 세션 `Disc`를 반환했다. 따라서 후속 UI 입력을 중단했고 PID 25960의 문서는 닫지 않았다. 로컬 DOCX의 저장 성공은 확인되지 않았으며 마지막 관측은 다른 이름으로 저장 대화상자다. 화면·로그 증거는 별도로 보존했다.
+
+`user-com-word-explicit-20261015.json`으로 시험용 사용자 COM 클래스 제거·기존 시스템 등록 유지가 확인된다. Microsoft IME로 복귀했다. 진단 표시 파일은 핸들의 실제 경로를 확인한 뒤 고유한 비활성 이름으로 바꿨고, 활성 파일 부재를 `word-separator-cleanup-20261015.json`에 기록했다. 자동 로그오프·재부팅·보안 설정 변경은 하지 않았다. 화면이 복구되면 새 후보를 일반 Word에 임시 적재하여 자동 고침 ON 상태의 F2 왕복·공백·커서를 검증한다. **앱 승인 0/6, 목표 진행 중**이다.

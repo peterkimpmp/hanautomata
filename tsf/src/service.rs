@@ -788,8 +788,19 @@ impl TextService {
             let mut moved = 0i32;
             unsafe { range.ShiftStart(ec, -want, &mut moved, std::ptr::null())? };
             if moved == -want && edit::text(ec, &range, want as usize + 1)? == old {
-                self.corrected_text(ec, context, &range, new)?;
-                edit::caret_after(ec, context, &range)?;
+                // Space belongs to the already committed document. Replacing it again lets hosts run their
+                // automatic word correction on the user's explicit F2 choice. Verify the complete old text,
+                // then replace only the word and retain the original caret after the untouched separator.
+                if let Some(word) = new.strip_suffix(' ').filter(|_| old.ends_with(' ')) {
+                    let mut trimmed = 0;
+                    unsafe { range.ShiftEnd(ec, -1, &mut trimmed, std::ptr::null())?; }
+                    if trimmed != -1 { return Err(E_FAIL.into()); }
+                    self.corrected_text(ec, context, &range, word)?;
+                    edit::caret_after(ec, context, &caret)?;
+                } else {
+                    self.corrected_text(ec, context, &range, new)?;
+                    edit::caret_after(ec, context, &range)?;
+                }
                 return Ok(true);
             }
         }

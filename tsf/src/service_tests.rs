@@ -30,6 +30,9 @@ struct Host {
     language_property: Cell<bool>,
     language: Cell<Option<i32>>,
     language_at_write: Cell<Option<i32>>,
+    last_write: RefCell<String>,
+    autocorrect_space: Cell<bool>,
+    refuse_end_shift: Cell<bool>,
     deny_read: Cell<bool>,
     write_requests: Cell<u32>,
     caret_selection: Cell<bool>,
@@ -55,7 +58,7 @@ impl ITfContext_Impl for Context_Impl {
         if self.0.selection_failure.get() { return Err(E_FAIL.into()); }
         if count == 0 { return Err(E_INVALIDARG.into()); }
         let offset = if self.0.caret_selection.get() { self.0.text.borrow().encode_utf16().count() } else { 0 };
-        let range: ITfRange = Range { host: self.0.clone(), context: self.to_interface(), offset: Cell::new(offset) }.into();
+        let range: ITfRange = Range { host: self.0.clone(), context: self.to_interface(), offset: Cell::new(offset), tail: Cell::new(0) }.into();
         unsafe { *selection = TF_SELECTION { range: std::mem::ManuallyDrop::new(Some(range)), style: TF_SELECTIONSTYLE::default() }; *fetched = 1; }
         Ok(())
     }
@@ -138,12 +141,12 @@ impl ITfProperty_Impl for LanguageProperty_Impl {
 }
 
 #[implement(ITfRange)]
-struct Range { host: Rc<Host>, context: ITfContext, offset: Cell<usize> }
+struct Range { host: Rc<Host>, context: ITfContext, offset: Cell<usize>, tail: Cell<usize> }
 impl ITfRange_Impl for Range_Impl {
     fn GetText(&self, _: u32, flags: u32, buffer: PWSTR, max: u32, count: *mut u32) -> Result<()> {
         let units: Vec<u16> = self.host.text.borrow().encode_utf16().collect();
         let start = self.offset.get().min(units.len());
-        let n = (units.len() - start).min(max as usize);
+        let n = (units.len().saturating_sub(self.tail.get()).saturating_sub(start)).min(max as usize);
         unsafe { std::ptr::copy_nonoverlapping(units[start..].as_ptr(), buffer.0, n); *count = n as u32; }
         if flags & TF_TF_MOVESTART != 0 { self.offset.set(start + n); }
         Ok(())
@@ -153,8 +156,13 @@ impl ITfRange_Impl for Range_Impl {
         if self.host.fail_set.replace(false) { return Err(E_FAIL.into()); }
         assert!(n >= 0);
         let mut units: Vec<u16> = self.host.text.borrow().encode_utf16().collect();
+        let suffix = units[units.len().saturating_sub(self.tail.get())..].to_vec();
         units.truncate(self.offset.get());
-        if n > 0 { units.extend_from_slice(unsafe { std::slice::from_raw_parts(value.0, n as usize) }); }
+        let text = if n > 0 { String::from_utf16(unsafe { std::slice::from_raw_parts(value.0, n as usize) }).unwrap() } else { String::new() };
+        *self.host.last_write.borrow_mut() = text.clone();
+        let inserted = if self.host.autocorrect_space.get() && text == "dkssud " { "안녕 " } else { &text };
+        units.extend(inserted.encode_utf16());
+        units.extend(suffix);
         *self.host.text.borrow_mut() = String::from_utf16(&units).unwrap();
         self.host.writes.set(self.host.writes.get() + 1);
         Ok(())
@@ -170,14 +178,22 @@ impl ITfRange_Impl for Range_Impl {
         unsafe { *moved = after - before; }
         Ok(())
     }
-    fn ShiftEnd(&self, _: u32, _: i32, _: *mut i32, _: *const TF_HALTCOND) -> Result<()> { Err(E_NOTIMPL.into()) }
+    fn ShiftEnd(&self, _: u32, shift: i32, moved: *mut i32, _: *const TF_HALTCOND) -> Result<()> {
+        if self.host.refuse_end_shift.get() { return Err(E_FAIL.into()); }
+        let len = self.host.text.borrow().encode_utf16().count() as i32;
+        let before = len - self.tail.get() as i32;
+        let after = (before + shift).clamp(self.offset.get() as i32, len);
+        self.tail.set((len - after) as usize);
+        unsafe { *moved = after - before; }
+        Ok(())
+    }
     fn ShiftStartToRange(&self, _: u32, _: Ref<ITfRange>, _: TfAnchor) -> Result<()> { Err(E_NOTIMPL.into()) }
     fn ShiftEndToRange(&self, _: u32, _: Ref<ITfRange>, _: TfAnchor) -> Result<()> { Err(E_NOTIMPL.into()) }
     fn ShiftStartRegion(&self, _: u32, _: TfShiftDir) -> Result<BOOL> { Err(E_NOTIMPL.into()) }
     fn ShiftEndRegion(&self, _: u32, _: TfShiftDir) -> Result<BOOL> { Err(E_NOTIMPL.into()) }
-    fn IsEmpty(&self, _: u32) -> Result<BOOL> { Ok((self.offset.get() >= self.host.text.borrow().encode_utf16().count()).into()) }
+    fn IsEmpty(&self, _: u32) -> Result<BOOL> { Ok((self.offset.get() >= self.host.text.borrow().encode_utf16().count().saturating_sub(self.tail.get())).into()) }
     fn Collapse(&self, _: u32, anchor: TfAnchor) -> Result<()> {
-        if anchor == TF_ANCHOR_END { self.offset.set(self.host.text.borrow().encode_utf16().count()); }
+        if anchor == TF_ANCHOR_END { self.offset.set(self.host.text.borrow().encode_utf16().count().saturating_sub(self.tail.get())); }
         Ok(())
     }
     fn IsEqualStart(&self, _: u32, _: Ref<ITfRange>, _: TfAnchor) -> Result<BOOL> { Err(E_NOTIMPL.into()) }
@@ -187,7 +203,7 @@ impl ITfRange_Impl for Range_Impl {
     fn AdjustForInsert(&self, _: u32, _: u32) -> Result<BOOL> { Err(E_NOTIMPL.into()) }
     fn GetGravity(&self, _: *mut TfGravity, _: *mut TfGravity) -> Result<()> { Err(E_NOTIMPL.into()) }
     fn SetGravity(&self, _: u32, _: TfGravity, _: TfGravity) -> Result<()> { Ok(()) }
-    fn Clone(&self) -> Result<ITfRange> { Ok(Range { host: self.host.clone(), context: self.context.clone(), offset: Cell::new(self.offset.get()) }.into()) }
+    fn Clone(&self) -> Result<ITfRange> { Ok(Range { host: self.host.clone(), context: self.context.clone(), offset: Cell::new(self.offset.get()), tail: Cell::new(self.tail.get()) }.into()) }
     fn GetContext(&self) -> Result<ITfContext> { Ok(self.context.clone()) }
 }
 
@@ -212,7 +228,7 @@ fn fixture() -> (ComObject<TextService>, Rc<Host>, ITfContext) {
 }
 
 fn seed(service: &ComObject<TextService>, host: &Rc<Host>, context: &ITfContext) -> String {
-    let range: ITfRange = Range { host: host.clone(), context: context.clone(), offset: Cell::new(0) }.into();
+    let range: ITfRange = Range { host: host.clone(), context: context.clone(), offset: Cell::new(0), tail: Cell::new(0) }.into();
     service.state.borrow_mut().composition = Some(Composition { host: host.clone(), range }.into());
     let mut preview = String::new();
     for key in b"DKSSUD" {
@@ -632,6 +648,33 @@ fn reconversion_round_trip_preserves_the_prefix_without_language_property_suppor
     assert_eq!(&*host.text.borrow(), "prefix dkssud ");
     assert!(paired_key(&service, &context, crate::shell::vk::F2 as u8, edit::FieldAccess::Ordinary).as_bool());
     assert_eq!(&*host.text.borrow(), "prefix 안녕 ");
+}
+
+#[test]
+fn reconversion_preserves_the_existing_word_separator_without_retyping_it() {
+    let (service, host, context) = fixture();
+    seed(&service, &host, &context);
+    assert!(paired_key(&service, &context, b' ', edit::FieldAccess::Ordinary).as_bool());
+    *host.text.borrow_mut() = "prefix 안녕 ".into();
+    host.caret_selection.set(true);
+    host.autocorrect_space.set(true);
+    assert!(paired_key(&service, &context, crate::shell::vk::F2 as u8, edit::FieldAccess::Ordinary).as_bool());
+    assert_eq!(&*host.text.borrow(), "prefix dkssud ", "retyping the delimiter gives host AutoCorrect a new word boundary");
+    assert_eq!(&*host.last_write.borrow(), "dkssud");
+    assert!(paired_key(&service, &context, crate::shell::vk::F2 as u8, edit::FieldAccess::Ordinary).as_bool());
+    assert_eq!(&*host.text.borrow(), "prefix 안녕 ");
+    assert_eq!(&*host.last_write.borrow(), "안녕");
+}
+
+#[test]
+fn refused_reconversion_range_trim_keeps_the_original_word() {
+    let (service, host, context) = fixture();
+    *host.text.borrow_mut() = "안녕 ".into();
+    host.caret_selection.set(true);
+    host.refuse_end_shift.set(true);
+    assert!(service.replace_before(1, &context, "안녕 ", "dkssud ").is_err());
+    assert_eq!(&*host.text.borrow(), "안녕 ");
+    assert_eq!(host.writes.get(), 0);
 }
 
 #[test]
