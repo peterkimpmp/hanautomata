@@ -50,6 +50,10 @@ internal static class ImeOptionsLayoutTests
                         page.Text + " content=" + bottom + " viewport=" + panel.ClientSize.Height);
                 }
             }
+            // Isolate child text measurement from the flow host: its scrollbar can resize
+            // the viewport and restore every child's full width during a narrow-width check.
+            var panels = tabs.TabPages.Cast<TabPage>().SelectMany(page => page.Controls.OfType<FlowLayoutPanel>()).ToArray();
+            foreach (var panel in panels) panel.SuspendLayout();
             foreach (int width in new[] { 220, 500 })
             {
                 foreach (CheckBox box in Descendants(tabs).OfType<CheckBox>())
@@ -58,15 +62,16 @@ internal static class ImeOptionsLayoutTests
                     int textWidth = Math.Max(1, box.ClientSize.Width - SystemInformation.MenuCheckSize.Width - box.Padding.Horizontal);
                     int needed = TextRenderer.MeasureText(box.Text, box.Font, new Size(textWidth, int.MaxValue),
                         TextFormatFlags.WordBreak | TextFormatFlags.TextBoxControl).Height + box.Padding.Vertical;
-                    Check("checkbox text fits", box.Height >= needed, box.AccessibleName + " width=" + width + " actual=" + box.Height + " needed=" + needed);
+                    Check("checkbox text fits", box.Width == width && box.Height >= needed,
+                        box.AccessibleName + " width=" + width + " measuredWidth=" + box.Width + " actual=" + box.Height + " needed=" + needed);
                 }
                 foreach (TableLayoutPanel row in Descendants(tabs).OfType<TableLayoutPanel>())
                 {
                     row.Width = width; row.PerformLayout();
                     var label = row.Controls.OfType<Label>().Single();
                     int needed = label.GetPreferredSize(new Size(label.Width, 0)).Height;
-                    Check("combo label fits", label.Height >= needed && label.Bottom <= row.ClientSize.Height,
-                        label.Text + " width=" + width + " actual=" + label.Height + " needed=" + needed);
+                    Check("combo label fits", row.Width == width && label.Height >= needed && label.Bottom <= row.ClientSize.Height,
+                        label.Text + " width=" + width + " measuredWidth=" + row.Width + " actual=" + label.Height + " needed=" + needed);
                 }
             }
             var notes = Descendants(tabs).OfType<Label>().Where(label => label.Text.Contains("\n")).ToArray();
@@ -78,9 +83,10 @@ internal static class ImeOptionsLayoutTests
                     note.Width = width;
                     note.PerformLayout();
                     int needed = TextRenderer.MeasureText(note.Text, note.Font, new Size(width, int.MaxValue), TextFormatFlags.WordBreak | TextFormatFlags.TextBoxControl).Height;
-                    Check("wrapped note height", note.Height >= needed, "width=" + width + " actual=" + note.Height + " needed=" + needed);
+                    Check("wrapped note height", note.Width == width && note.Height >= needed, "width=" + width + " measuredWidth=" + note.Width + " actual=" + note.Height + " needed=" + needed);
                 }
             }
+            foreach (var panel in panels) panel.ResumeLayout();
         }
         return failures == 0 ? 0 : 1;
     }
