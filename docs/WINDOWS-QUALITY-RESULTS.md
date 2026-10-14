@@ -371,13 +371,25 @@ cargo build --release --manifest-path tsf/Cargo.toml --features quality-probes -
 
 개발 DLL에 [ITfFnConfigure::Show](https://learn.microsoft.com/en-us/windows/win32/api/ctffunc/nf-ctffunc-itffnconfigure-show)를 구현했다. 표준 Text Services 속성 요청의 진입점이며 현재 Windows 11 전환 메뉴의 실제 노출을 보장하는 근거는 아니다. 입력 서비스 활성화 없이 COM으로 조회할 수 있고, 지원 언어·프로필과 일반 데스크톱 프로세스 토큰을 확인한다. 관리자·AppContainer·조회 실패를 거부하며, 현재 등록 DLL과 적재된 DLL이 같은 revision일 때만 같은 묶음의 편집기를 연다. 오래된 적재 DLL·UI 파일 누락·편집기와 config의 reparse 파일은 거부한다. 설치나 사용자 설정의 변경은 하지 않았다.
 
-속성 콜백은 별도 최상위 편집기를 닫을 때까지 유지한다. 부모 앱의 창을 재지정하거나 비활성화하지 않으며, 저장 중인 자식을 오류 때문에 종료하지 않는다. 경로는 절대 경로·고정 파일명으로 지정하고 셸과 상속된 표준 입출력을 쓰지 않는다. [CoWaitForMultipleHandles](https://learn.microsoft.com/en-us/windows/win32/api/combaseapi/nf-combaseapi-cowaitformultiplehandles)의 메시지 대기 중 서비스 상태나 파일 잠금을 잡지 않고 재진입은 거부한다. 입력 도착으로 대기가 깨지는 것과 자식 종료를 구분한다.
+속성 콜백은 별도 최상위 편집기를 닫을 때까지 유지한다. 경로는 절대 경로·고정 파일명으로 지정하고 셸과 상속된 표준 입출력을 쓰지 않는다. 최초 구현의 COM 대기는 아래 독립 검토 후 [MsgWaitForMultipleObjectsEx](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-msgwaitformultipleobjectsex)와 명시적 메시지 처리로 교체했다. 서비스 상태나 파일 잠금을 잡지 않고 재진입은 거부하며 입력 도착과 자식 종료를 구분한다. 같은 스레드의 활성 부모 창만 RAII로 일시 비활성화·복원한다. 이미 비활성인 창은 다시 활성화하지 않고, 다른 스레드의 창을 제어하지 않는다. 호스트 WM_QUIT은 재게시하고 호출을 중단하되 자식은 이 코드에서 종료하지 않는다.
 
 | 검증 | 증거 (`build/windows-quality/`) | 판정 |
 |---|---|---|
 | 기존 COM 결함 | `configuration-before.log` | 속성 인터페이스 조회가 E_NOINTERFACE로 실패 |
 | 대기 경로 결함 | `configuration-after-fixed.log`, `configuration-wait-before.log`, `configuration-wait-after.log` | 단독 메시지 플래그와 대체 API에서 CO_E_NOT_SUPPORTED. 자식 종료 전에 반환한 실패를 보존 |
 | 수정된 진입점 | `configuration-focused-final.log` | 8개 통과: 비활성 상태 조회, 잘못된 인수, 토큰 정책, revision·의존 파일, 재진입·정상/오류 자식 종료 |
-| 전체 Rust·양쪽 DLL | `configuration-full-build.log` | **141개(52+72+17)**, x64/x86 release·selftest 통과. 실제 DLL 클래스 팩터리에서 속성 객체와 이름 조회, Show는 호출하지 않음 |
+| 최초 Rust·양쪽 DLL | `configuration-full-build.log` | **141개(52+72+17)**, x64/x86 release·selftest 통과. 실제 DLL 클래스 팩터리에서 속성 객체와 이름 조회, Show는 호출하지 않음 |
 
 초기 `configuration-after.log`의 컴파일 오류는 구현 과정 기록이며 통과 수에 포함하지 않는다. 자동 검사는 편집기 창을 열거나 시스템 등록·실제 설정을 수정하지 않았다. 위 대기 검사는 화면을 표시하지 않는 시험 프로세스를 사용한 것으로 실제 속성 창의 포커스·모달 동작·화면 반응 시험은 남아 있다. Windows 메뉴별 진입, 제한 호스트에서의 안내와 실제 거부, 설정 저장 후 재활성화, DPI와 전체 앱 승인 **0/6**을 유지한다.
+
+독립 소스 검토(`configuration-review.json`)는 High 없음, Medium 3건을 지적했다. 모달 대기 중 활성 부모의 재진입, 메시지를 소비하지 않을 수 있는 대기, 정상 사용자 판정의 부족이다. 부모 창 복원과 명시적 메시지 처리로 보강했고, 토큰의 중간 무결성·제한 SID 없음·세션 0 아님·비패키지·보이는 창 스테이션·스레드 가장 없음이 모두 확인돼야 실행하도록 바꿨다. 실패 조회를 제한 없음으로 해석하지 않는다. 실제 토큰 종류별 GUI 시험은 별도 미실행이다.
+
+`configuration-review-fixes.log`는 집중 검사 **10개 통과 + 자식 전용 fixture 1개 제외**다. fixture는 두 대기 검사에서 명시적으로 별도 프로세스로 호출하며 실행 계정 환경 변수가 우연히 존재해 전체 검사 프로세스를 종료하지 않도록 기본 실행에서 제외했다. 자신의 숨은 시험 창에서 부모의 비활성화·panic 시 복원·기존 비활성 보존·다른 스레드 거부, 합성 키/paint 메시지 전달, 호스트 종료 요청 재게시와 자식 정상 종료를 확인했다. 기존 앱의 화면이나 입력에 메시지를 보내지 않았다. 최초 대기의 추가 입력 도착 검사는 `configuration-message-wake.log`에 보존한다.
+
+보완된 소스의 전체 검사(`configuration-reviewed-build.log`)는 **143개(52+74+17) 통과 + 자식 fixture 1개 제외**, x64/x86 release·selftest 성공이다. 등록된 DLL의 canonical 경로에서 편집기 위치를 정하고 UI 디렉터리의 reparse도 거부한다. 실제 설치 사전 확인(`configuration-preflight.log`)은 `preflight-passed`, `changes: none`이고 목적 revision 폴더 부재도 확인했다. 설치된 두 DLL과 롤백 도구는 이전 `d2-word-correction-20261013` 그대로다. 최초 141개와 이후 143개를 더해 검사 수를 부풀리지 않는다.
+
+후속 소스 검토(`configuration-followup-review.json`)는 앞선 M1~M3 반영을 확인했다. 추가 R1은 비활성 부모에 시스템 키가 전달될 가능성이었다. 자신의 숨은 창에 보낸 Alt+F4 메시지가 실제 전달되는 실패를 `configuration-owner-key-before.log`에 남기고, 보유한 부모 트리의 키·마우스 입력만 걸러 내도록 보강했다. 이미 비활성인 부모도 필터 대상으로 유지하면서 종료 시 다시 활성화하지 않는다. 별도 창의 입력·paint·COM·타이머는 계속 처리한다. 이 마지막 필터 변경의 독립 재검토를 수행했다고 주장하지 않는다.
+
+R2는 리뷰 입력에서 빠진 DLL 수명 코드에 대한 조건부 우려였다. 작성자가 `exports.rs::DllCanUnloadNow`의 상시 S_FALSE, `service.rs::Show`·`guarded_result`와 windows-rs 0.59의 Show shim에 반환 후 서비스 상태 접근이 없음을 직접 확인했다. 이를 미관측된 확정 High로 기록하지 않으며 실제 호스트의 강제 종료·수명 시험을 대체하지 않는다. 낮은 심각도의 잔여는 비정상 대기 후 편집기 중복 실행 가능성(CAS로 저장 충돌 거부), 상세 OS 오류 표시, 압축/reparse 변형, 정상 데스크톱 토큰별 실행 진단, foreground 복귀와 호스트 job 종료 영향이다.
+
+최종 필터 회귀를 포함한 `configuration-owner-final-build.log`는 **144개(52+75+17) 통과 + 자식 fixture 1개 제외**, x64/x86 release·DLL selftest 성공이다. 빌드·시험은 개발 소스의 근거이며 실제 설정 창·Windows 메뉴·6종 앱·설치 승인으로 합산하지 않는다.

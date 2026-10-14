@@ -566,7 +566,7 @@ fn options_command(prepare: bool) -> Report {
     use std::os::windows::process::CommandExt;
     let mut report = Report::default();
     if !crate::system::desktop_settings_allowed() {
-        report.push("settings require the intended user's non-elevated session", Err(E_ACCESSDENIED));
+        report.push("settings require an interactive, unpackaged, unrestricted, medium-integrity user session", Err(E_ACCESSDENIED));
         return report;
     }
     let exe = std::env::current_exe().ok().zip(registered_machine_dll())

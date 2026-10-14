@@ -139,23 +139,76 @@ pub fn app_container() -> bool {
     token_u32(TokenIsAppContainer).unwrap_or(0) != 0
 }
 
-/// Starting a settings writer is allowed only when both process-token queries positively identify a normal desktop
-/// session. Unknown security state must not inherit the diagnostic helpers' permissive fallback.
+/// A writer may run only as an interactive, unpackaged medium-integrity user. Every failed query denies launch.
 pub(crate) fn desktop_settings_allowed() -> bool {
-    desktop_settings_policy(token_u32(TokenElevation), token_u32(TokenIsAppContainer))
+    use windows::Win32::Security::{GetSidSubAuthority, GetSidSubAuthorityCount, IsValidSid,
+        TokenIntegrityLevel, TokenRestrictedSids, TokenSessionId, TOKEN_MANDATORY_LABEL};
+    use windows::Win32::Storage::Packaging::Appx::GetCurrentPackageFullName;
+    use windows::Win32::Foundation::{APPMODEL_ERROR_NO_PACKAGE, ERROR_NO_TOKEN};
+    use windows::Win32::System::StationsAndDesktops::{GetProcessWindowStation, GetUserObjectInformationW, USEROBJECTFLAGS, UOI_FLAGS};
+    use windows::Win32::System::Threading::{GetCurrentThread, OpenThreadToken};
+    let Some(t) = token() else { return false; };
+    let read = |class| token_information(&t, class);
+    let u32_value = |class| read(class).map(|data| unsafe { *data.as_ptr().cast::<u32>() });
+    let integrity = read(TokenIntegrityLevel).and_then(|data| {
+        if data.len() * std::mem::size_of::<usize>() < std::mem::size_of::<TOKEN_MANDATORY_LABEL>() { return None; }
+        unsafe {
+            let label = &*data.as_ptr().cast::<TOKEN_MANDATORY_LABEL>();
+            if !IsValidSid(label.Label.Sid).as_bool() { return None; }
+            let count = *GetSidSubAuthorityCount(label.Label.Sid);
+            if count == 0 { return None; }
+            Some(*GetSidSubAuthority(label.Label.Sid, (count - 1) as u32) == 0x2000)
+        }
+    });
+    // TokenRestrictedSids is TOKEN_GROUPS; GroupCount is the first DWORD. Unlike IsTokenRestricted's BOOL,
+    // GetTokenInformation distinguishes a failed query from a successfully observed empty restricted SID list.
+    let unrestricted = u32_value(TokenRestrictedSids).map(|count| count == 0);
+    let interactive = (|| {
+        let station = unsafe { GetProcessWindowStation() }.ok()?;
+        let mut flags = USEROBJECTFLAGS::default();
+        unsafe { GetUserObjectInformationW(HANDLE(station.0), UOI_FLAGS, Some((&mut flags as *mut USEROBJECTFLAGS).cast()),
+            std::mem::size_of::<USEROBJECTFLAGS>() as u32, None) }.ok()?;
+        Some(flags.dwFlags & windows::Win32::UI::WindowsAndMessaging::WSF_VISIBLE as u32 != 0)
+    })();
+    let mut package_length = 0;
+    let unpackaged = unsafe { GetCurrentPackageFullName(&mut package_length, None) } == APPMODEL_ERROR_NO_PACKAGE;
+    let mut thread_token = HANDLE::default();
+    let unimpersonated = match unsafe { OpenThreadToken(GetCurrentThread(), TOKEN_QUERY, true, &mut thread_token) } {
+        Ok(()) => { drop(Token(thread_token)); false },
+        Err(error) => error.code() == windows::core::HRESULT::from_win32(ERROR_NO_TOKEN.0),
+    };
+    desktop_settings_policy([
+        u32_value(TokenElevation).map(|value| value == 0),
+        u32_value(TokenIsAppContainer).map(|value| value == 0),
+        integrity, unrestricted, u32_value(TokenSessionId).map(|value| value != 0),
+        Some(unpackaged), interactive, Some(unimpersonated),
+    ])
 }
 
-fn desktop_settings_policy(elevation: Option<u32>, app_container: Option<u32>) -> bool {
-    elevation == Some(0) && app_container == Some(0)
+fn token_information(t: &Token, class: windows::Win32::Security::TOKEN_INFORMATION_CLASS) -> Option<Vec<usize>> {
+    let mut bytes = 0;
+    unsafe { let _ = GetTokenInformation(t.0, class, None, 0, &mut bytes); }
+    if !(4..=65536).contains(&bytes) { return None; }
+    let capacity = bytes;
+    let mut data = vec![0usize; (bytes as usize).div_ceil(std::mem::size_of::<usize>())];
+    unsafe { GetTokenInformation(t.0, class, Some(data.as_mut_ptr().cast()), capacity, &mut bytes).ok()?; }
+    if bytes < 4 || bytes > capacity { return None; }
+    Some(data)
+}
+
+fn desktop_settings_policy(checks: [Option<bool>; 8]) -> bool {
+    checks.iter().all(|check| *check == Some(true))
 }
 
 #[cfg(test)]
 mod configuration_security_tests {
     #[test]
     fn only_known_non_elevated_desktop_hosts_may_open_settings() {
-        for elevation in [None, Some(0), Some(1)] {
-            for app_container in [None, Some(0), Some(1)] {
-                assert_eq!(super::desktop_settings_policy(elevation, app_container), elevation == Some(0) && app_container == Some(0));
+        assert!(super::desktop_settings_policy([Some(true); 8]));
+        for index in 0..8 {
+            for denied in [None, Some(false)] {
+                let mut checks = [Some(true); 8]; checks[index] = denied;
+                assert!(!super::desktop_settings_policy(checks), "failed/denied host condition {index}");
             }
         }
     }

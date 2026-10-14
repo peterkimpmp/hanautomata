@@ -726,10 +726,10 @@ impl ITfFunction_Impl for TextService_Impl {
 }
 
 impl ITfFnConfigure_Impl for TextService_Impl {
-    fn Show(&self, _parent: windows::Win32::Foundation::HWND, langid: u16, profile: *const GUID) -> Result<()> {
+    fn Show(&self, parent: windows::Win32::Foundation::HWND, langid: u16, profile: *const GUID) -> Result<()> {
         // COM supplies a readable profile pointer. A null pointer is rejected before any UI or disk access.
-        // The separate desktop editor is top-level; it never reparents or disables windows in the host process.
-        guarded_result(Err(E_FAIL.into()), || crate::configuration::show(langid, unsafe { profile.as_ref() }))
+        // No service state is touched during/after the nested pump. DllCanUnloadNow keeps the callback code mapped.
+        guarded_result(Err(E_FAIL.into()), || crate::configuration::show(parent, langid, unsafe { profile.as_ref() }))
     }
 }
 

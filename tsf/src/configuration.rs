@@ -4,7 +4,9 @@
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use windows::core::{Result, GUID};
-use windows::Win32::Foundation::{E_ACCESSDENIED, E_FAIL, E_INVALIDARG, E_POINTER, HANDLE};
+use windows::Win32::Foundation::{E_ABORT, E_ACCESSDENIED, E_FAIL, E_INVALIDARG, E_POINTER, HANDLE, HWND, WAIT_FAILED, WAIT_OBJECT_0};
+use windows::Win32::UI::WindowsAndMessaging::*;
+use windows::Win32::UI::Input::KeyboardAndMouse::{EnableWindow, IsWindowEnabled};
 
 pub const DISPLAY_NAME: &str = "한오토마타 입력기 설정";
 static SHOWING: AtomicBool = AtomicBool::new(false);
@@ -35,44 +37,102 @@ fn regular_file(path: &Path) -> bool {
 fn editor_for_registered_module(module: &Path, registered: &Path) -> Option<PathBuf> {
     if !module.file_name()?.to_str()?.eq_ignore_ascii_case(crate::guids::DLL_NAME)
         || !crate::registration::same_file_path(module, registered) { return None; }
+    let registered = std::fs::canonicalize(registered).ok()?;
     let exe = crate::registration::options_executable(&registered.with_file_name("hanautomata-ime-setup.exe"))?;
+    use std::os::windows::fs::MetadataExt;
+    let ui = std::fs::symlink_metadata(exe.parent()?).ok()?;
+    if !ui.is_dir() || ui.file_attributes() & 0x400 != 0 { return None; }
     if !regular_file(&exe) || !regular_file(&exe.with_extension("exe.config")) { return None; }
     Some(exe)
 }
 
-fn wait_for_editor(child: &mut std::process::Child) -> Result<()> {
+struct ModalOwner { root: Option<HWND>, restore: bool }
+impl ModalOwner {
+    fn new(parent: HWND) -> Result<Self> {
+        use windows::Win32::System::Threading::GetCurrentThreadId;
+        if parent.is_invalid() { return Ok(Self { root: None, restore: false }); }
+        unsafe {
+            if !IsWindow(Some(parent)).as_bool() { return Err(E_INVALIDARG.into()); }
+            let root = GetAncestor(parent, GA_ROOT);
+            if root.is_invalid() || GetWindowThreadProcessId(root, None) != GetCurrentThreadId() { return Err(E_INVALIDARG.into()); }
+            if !IsWindowEnabled(root).as_bool() { return Ok(Self { root: Some(root), restore: false }); }
+            let guard = Self { root: Some(root), restore: true };
+            let _ = EnableWindow(root, false);
+            if !IsWindow(Some(root)).as_bool() || IsWindowEnabled(root).as_bool() { return Err(E_FAIL.into()); }
+            Ok(guard)
+        }
+    }
+}
+impl Drop for ModalOwner {
+    fn drop(&mut self) {
+        if !self.restore { return; }
+        if let Some(root) = self.root {
+            unsafe {
+                if IsWindow(Some(root)).as_bool()
+                    && GetWindowThreadProcessId(root, None) == windows::Win32::System::Threading::GetCurrentThreadId() {
+                    let _ = EnableWindow(root, true);
+                }
+            }
+        }
+    }
+}
+
+fn owner_input(message: &MSG, owner: Option<HWND>) -> bool {
+    let Some(root) = owner else { return false; };
+    let input = (WM_KEYFIRST..=WM_KEYLAST).contains(&message.message)
+        || (WM_MOUSEFIRST..=WM_MOUSELAST).contains(&message.message)
+        || (WM_NCMOUSEMOVE..=WM_NCXBUTTONDBLCLK).contains(&message.message);
+    input && !message.hwnd.is_invalid() && unsafe { GetAncestor(message.hwnd, GA_ROOT) == root }
+}
+
+fn wait_for_editor(child: &mut std::process::Child, owner: Option<HWND>) -> Result<()> {
     use std::os::windows::io::AsRawHandle;
-    use windows::Win32::System::Com::{CoWaitForMultipleHandles, COWAIT_DISPATCH_CALLS,
-        COWAIT_DISPATCH_WINDOW_MESSAGES, COWAIT_INPUTAVAILABLE};
-    // ITfFnConfigure::Show is synchronous until the editor closes. COM dispatch keeps an STA responsive;
-    // never hold the text service's RefCell or a filesystem lock across this reentrant wait.
-    let flags = COWAIT_DISPATCH_CALLS | COWAIT_DISPATCH_WINDOW_MESSAGES | COWAIT_INPUTAVAILABLE;
+    // The disabled owner cannot accept another Properties/OK/Cancel click. Dispatch other messages (including
+    // COM's hidden windows), never retaining a text-service RefCell or filesystem lock across a reentrant call.
     loop {
         if let Some(exit) = child.try_wait().map_err(|_| windows::core::Error::from(E_FAIL))? {
             return if exit.success() { Ok(()) } else { Err(E_FAIL.into()) };
         }
-        // INPUTAVAILABLE may wake for a message, not process exit. Only try_wait decides completion.
-        // DISPATCH_WINDOW_MESSAGES alone returned CO_E_NOT_SUPPORTED in the Windows regression.
-        unsafe { CoWaitForMultipleHandles(flags.0 as u32, u32::MAX, &[HANDLE(child.as_raw_handle())])?; }
-        // Bound retries even if the host's message filter retains an input message in the queue.
-        std::thread::sleep(std::time::Duration::from_millis(1));
+        let wake = unsafe { MsgWaitForMultipleObjectsEx(Some(&[HANDLE(child.as_raw_handle())]), u32::MAX,
+            QS_ALLINPUT, MWMO_INPUTAVAILABLE) };
+        if wake == WAIT_FAILED { return Err(windows::core::Error::from_win32()); }
+        if wake == WAIT_OBJECT_0 { continue; }
+        if wake.0 != WAIT_OBJECT_0.0 + 1 { return Err(E_FAIL.into()); }
+        // Drain a bounded batch, then check process exit again. This prevents a message flood from starving exit.
+        for _ in 0..64 {
+            let mut message = MSG::default();
+            if !unsafe { PeekMessageW(&mut message, None, 0, 0, PM_REMOVE) }.as_bool() { break; }
+            if message.message == WM_QUIT {
+                unsafe { PostQuitMessage(message.wParam.0 as i32); }
+                return Err(E_ABORT.into()); // Respect the host shutdown; the editor is not terminated here.
+            }
+            // Disabling input alone does not stop queued system keys delivered to an active root without focus.
+            // Drop only this owner's input; keep paint, COM, timers and unrelated windows responsive.
+            if owner_input(&message, owner) { continue; }
+            unsafe { let _ = TranslateMessage(&message); DispatchMessageW(&message); }
+        }
     }
 }
 
-pub fn show(langid: u16, profile: Option<&GUID>) -> Result<()> {
+pub fn show(parent: HWND, langid: u16, profile: Option<&GUID>) -> Result<()> {
     validate_request(langid, profile)?;
     if !crate::system::desktop_settings_allowed() { return Err(E_ACCESSDENIED.into()); }
     let _showing = enter(&SHOWING)?;
     let module = crate::exports::module_path()?;
     let registered = crate::registration::registered_machine_dll().ok_or_else(|| windows::core::Error::from(E_FAIL))?;
     let exe = editor_for_registered_module(&module, &registered).ok_or_else(|| windows::core::Error::from(E_FAIL))?;
+    let _owner = ModalOwner::new(parent)?;
     // A fixed absolute payload path, no shell, user-supplied arguments, registry command line, or inherited pipes.
     let mut child = std::process::Command::new(&exe).current_dir(exe.parent().ok_or(E_FAIL)?)
         .stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null())
         .spawn().map_err(|_| windows::core::Error::from(E_FAIL))?;
     // If waiting fails, leave the writer alive; do not terminate a user editing or saving settings.
-    wait_for_editor(&mut child)
+    wait_for_editor(&mut child, _owner.root)
 }
+
+#[cfg(test)]
+#[path = "configuration_window_tests.rs"]
+mod window_tests;
 
 #[cfg(test)]
 mod tests {
@@ -116,6 +176,7 @@ mod tests {
             std::fs::write(exe.with_extension("exe.config"), b"fixture").unwrap();
             assert!(editor_for_registered_module(&old, &new).is_none(), "stale loaded module");
             assert!(editor_for_registered_module(&x86, &new).is_none(), "other architecture");
+            let exe = std::fs::canonicalize(exe).unwrap();
             assert_eq!(editor_for_registered_module(&new, &new), Some(exe.clone()));
             assert_eq!(editor_for_registered_module(&x86, &x86), Some(exe));
         });
@@ -137,6 +198,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "headless child fixture; invoked explicitly by the wait tests"]
     fn child_process_marker() {
         // A headless child only; the main test process never receives this environment variable.
         if std::env::var_os("HANAUTOMATA_TEST_CONFIG_CHILD_DELAY").is_some() {
@@ -154,7 +216,7 @@ mod tests {
         let mut results = Vec::new();
         for fail in [false, true] {
             let mut command = std::process::Command::new(std::env::current_exe().unwrap());
-            command.args(["--exact", "configuration::tests::child_process_marker"])
+            command.args(["--ignored", "--exact", "configuration::tests::child_process_marker"])
                 .env("HANAUTOMATA_TEST_CONFIG_CHILD_DELAY", "1")
                 .stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null());
             if fail { command.env("HANAUTOMATA_TEST_CONFIG_CHILD_FAIL", "1"); }
@@ -165,7 +227,7 @@ mod tests {
                 let _ = PeekMessageW(&mut message, None, WM_NULL, WM_NULL, PM_NOREMOVE);
                 PostThreadMessageW(GetCurrentThreadId(), WM_NULL, Default::default(), Default::default()).unwrap();
             }
-            let waited = wait_for_editor(&mut child);
+            let waited = wait_for_editor(&mut child, None);
             unsafe { let _ = PeekMessageW(&mut message, None, WM_NULL, WM_NULL, PM_REMOVE); }
             let exited = child.try_wait().unwrap();
             if exited.is_none() { let _ = child.wait(); }
