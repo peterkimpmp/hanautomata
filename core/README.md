@@ -54,6 +54,7 @@ cargo run --release --example latency -- ../tests/corpora/intelligence-v014.tsv
 | `focus` | `FocusPolicy` | |
 | `session` | `InputController`의 키 규칙 | 입력기 공통 세션: 모드 3종·단발 전환(22 §5.1a)·확정 경로·128자 상한. Space 확정 직후 F2 재변환(`SwapLastCommit`, 셸이 커서 앞 글자를 확인한 뒤 `reconvert`). 조합이 없을 때 Space 밖의 키·포커스 이동은 앞 단어 문맥을 끊는다(`PreservePending`). C#에 없는 확장 `Composition::force`·`clear_choice` |
 | `store` | `PreferenceStore` 형식 | 학습 파일(C-OPS-09): Format 1·2 읽기, Format 2 쓰기, 512KB 상한, 원자 저장(같은 폴더 임시 파일 → 이름 바꾸기), `<파일>.lock` 잠금. 읽지 못한 파일은 바뀔 때까지 덮어쓰지 않음 |
+| `learning` · `learning::client` | — | 별도 파일의 단일 저장 주체와 확정 선택 대기열. 저장 세대·순번·응답 유실 재시도. 플랫폼 브로커 인증과 TSF 런타임 연결은 별도 |
 | `unicode` + `unicode_tables` | .NET `char` 의미 | 생성된 BMP 표 |
 | `hangul::Layout`·`compose_layout` | — | 세벌식 390·최종 조합(C-LAY-02). 받침이 다음 음절로 넘어가지 않고, 겹자음·겹모음·겹받침은 두 키로 만든다. 자판 표는 공개 배열을 따르고 libhangul 표와 대조했다(코드는 가져오지 않음) |
 | `hangul::ms_clusters` | — | Windows식 겹자음(C-CMP-08): 모음 없이 ㄱ+ㅅ → ㄳ |
@@ -87,8 +88,21 @@ C-DET-08 held-out 측정(`ime_features_tests`): 앞 문장이 한글이면 한�
 - C#이 예외를 던지는 입력은 Rust가 처리를 이어 간다. 이 차이는 기준값 밖이다.
   - `keys`의 UTF-16 길이가 `raw`와 다르면 C#은 `ArgumentOutOfRangeException`을 던진다. Rust는 `raw`를 키로 쓴다.
   - 영문 모델 줄이 공백으로 시작하면 C#은 예외를 던진다. Rust는 그 줄을 건너뛴다. 배포 데이터에는 이런 줄이 없다.
-- `PreferenceStore`의 파일 형식은 `store`로 옮겼다. 저장 담당은 macOS에서 입력기 프로세스 하나다. Windows(앱마다 DLL)의 다중 프로세스 설계는 S0 뒤에 정한다. 공유 잠금 아래 다시 읽고 합치는 방식이 후보다.
+- `PreferenceStore`의 파일 형식은 `store`로 옮겼다. 저장 담당은 macOS에서 입력기 프로세스 하나다. Windows(앱마다 DLL)는 `learning::Authority`가 선택 델타를 직렬화하는 별도 저장 계약을 개발했다. 기존 사전 마이그레이션·인증된 브로커·TSF 런타임 연결은 아직 없다.
 - `string.ToLowerInvariant`가 보충 평면 문자를 바꾸는 경로(`IsEnglish`·프리셋 이름)는 결과에 영향이 없다고 판단해 BMP 표만 쓴다 [추론].
+
+## Windows 학습 대기열 연결 계약
+
+`learning::client::channel`은 인증된 저장 프로세스에서 받은 lease로 `Producer`와 단일 `Worker`를 만든다. 프로세스를 자동 실행하거나 통신을 인증하는 API가 아니다. 입력 스레드의 `begin`·`submit`은 `try_lock`을 쓰며 잠금 대기·파일·IPC 작업을 하지 않는다. 최대 64개 선택(전송 중인 1개 포함), 문서 작업당 최대 8개로 제한한다. 가득 참·잠금 경합 등은 명시적인 오류이며 입력 문서를 바꾸지 않는다. 호출자는 영속 저장을 수락하지 못한 상태를 숨기지 않아야 한다.
+
+1. 문서 작업 **전에** `Producer::begin`으로 저장 세대를 담은 `Action`을 받는다. 지연 콜백은 이 객체를 함께 보관한다.
+2. 문서 쓰기 성공 뒤 `Engine::confirm_learning`이 반환한 선택만 `submit`한다. 미확정·무효화된 선택은 전달하지 않는다.
+3. 입력 처리 밖의 worker가 `next`로 요청을 얻고 잠금이 풀린 뒤 전송한다. 응답 유실 시 같은 요청을 다시 얻어 그대로 재전송한다. 순번·저장 세대·lease를 임의로 바꾸지 않는다.
+4. `finish`가 응답을 대조한다. 삭제/초기화로 거부된 선택에는 순번을 소비하지 않는다. 현재 버전을 다시 관측한 뒤 나머지 선택은 각자의 원래 세대로 처리한다. 저장소·lease가 달라지면 이전 대기열을 새 연결에 이식하지 않는다.
+
+학습 일시정지는 아직 제출하지 않은 Action을 무효화한다. 이미 수락한 확정 선택의 저장을 취소하거나 기존 학습을 지우는 동작은 아니다. 대기열은 메모리에 있으므로 호스트 종료 전에 저장 ACK를 받지 못한 항목의 내구성을 보장하지 않는다. 프로세스 종료·용량/경합 상태 표시·저장 결과의 엔진 재반영은 플랫폼 연결에서 추가 검증해야 한다. 실제 TSF는 아직 이 대기열을 사용하지 않는다.
+
+`core/tests/learning_client_tests.rs`는 실제 임시 저장 파일을 사용한다. Windows에서는 `cargo test --manifest-path tsf/Cargo.toml --release --features quality-probes --test learning_client_process`로 별도 저장 프로세스 재시작과 정확한 재전송을 검증한다. 이 개발 시험의 전용 stdio를 인증된 앱 간 통신으로 해석하지 않는다.
 
 ## 지연(엔진만, 측정 범위)
 

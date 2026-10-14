@@ -1,5 +1,8 @@
 //! Single-writer learning transactions. Platform brokers own this object off the key callback.
 //! This is separate from the legacy, whole-dictionary `Store`; it does not install a broker.
+#[path = "learning_client.rs"]
+pub mod client;
+
 use crate::{LearnedWord, WordPreferences, CAPACITY};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
