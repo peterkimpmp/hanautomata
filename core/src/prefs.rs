@@ -25,7 +25,8 @@ const EDGES: &[u16] = &[
 ];
 
 /// One remembered choice. `context` is empty for the global entry or a 64-hex fingerprint of the preceding word.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct LearnedWord {
     pub raw: String,
     pub keys: String,
@@ -79,7 +80,7 @@ fn is_letter(c: u16) -> bool {
 }
 
 /// Returns (identity, body, key body) for an eligible word: letters only once edge punctuation is trimmed, 1..=64 long.
-fn normalize(raw: &str, keys: &str) -> Option<(String, String, String)> {
+pub(crate) fn normalize(raw: &str, keys: &str) -> Option<(String, String, String)> {
     let (raw, keys) = (utf16(raw), utf16(keys));
     if raw.is_empty() || raw.len() != keys.len() {
         return None;
@@ -111,7 +112,7 @@ pub fn context_key(text: &str) -> String {
     Sha256::digest(text.as_bytes()).iter().map(|b| format!("{b:02x}")).collect()
 }
 
-fn valid_context(value: &str) -> bool {
+pub(crate) fn valid_context(value: &str) -> bool {
     value.is_empty() || (value.len() == 64 && value.bytes().all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c)))
 }
 

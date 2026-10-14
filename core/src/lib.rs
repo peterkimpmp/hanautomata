@@ -13,6 +13,7 @@ mod detector;
 mod exceptions;
 mod focus;
 pub mod hangul;
+pub mod learning;
 mod hanja;
 mod lists;
 mod prefs;

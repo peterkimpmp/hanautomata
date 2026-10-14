@@ -139,7 +139,7 @@ DLL은 [ITfFnConfigure::Show](https://learn.microsoft.com/en-us/windows/win32/ap
 
 일반 AppContainer 시험 프로세스에서는 편집기와 동일한 경로의 설정 읽기·쓰기 거부를 확인했습니다. LPAC·실제 패키지 앱·관리자 앱은 별도 미검증이며 실제 UI 검증 전에는 새 설정 지원 DLL을 설치 후보로 승인하지 않습니다. 범위와 근거는 [Windows 결과 원장](../docs/WINDOWS-QUALITY-RESULTS.md)에 기록합니다. 제외 앱은 TSF를 적재한 프로세스 이름에 해당하므로 콘솔에서는 명령 프로그램 이름과 입력을 담당하는 호스트 이름이 다를 수 있습니다.
 
-설정의 새 학습은 현재 세션에만 유지됩니다. 영속 학습은 아직 미구현이고 후보 UI는 개발 단계이며 이 화면이 기능 완성을 뜻하지 않습니다. 실제 UI 저장·재열기와 DPI 검수도 남아 있습니다.
+설정의 새 학습은 현재 세션에만 유지됩니다. 단일 저장 코어와 개발 도구는 별도로 구현했지만 TSF 연결은 아직 없고 후보 UI도 개발 단계입니다. 이 화면이 기능 완성을 뜻하지 않습니다. 실제 UI 저장·재열기와 DPI 검수도 남아 있습니다.
 
 ## 학습 저장 개발용 통신 시험
 
@@ -158,10 +158,28 @@ $probe = Join-Path $target 'release/hanautomata-config-probe.exe'
 
 2026-10-15 x64/x86 시험에서는 직접 주소만 위 경계를 통과했다. `LOCAL` 주소의 오류 2를 접근 거부 성공으로 처리하지 않았다. 이는 비패키지 AppContainer의 관측이며 패키지 앱·LPAC 지원이나 영속 학습 구현을 뜻하지 않는다. 상세 근거와 한계는 [Windows 결과 원장](../docs/WINDOWS-QUALITY-RESULTS.md#학습-저장-통신의-실제-appcontainer-시험)에 있다.
 
+## 학습 저장 코어의 개발용 프로세스 시험
+
+`hanautomata-learning-store`는 `quality-probes`에서만 빌드됩니다. TSF에 연결되거나 설치·자동 시작되지 않습니다. 전용 파일을 명시한 부모 프로세스가 표준 입출력을 소유하는 시험 도구이며, 인증된 제품 IPC가 아닙니다. 실제 사전이나 기존 Format 1/2 파일을 대상으로 실행하지 마세요.
+
+```powershell
+cargo build --release --manifest-path tsf/Cargo.toml --features quality-probes --bin hanautomata-learning-store
+$target = (cargo metadata --manifest-path tsf/Cargo.toml --no-deps --format-version 1 | ConvertFrom-Json).target_directory
+python3 tsf/test-learning-store.py --exe (Join-Path $target 'release/hanautomata-learning-store.exe') --output build/learning-process-test.json
+```
+
+시험은 새 한글·공백 경로에 합성 데이터만 쓰며, 별도 프로세스의 중복 소유 거부·재시작·중복 응답·삭제와 초기화·연결 기록 정리·잘못된 프레임을 검사합니다. 성공 시 검증한 임시 디렉터리의 시험 파일만 지우고 새 보고서를 남깁니다. 실패하면 해당 경로를 보고서에 보존합니다. x86 도구를 `--exe`로 주면 같은 시험을 32비트에서도 수행합니다.
+
+개발 프로토콜은 한 줄 JSON(최대 4,096바이트)입니다. `snapshot`, `register`, `clients`, `resume`, `reconcile`, `retire`, `apply`를 제공합니다. `register`가 만든 ID는 인증 수단이 아닙니다. 응답을 잃으면 `clients`로 확인하고 일치하는 `client_id`·`lease_revision`으로 `resume`합니다. `reconcile`은 신뢰된 부모의 명시적 관리 작업이며 연결 재확인 유예 뒤 사용해야 합니다. 프레임에 들어가지 않는 큰 연결 목록은 개별 `retire`로 정리합니다. 제품 브로커에 이 관리 명령을 그대로 노출하지 않습니다.
+
+요청은 행동 당시 generation과 lease·sequence를 유지합니다. 마지막 요청만 동일 내용으로 재전송할 수 있으며 더 오래된 순번은 `superseded`로 거부합니다. `stale_generation`을 받은 삭제 전 선택을 현재 세대로 다시 찍어 보내면 안 됩니다. 오래된 삭제·초기화도 성공으로 처리하지 않습니다. 최신 snapshot을 보여 주고 사용자가 삭제 의사를 새로 확인하면 현재 generation·미사용 sequence로 새 요청을 만듭니다. 저장 오류 후에는 소유자를 다시 열어 커밋 여부를 확인해야 합니다. 별도 프로세스 중단 복구 검사이며 하드웨어 전원 장애 내구성 보장은 아닙니다. 정본·체크섬·마지막 요청 영수증을 함께 저장하며, 재시작 시 정확한 전용 pending 이름의 미확정 파일은 모두 제거하고 요청을 받습니다.
+
+저장 파일에는 학습한 단어가 포함되므로 제품 연결 시 사용자 전용 디렉터리·고정 파일명과 인증을 적용해야 합니다. 디렉터리 항목이 4,096개를 넘으면 복구 스캔을 거부합니다. 전체 초기화는 이전 단어 fence 해시도 비우지만 마지막 요청의 재시도 지문은 남습니다. 이는 익명화나 안전한 소거가 아니며 민감 데이터 보호 정책은 제품 연결 전에 정해야 합니다. 오래된 정상 백업으로 되돌아가는 경우는 현재 owner marker만으로 감지하지 못합니다. 복구·이전 정책과 새 store ID 발급은 후속 과제입니다. 시험은 Python `-O`·`PYTHONOPTIMIZE`를 거부합니다. 상세 검증은 [결과 원장](../docs/WINDOWS-QUALITY-RESULTS.md#학습-저장-코어와-별도-프로세스-시험)을 참고하세요.
+
 ## 아직 없는 것(P3에서)
 
 - 후보창의 실제 앱·접근성 승인(C-CMP-02), 설정 창의 실제 설치·Windows 메뉴 연결 및 화면 검증(W-23)
-- 학습 저장: 앱마다 DLL이 하나씩 올라오는 구조라 S0 뒤 저장 방식을 정한다(`core/src/store.rs`)
+- 학습 저장 코어의 TSF 연결, 인증된 브로커·대기열·교정 취소·기존 사전 이전·실제 앱 재시작 검증
 - ARM64 DLL과 코드 서명(D15)
 - 첫 실행 설정(C-OPS-07)과 후크판 학습 이전(W-17 이전 부분)
 

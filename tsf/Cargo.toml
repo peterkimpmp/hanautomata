@@ -20,10 +20,16 @@ name = "hanautomata-config-probe"
 path = "src/bin/config_probe.rs"
 required-features = ["quality-probes"]
 
+[[bin]]
+name = "hanautomata-learning-store"
+path = "src/bin/learning_store.rs"
+required-features = ["quality-probes"]
+
 [features]
 quality-probes = ["windows/Win32_Security_Isolation", "windows/Win32_System_Pipes", "windows/Win32_System_IO", "dep:sha2"]
 
 [dependencies]
+hanautomata-core = { path = "../core" }
 hanautomata-ffi = { path = "../ffi", default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
