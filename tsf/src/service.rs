@@ -166,7 +166,8 @@ struct State {
     ITfCompositionSink,
     ITfThreadMgrEventSink,
     ITfDisplayAttributeProvider,
-    ITfCompartmentEventSink
+    ITfCompartmentEventSink,
+    ITfFnConfigure
 )]
 pub struct TextService {
     state: RefCell<State>,
@@ -715,6 +716,20 @@ impl TextService {
             // Text was already changed. A host without language properties must not cause the key to be replayed.
             Err(error) => system::log(&format!("correction language property unavailable: {:?}", error.code())),
         }
+    }
+}
+
+impl ITfFunction_Impl for TextService_Impl {
+    fn GetDisplayName(&self) -> Result<windows::core::BSTR> {
+        guarded_result(Err(E_FAIL.into()), || Ok(crate::configuration::DISPLAY_NAME.into()))
+    }
+}
+
+impl ITfFnConfigure_Impl for TextService_Impl {
+    fn Show(&self, _parent: windows::Win32::Foundation::HWND, langid: u16, profile: *const GUID) -> Result<()> {
+        // COM supplies a readable profile pointer. A null pointer is rejected before any UI or disk access.
+        // The separate desktop editor is top-level; it never reparents or disables windows in the host process.
+        guarded_result(Err(E_FAIL.into()), || crate::configuration::show(langid, unsafe { profile.as_ref() }))
     }
 }
 

@@ -139,6 +139,28 @@ pub fn app_container() -> bool {
     token_u32(TokenIsAppContainer).unwrap_or(0) != 0
 }
 
+/// Starting a settings writer is allowed only when both process-token queries positively identify a normal desktop
+/// session. Unknown security state must not inherit the diagnostic helpers' permissive fallback.
+pub(crate) fn desktop_settings_allowed() -> bool {
+    desktop_settings_policy(token_u32(TokenElevation), token_u32(TokenIsAppContainer))
+}
+
+fn desktop_settings_policy(elevation: Option<u32>, app_container: Option<u32>) -> bool {
+    elevation == Some(0) && app_container == Some(0)
+}
+
+#[cfg(test)]
+mod configuration_security_tests {
+    #[test]
+    fn only_known_non_elevated_desktop_hosts_may_open_settings() {
+        for elevation in [None, Some(0), Some(1)] {
+            for app_container in [None, Some(0), Some(1)] {
+                assert_eq!(super::desktop_settings_policy(elevation, app_container), elevation == Some(0) && app_container == Some(0));
+            }
+        }
+    }
+}
+
 fn user_sid() -> Option<String> {
     let t = token()?;
     let mut len = 0u32;

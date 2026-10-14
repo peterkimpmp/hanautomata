@@ -524,25 +524,30 @@ pub fn enable_user(enable: bool) -> Report {
     report
 }
 
-fn options_executable(setup: &std::path::Path) -> Option<std::path::PathBuf> {
+pub(crate) fn options_executable(setup: &std::path::Path) -> Option<std::path::PathBuf> {
     let arch = setup.parent()?;
     let name = arch.file_name()?.to_str()?;
     if !name.eq_ignore_ascii_case("x64") && !name.eq_ignore_ascii_case("x86") { return None; }
     Some(arch.parent()?.join("ui").join("Hanautomata.ImeOptions.exe"))
 }
 fn registered_options_executable(setup: &std::path::Path, registered_dll: &std::path::Path) -> Option<std::path::PathBuf> {
-    use std::os::windows::ffi::OsStrExt;
-    use windows::Win32::Globalization::{CompareStringOrdinal, CSTR_EQUAL};
     if !setup.file_name()?.to_str()?.eq_ignore_ascii_case("hanautomata-ime-setup.exe") { return None; }
-    let canonical_setup = std::fs::canonicalize(setup).ok()?;
-    let canonical_dll = std::fs::canonicalize(registered_dll).ok()?;
-    let setup_dir: Vec<u16> = canonical_setup.parent()?.as_os_str().encode_wide().collect();
-    let dll_dir: Vec<u16> = canonical_dll.parent()?.as_os_str().encode_wide().collect();
-    if unsafe { CompareStringOrdinal(&setup_dir, &dll_dir, true) } != CSTR_EQUAL { return None; }
+    let setup_real = std::fs::canonicalize(setup).ok()?;
+    let dll_real = std::fs::canonicalize(registered_dll).ok()?;
+    if !same_file_path(setup_real.parent()?, dll_real.parent()?) { return None; }
     options_executable(&registered_dll.with_file_name("hanautomata-ime-setup.exe"))
 }
 
-fn registered_machine_dll() -> Option<std::path::PathBuf> {
+pub(crate) fn same_file_path(left: &std::path::Path, right: &std::path::Path) -> bool {
+    use std::os::windows::ffi::OsStrExt;
+    use windows::Win32::Globalization::{CompareStringOrdinal, CSTR_EQUAL};
+    let (Ok(left), Ok(right)) = (std::fs::canonicalize(left), std::fs::canonicalize(right)) else { return false; };
+    let left: Vec<u16> = left.as_os_str().encode_wide().collect();
+    let right: Vec<u16> = right.as_os_str().encode_wide().collect();
+    unsafe { CompareStringOrdinal(&left, &right, true) == CSTR_EQUAL }
+}
+
+pub(crate) fn registered_machine_dll() -> Option<std::path::PathBuf> {
     use std::os::windows::ffi::OsStringExt;
     use windows::Win32::System::Registry::{RegGetValueW, RRF_RT_REG_SZ};
     let key = HSTRING::from(format!("{}\\InprocServer32", com_key()));
@@ -560,7 +565,7 @@ fn registered_machine_dll() -> Option<std::path::PathBuf> {
 fn options_command(prepare: bool) -> Report {
     use std::os::windows::process::CommandExt;
     let mut report = Report::default();
-    if crate::system::elevated() {
+    if !crate::system::desktop_settings_allowed() {
         report.push("settings require the intended user's non-elevated session", Err(E_ACCESSDENIED));
         return report;
     }
@@ -948,7 +953,10 @@ pub fn selftest(dll: &str) -> Report {
             let service: ITfTextInputProcessorEx = factory.CreateInstance(None).map_err(|e| e.code())?;
             let _keys: ITfKeyEventSink = service.cast().map_err(|e| e.code())?;
             let _attributes: ITfDisplayAttributeProvider = service.cast().map_err(|e| e.code())?;
-            Ok("text service created; key sink and display attributes present".into())
+            let configure: ITfFnConfigure = factory.CreateInstance(None).map_err(|e| e.code())?;
+            let name = configure.GetDisplayName().map_err(|e| e.code())?;
+            if name.to_string() != crate::configuration::DISPLAY_NAME { return Err(E_FAIL); }
+            Ok("text service created; key sink, display attributes and Properties interface present (UI not opened)".into())
         }
     })();
     report.push("load DLL and create the text service", created);

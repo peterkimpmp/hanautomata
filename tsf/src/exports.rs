@@ -1,5 +1,4 @@
-//! The DLL's COM entry points. `DllRegisterServer` registers for the current user only (regsvr32 without elevation);
-//! `hanautomata-ime-setup` does the same steps with a report.
+//! The DLL's COM entry points. Registration delegates to the setup policy; creating a service does not register it.
 
 use std::ffi::c_void;
 use std::sync::atomic::{AtomicPtr, Ordering};
@@ -15,12 +14,24 @@ use crate::service::TextService;
 
 static MODULE: AtomicPtr<c_void> = AtomicPtr::new(std::ptr::null_mut());
 
-/// This DLL's path, for its own registration.
-pub fn dll_path() -> String {
-    let module = HINSTANCE(MODULE.load(Ordering::Relaxed));
-    let mut buf = [0u16; 520];
-    let n = unsafe { GetModuleFileNameW(Some(module.into()), &mut buf) } as usize;
-    String::from_utf16_lossy(&buf[..n])
+/// Resolve this DLL (never the host EXE). Preserve UTF-16 paths and reject truncation or missing DllMain state.
+pub(crate) fn module_path() -> Result<std::path::PathBuf> {
+    use std::os::windows::ffi::OsStringExt;
+    use windows::Win32::Foundation::E_FAIL;
+    let module = MODULE.load(Ordering::Relaxed);
+    if module.is_null() { return Err(E_FAIL.into()); }
+    let mut size = 512;
+    loop {
+        let mut buf = vec![0u16; size];
+        let n = unsafe { GetModuleFileNameW(Some(HINSTANCE(module).into()), &mut buf) } as usize;
+        if n == 0 { return Err(windows::core::Error::from_win32()); }
+        if n < buf.len() {
+            let path = std::path::PathBuf::from(std::ffi::OsString::from_wide(&buf[..n]));
+            return if path.is_absolute() { Ok(path) } else { Err(E_FAIL.into()) };
+        }
+        if size == 32768 { return Err(E_FAIL.into()); }
+        size = (size * 2).min(32768);
+    }
 }
 
 #[no_mangle]
@@ -78,7 +89,9 @@ pub extern "system" fn DllCanUnloadNow() -> HRESULT {
 
 #[no_mangle]
 pub extern "system" fn DllRegisterServer() -> HRESULT {
-    let report = registration::register(&dll_path(), false);
+    let path = match module_path() { Ok(path) => path, Err(error) => return error.code() };
+    let Some(path) = path.to_str() else { return windows::Win32::Foundation::E_FAIL; };
+    let report = registration::register(path, false);
     if report.ok() {
         S_OK
     } else {

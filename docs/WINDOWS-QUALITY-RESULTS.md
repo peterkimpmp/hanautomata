@@ -364,3 +364,20 @@ cargo build --release --manifest-path tsf/Cargo.toml --features quality-probes -
 후속 독립 소스 검토(`user-prepare-followup-review.json`)는 Medium 5개 모두 반영됐고 잔여 High/구체적 Medium이 없다고 판정했다. 실제 설치나 시험을 실행한 검토가 아니다. 남은 낮은 심각도·후속 게이트는 중단/대기 안내, 무프로필 경로 처리, 미래 설정 스키마의 다운그레이드 정책, 장시간 준비의 실제 타임아웃, 모니터 간 DPI, 설치/롤백 실기다. 시험 도구는 대상 EXE 경로를 필수로 받고, 로컬은 실제 TSF 묶음의 편집기, CI는 그 작업에서 새로 빌드한 C# 편집기를 명시한다.
 
 이 변경으로 실제 앱·등록·Word F2 승인을 늘리지 않는다. 동결된 사용자 적용 후보도 그대로 보존한다. 일반 AppContainer 자원 검증과 실제 호스트 검증, 관리자 설치/실패 롤백, Windows 메뉴 연결, 수정본 UI·DPI 검수, 후보창·영속 학습·로그인·장기 성능은 각각 별도 게이트다.
+
+## Text Services 속성 진입점 — 2026-10-15
+
+사용자가 열어 둔 이전 시험본의 창과 접근성 트리를 다시 확인했다. 학습·제외 앱 탭, 저장 완료 안내와 비활성 저장 버튼은 읽혔지만 캡처는 `CreateForMonitor 0x80070057`, 수정본 실행은 `GetCursorPos 0x80070005`로 실패했다. 입력 동작 없이 중단했고 `options-ui-retry-20261015.json`에 기록했다. 수정본 화면을 봤다고 판정하거나 다른 UI 실행면으로 우회하지 않았다.
+
+개발 DLL에 [ITfFnConfigure::Show](https://learn.microsoft.com/en-us/windows/win32/api/ctffunc/nf-ctffunc-itffnconfigure-show)를 구현했다. 표준 Text Services 속성 요청의 진입점이며 현재 Windows 11 전환 메뉴의 실제 노출을 보장하는 근거는 아니다. 입력 서비스 활성화 없이 COM으로 조회할 수 있고, 지원 언어·프로필과 일반 데스크톱 프로세스 토큰을 확인한다. 관리자·AppContainer·조회 실패를 거부하며, 현재 등록 DLL과 적재된 DLL이 같은 revision일 때만 같은 묶음의 편집기를 연다. 오래된 적재 DLL·UI 파일 누락·편집기와 config의 reparse 파일은 거부한다. 설치나 사용자 설정의 변경은 하지 않았다.
+
+속성 콜백은 별도 최상위 편집기를 닫을 때까지 유지한다. 부모 앱의 창을 재지정하거나 비활성화하지 않으며, 저장 중인 자식을 오류 때문에 종료하지 않는다. 경로는 절대 경로·고정 파일명으로 지정하고 셸과 상속된 표준 입출력을 쓰지 않는다. [CoWaitForMultipleHandles](https://learn.microsoft.com/en-us/windows/win32/api/combaseapi/nf-combaseapi-cowaitformultiplehandles)의 메시지 대기 중 서비스 상태나 파일 잠금을 잡지 않고 재진입은 거부한다. 입력 도착으로 대기가 깨지는 것과 자식 종료를 구분한다.
+
+| 검증 | 증거 (`build/windows-quality/`) | 판정 |
+|---|---|---|
+| 기존 COM 결함 | `configuration-before.log` | 속성 인터페이스 조회가 E_NOINTERFACE로 실패 |
+| 대기 경로 결함 | `configuration-after-fixed.log`, `configuration-wait-before.log`, `configuration-wait-after.log` | 단독 메시지 플래그와 대체 API에서 CO_E_NOT_SUPPORTED. 자식 종료 전에 반환한 실패를 보존 |
+| 수정된 진입점 | `configuration-focused-final.log` | 8개 통과: 비활성 상태 조회, 잘못된 인수, 토큰 정책, revision·의존 파일, 재진입·정상/오류 자식 종료 |
+| 전체 Rust·양쪽 DLL | `configuration-full-build.log` | **141개(52+72+17)**, x64/x86 release·selftest 통과. 실제 DLL 클래스 팩터리에서 속성 객체와 이름 조회, Show는 호출하지 않음 |
+
+초기 `configuration-after.log`의 컴파일 오류는 구현 과정 기록이며 통과 수에 포함하지 않는다. 자동 검사는 편집기 창을 열거나 시스템 등록·실제 설정을 수정하지 않았다. 위 대기 검사는 화면을 표시하지 않는 시험 프로세스를 사용한 것으로 실제 속성 창의 포커스·모달 동작·화면 반응 시험은 남아 있다. Windows 메뉴별 진입, 제한 호스트에서의 안내와 실제 거부, 설정 저장 후 재활성화, DPI와 전체 앱 승인 **0/6**을 유지한다.

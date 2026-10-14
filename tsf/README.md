@@ -101,7 +101,9 @@ if ($LASTEXITCODE -ne 0) { throw '현재 사용자 준비 상태 실패: 앱 시
 
 ## 개발 중인 설정 화면
 
-`codex/windows-quality` 개발 소스에는 입력 후크를 실행하지 않는 전용 설정 앱이 있습니다. 저장 형식은 `%LOCALAPPDATA%\Hanautomata\tsf-settings.json`이며 기존 트레이 앱의 `settings.json`과 분리됩니다. S0 개발 설치·갱신 묶음에는 포함했고 setup의 `options` 명령으로 열 수 있습니다. Windows 입력기 메뉴 연결과 실제 관리자 설치 검증은 남아 있습니다.
+`codex/windows-quality` 개발 소스에는 입력 후크를 실행하지 않는 전용 설정 앱이 있습니다. 저장 형식은 `%LOCALAPPDATA%\Hanautomata\tsf-settings.json`이며 기존 트레이 앱의 `settings.json`과 분리됩니다. S0 개발 설치·갱신 묶음에는 포함했고 setup의 `options` 명령으로 열 수 있습니다. 표준 Text Services 속성 인터페이스도 구현했지만 Windows 11 메뉴에서 실제 표시·열기와 관리자 설치 검증은 남아 있습니다.
+
+DLL은 [ITfFnConfigure::Show](https://learn.microsoft.com/en-us/windows/win32/api/ctffunc/nf-ctffunc-itffnconfigure-show)를 통해 Text Services 제어판의 명시적인 속성 요청을 받습니다. 입력 서비스 활성화 없이도 이 인터페이스를 조회할 수 있습니다. 한국어·등록한 프로필만 허용하고, 일반 데스크톱 세션임을 확인한 뒤 현재 등록 DLL과 같은 revision의 편집기를 별도 창으로 엽니다. 관리자·AppContainer·토큰 확인 실패, 갱신 전의 DLL이 남은 프로세스, 불완전한 UI 묶음에서는 오류를 반환합니다. UAC나 제한 토큰 우회, 입력 콜백에서의 자동 실행은 없습니다. 편집기를 닫을 때까지 호출을 유지하며 대기 실패로 편집기를 강제 종료하지 않습니다. 표준 속성 콜백 구현과 현재 Windows의 입력 전환 메뉴·언어 설정 화면 노출은 서로 다른 검증 항목입니다.
 
 ```powershell
 # 저장소 루트에서 .NET Framework 설정 앱과 기존 트레이 앱 빌드

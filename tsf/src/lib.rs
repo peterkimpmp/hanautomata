@@ -14,6 +14,8 @@ pub mod settings;
 #[cfg(windows)]
 mod display;
 #[cfg(windows)]
+mod configuration;
+#[cfg(windows)]
 mod edit;
 #[cfg(windows)]
 mod exports;
@@ -25,3 +27,6 @@ pub mod registration;
 mod service;
 #[cfg(windows)]
 pub mod system;
+
+#[cfg(all(windows, test))]
+mod configuration_tests;
