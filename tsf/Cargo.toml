@@ -52,3 +52,5 @@ windows = { version = "0.59", features = [
 [profile.release]
 lto = true
 codegen-units = 1
+# The COM callback guards must unwind locally instead of aborting the host application.
+panic = "unwind"

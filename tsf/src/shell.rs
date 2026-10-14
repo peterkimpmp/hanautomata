@@ -461,7 +461,6 @@ impl Shell {
                 if e.mods.shift {
                     if self.is_composing() {
                         let mut out = Outcome::eaten();
-                        out.control_handled = false;
                         let r = self.engine.commit_pending();
                         self.apply(r, &mut out);
                         out.eaten = true;
@@ -472,7 +471,7 @@ impl Shell {
                         eaten: true,
                         ops: vec![Op::FlipSelection],
                         learned: false,
-                        control_handled: false,
+                        control_handled: true,
                     };
                 }
                 return match self.engine.reconversion() {

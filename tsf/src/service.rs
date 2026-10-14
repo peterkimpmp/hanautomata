@@ -258,6 +258,9 @@ impl TextService_Impl {
 
     /// Control effects follow the shell even if its accompanying document commit failed.
     fn apply_effects(&self, out: &Outcome) {
+        // Document edits are already durable. A panic in an indicator callback must never reach the outer
+        // key guard, which would report not-eaten and replay that key in the host.
+        let result = guarded_result(Err(E_FAIL.into()), || {
         if out.ops.iter().any(|op| matches!(op, Op::ToggleCapsLock)) {
             if let Some(shell) = self.state.borrow_mut().shell.as_mut() {
                 shell.expect_injected_caps_lock();
@@ -267,6 +270,12 @@ impl TextService_Impl {
             }
         }
         self.update_indicator();
+        Ok(())
+        });
+        if result.is_err() {
+            self.writing_compartment.set(false);
+            system::log("control effect unavailable after key handling; document result retained");
+        }
     }
 
     fn handle_key(&self, pic: Ref<ITfContext>, wparam: WPARAM, lparam: LPARAM, down: bool, test: bool) -> Result<BOOL> {

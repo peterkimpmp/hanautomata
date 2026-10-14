@@ -500,3 +500,28 @@ fn reconversion_never_overwrites_host_changed_text_at_the_caret() {
     assert_eq!(host.writes.get(), writes);
     assert!(service.state.borrow().shell.as_ref().unwrap().engine().reconversion().is_none());
 }
+
+#[test]
+fn shift_f2_keeps_its_command_when_the_selection_has_nothing_to_flip() {
+    let (service, host, context) = fixture();
+    seed(&service, &host, &context);
+    host.caret_selection.set(true);
+    let sink = service.to_interface::<ITfKeyEventSink>();
+    let implementation = sink.cast_object_ref::<TextService>().unwrap();
+    let mut event = KeyEvent::new(crate::shell::vk::F2, Mods::NONE);
+    event.mods.shift = true;
+    assert!(implementation.key_in_session(&context, edit::FieldAccess::Ordinary, false,
+        move |shell| shell.key_down(event)).unwrap().as_bool());
+    assert_eq!(&*host.text.borrow(), "안녕");
+    assert_eq!(host.ended.get(), 1);
+}
+
+#[test]
+fn post_write_control_effect_panics_do_not_escape_to_the_key_fallback() {
+    let (service, _, _) = fixture();
+    let sink = service.to_interface::<ITfKeyEventSink>();
+    let implementation = sink.cast_object_ref::<TextService>().unwrap();
+    let _held = service.state.borrow_mut();
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| implementation.apply_effects(&Outcome::default())));
+    assert!(result.is_ok(), "a post-write indicator failure must not make the outer callback replay a written key");
+}
