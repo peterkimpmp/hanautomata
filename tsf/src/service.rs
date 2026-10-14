@@ -72,8 +72,7 @@ struct State {
     composition: Option<ITfComposition>,
     shell: Option<Shell>,
     attribute_atom: u32,
-    /// The context whose field kind (password or not) was last read.
-    checked_context: Option<ITfContext>,
+    /// Password/private scope or a failed field query. Never trace these contexts.
     password_field: bool,
     tray_running: bool,
     /// Our own composition sink, for StartComposition (released on Deactivate, which breaks the cycle).
@@ -154,31 +153,36 @@ impl TextService_Impl {
 
     /// Re-reads what decides pass-through for this context: the tray app (W-17) and a password field (C-CTX-01).
     fn refresh_pass_through(&self, context: &ITfContext) {
-        let changed = {
-            let st = self.state.borrow();
-            st.checked_context.as_ref() != Some(context)
-        };
-        if changed {
-            let client = self.state.borrow().client;
-            let result = std::rc::Rc::new(Cell::new(false));
-            let out = result.clone();
-            let ctx = context.clone();
-            let _ = edit::request(context, client, TF_ES_SYNC | TF_ES_READ, move |ec| {
-                out.set(edit::is_password_field(ec, &ctx));
-                Ok(())
-            });
-            let mut st = self.state.borrow_mut();
-            st.checked_context = Some(context.clone());
-            st.password_field = result.get();
-            st.tray_running = system::tray_running();
-            if st.password_field {
-                system::log("context password-field pass-through");
-            }
-        }
+        // An application can move between ordinary and protected controls within the same ITfContext. Recheck every
+        // key-down, including the real callback: a cached context identity is not a security boundary.
+        let client = self.state.borrow().client;
+        let result = std::rc::Rc::new(Cell::new(true));
+        let out = result.clone();
+        let ctx = context.clone();
+        let query = edit::request(context, client, TF_ES_SYNC | TF_ES_READ, move |ec| {
+            out.set(edit::is_password_field(ec, &ctx));
+            Ok(())
+        });
         let mut st = self.state.borrow_mut();
+        st.password_field = query.is_err() || result.get();
+        st.tray_running = system::tray_running();
         let pass = st.password_field || st.tray_running;
         if let Some(shell) = st.shell.as_mut() {
-            shell.pass_through = pass;
+            shell.set_pass_through(pass);
+        }
+        let old_composition = if pass { st.composition.take() } else { None };
+        drop(st);
+        // Leave text already displayed by the host intact. Only release our underline/composition in its ORIGINAL
+        // context; never carry an old range or engine word across into a protected/new field.
+        if let Some(composition) = old_composition {
+            if let Ok(old_context) = unsafe { composition.GetRange().and_then(|r| r.GetContext()) } {
+                let ctx = old_context.clone();
+                let _ = edit::request(&old_context, client, TF_ES_ASYNCDONTCARE | TF_ES_READWRITE, move |ec| {
+                    let range = unsafe { composition.GetRange()? };
+                    let _ = edit::set_attribute(ec, &ctx, &range, 0);
+                    unsafe { composition.EndComposition(ec) }
+                });
+            }
         }
     }
 
@@ -215,7 +219,7 @@ impl TextService_Impl {
             return Ok(false.into());
         };
         let e = key_event(wparam, lparam);
-        if down && test {
+        if down {
             self.refresh_pass_through(context);
         }
         let trace_key = down && (e.vk == crate::shell::vk::SPACE || e.vk == crate::shell::vk::F2);
@@ -407,9 +411,10 @@ impl TextService {
             let mut moved = 0i32;
             unsafe { range.ShiftStart(ec, -want, &mut moved, std::ptr::null())? };
             if moved == -want && edit::text(ec, &range, want as usize + 1)? == old {
-                // This replaces a committed word, not new typing. Preserve the host's text properties and identify
-                // the operation as correction (Word can otherwise auto-correct the chosen Latin text back to Hangul).
+                // Preserve formatting while correcting the committed word, then update only its language hint.
+                // Word AutoCorrect ON still needs real-app validation; TF_ST_CORRECTION alone failed in D2.
                 unsafe { range.SetText(ec, TF_ST_CORRECTION, &edit::utf16(new))? };
+                self.corrected_language(ec, context, &range, new);
                 edit::caret_after(ec, context, &range)?;
                 return Ok(true);
             }
@@ -423,12 +428,25 @@ impl TextService {
             system::log("flip skipped: nothing selected");
             return Ok(());
         }
-        let text = edit::text(ec, &range, 4096)?;
+        let Some(text) = edit::selection_text(ec, &range, 4096)? else {
+            system::log("flip skipped: selection exceeds the safe conversion limit");
+            return Ok(());
+        };
         let flipped = self.state.borrow().shell.as_ref().and_then(|s| s.flip(&text));
         if let Some(flipped) = flipped {
             unsafe { range.SetText(ec, TF_ST_CORRECTION, &edit::utf16(&flipped))? };
+            self.corrected_language(ec, context, &range, &flipped);
         }
         Ok(())
+    }
+
+    fn corrected_language(&self, ec: u32, context: &ITfContext, range: &ITfRange, text: &str) {
+        match edit::set_correction_language(ec, context, range, text) {
+            Ok(true) => self.trace("correction-language-set"),
+            Ok(false) => {},
+            // Text was already changed. A host without language properties must not cause the key to be replayed.
+            Err(error) => system::log(&format!("correction language property unavailable: {:?}", error.code())),
+        }
     }
 }
 
@@ -560,7 +578,6 @@ impl ITfKeyEventSink_Impl for TextService_Impl {
             }
             let Some(context) = pic.as_ref() else { return Ok(false.into()) };
             // A preserved command need not be preceded by OnTestKeyDown. Recheck password scope and tray coexistence.
-            self.state.borrow_mut().checked_context = None;
             self.refresh_pass_through(context);
             self.trace("preserved-before");
             let out = match self.state.borrow_mut().shell.as_mut() {
@@ -577,6 +594,11 @@ impl ITfKeyEventSink_Impl for TextService_Impl {
 
 impl ITfCompositionSink_Impl for TextService_Impl {
     fn OnCompositionTerminated(&self, ecwrite: u32, pcomposition: Ref<ITfComposition>) -> Result<()> {
+        // A detached composition can finish asynchronously after a new field has acquired focus.
+        // Its callback must not clear or commit that field's new session.
+        if self.state.borrow().composition.as_ref() != pcomposition.as_ref() || pcomposition.is_none() {
+            return Ok(());
+        }
         self.trace("terminated-before");
         let text = {
             let mut st = self.state.borrow_mut();
@@ -609,7 +631,6 @@ impl ITfThreadMgrEventSink_Impl for TextService_Impl {
     fn OnSetFocus(&self, _pdimfocus: Ref<ITfDocumentMgr>, _pdimprevfocus: Ref<ITfDocumentMgr>) -> Result<()> {
         self.commit_on_focus_change();
         let mut st = self.state.borrow_mut();
-        st.checked_context = None;
         st.tray_running = system::tray_running();
         drop(st);
         self.update_indicator();

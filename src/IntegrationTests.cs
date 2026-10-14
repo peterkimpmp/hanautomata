@@ -452,6 +452,26 @@ namespace Hanautomata
         {
             outputPath = Path.GetFullPath(outputPath);
             Directory.CreateDirectory(Path.GetDirectoryName(outputPath));
+            // Use the same ownership boundary as production. Otherwise the installed TSF service sees tray=false
+            // and can also consume Caps Lock/F2 inside this fixture, invalidating the hook-only measurements.
+            string sid = System.Security.Principal.WindowsIdentity.GetCurrent().User.Value;
+            bool created;
+            using (var mutex = new Mutex(true, "Local\\Hanautomata.Instance." + sid, out created))
+            {
+                if (!created)
+                {
+                    File.WriteAllText(outputPath, new JavaScriptSerializer().Serialize(new {
+                        timestamp = DateTimeOffset.Now.ToString("o"), passed = false, failures = 1,
+                        error = "A tray instance already owns the keyboard. Stop it normally before running this fixture."
+                    }));
+                    return 2;
+                }
+                try { return RunOwnedFixture(outputPath, corpusDriver); }
+                finally { mutex.ReleaseMutex(); }
+            }
+        }
+        static int RunOwnedFixture(string outputPath, Action corpusDriver)
+        {
             app = new TrayApplication(true, true, null);
             host = new Form { Text = "Hanautomata input integration fixture", Width = 660, Height = 440, StartPosition = FormStartPosition.CenterScreen, TopMost = true };
             plain = new TextBox { Name = "plain", AccessibleName = "Plain input", Multiline = true, Location = new Point(16, 16), Size = new Size(610, 62) };

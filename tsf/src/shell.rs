@@ -334,6 +334,15 @@ impl Shell {
         self.pass_through
     }
 
+    /// A protected field/tray takes over: discard engine-only state without writing old text into the new field.
+    /// The TSF host retains its visible composition until termination; F2 history must never cross this boundary.
+    pub fn set_pass_through(&mut self, pass: bool) {
+        if pass && !self.pass_through {
+            self.reset(self.last_caps);
+        }
+        self.pass_through = pass;
+    }
+
     /// Whether the key event goes to `key_down`. No engine state changes here: an application may ask more than once.
     pub fn test_key_down(&mut self, e: KeyEvent) -> bool {
         if e.vk != vk::CAPITAL {

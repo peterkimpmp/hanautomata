@@ -54,6 +54,28 @@ fn preserved_reconversion_respects_passthrough_pause_and_settings() {
     }
 }
 
+#[test]
+fn protected_transition_discards_pending_and_reconversion_state() {
+    for committed in [false, true] {
+        let mut s = shell(&format!("protected-transition-{committed}"));
+        for key in b"DKSSUD" { s.key_down(KeyEvent::new(*key as u16, Mods::NONE)); }
+        if committed { s.key_down(KeyEvent::new(vk::SPACE, Mods::NONE)); }
+        s.set_pass_through(true);
+        assert!(!s.is_composing());
+        assert!(s.engine().reconversion().is_none());
+        assert_eq!(s.key_down(KeyEvent::new(b'P' as u16, Mods::NONE)), Outcome::default());
+        assert_eq!(s.reconversion_command(), Outcome::default());
+        s.set_pass_through(false);
+        assert_eq!(s.reconversion_command(), Outcome::default(), "F2 history must not cross protected fields");
+        let mut d = Doc::default();
+        for key in b"GKS RMF".iter().filter(|k| **k != b' ') {
+            d.key(&mut s, *key as u16, Mods::NONE, None);
+        }
+        d.key(&mut s, vk::SPACE, Mods::NONE, None);
+        assert_eq!(d.text, "한글 ", "no stale prefix from the previous field");
+    }
+}
+
 /// The application side: committed text, the composition after it, and the Caps Lock toggle.
 #[derive(Default)]
 struct Doc {

@@ -1,6 +1,8 @@
 # Hanautomata
 
-**한영키를 바꾸지 않고 입력하는 Windows 트레이 앱 · v0.4.0 공개 베타**
+**한영키를 바꾸지 않고 입력하는 Windows 트레이 앱 · 개발 소스 v0.5.0**
+
+이 브랜치의 제품 버전은 `VERSION`의 0.5.0입니다. 아래 v0.4.0 베타 검증 수치는 당시 기록이며, 현재 소스의 [Windows 검증 계획](docs/WINDOWS-QUALITY-PLAN.md)과 [개발 시험 결과](docs/WINDOWS-QUALITY-RESULTS.md)는 별도로 관리합니다. TSF 시험판의 실제 앱 승인은 진행 중입니다.
 
 Hanautomata is a Windows tray app that lets you type Korean or English from the same physical keys without toggling the 한/영 mode. It decides word by word (hand lists first, then a syllable-bigram vs letter-bigram likelihood ratio), shows a small candidate window, commits on Space, and fixes mistakes with F2 (last word) or Shift+F2 (selected text). No admin rights, no network, no cloud model. MIT licensed; model tables are aggregate statistics from Wikipedia dumps (CC BY-SA 4.0).
 
