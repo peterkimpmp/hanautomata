@@ -224,7 +224,7 @@ pub fn printable(vk: u16) -> Option<(char, char)> {
     Some(pair)
 }
 
-fn is_modifier(vk: u16) -> bool {
+pub(crate) fn is_modifier(vk: u16) -> bool {
     matches!(
         vk,
         vk::SHIFT

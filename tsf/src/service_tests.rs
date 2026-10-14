@@ -2,9 +2,10 @@
 //! the production service callbacks; never register a TIP, change a profile, focus a window or send input.
 use super::*;
 use std::rc::Rc;
-use windows::core::{ComObject, HRESULT, IUnknown, PCWSTR, PWSTR};
+use windows::core::{ComObject, HRESULT, IUnknown, OutRef, PCWSTR, PWSTR};
 use windows::Win32::Foundation::{E_NOTIMPL, S_OK};
-use windows::Win32::System::Com::IDataObject;
+use windows::Win32::System::Com::{IDataObject, IEnumGUID};
+use windows::Win32::System::Variant::VARIANT;
 use crate::shell::Mods;
 
 #[derive(Default)]
@@ -17,13 +18,18 @@ struct Host {
     fail_set: Cell<bool>,
     fail_end: Cell<bool>,
     fail_caret: Cell<bool>,
+    scope_valid: Cell<bool>,
+    deny_read: Cell<bool>,
+    write_requests: Cell<u32>,
     pending: RefCell<Vec<ITfEditSession>>,
 }
 
-#[implement(ITfContext)]
+#[implement(ITfContext, ITfCompartmentMgr)]
 struct Context(Rc<Host>);
 impl ITfContext_Impl for Context_Impl {
     fn RequestEditSession(&self, _: u32, session: Ref<ITfEditSession>, flags: TF_CONTEXT_EDIT_CONTEXT_FLAGS) -> Result<HRESULT> {
+        if flags.0 & TF_ES_READWRITE.0 == TF_ES_READWRITE.0 { self.0.write_requests.set(self.0.write_requests.get() + 1); }
+        else if self.0.deny_read.get() { return Ok(TF_E_SYNCHRONOUS); }
         if self.0.deny.get() { return Ok(TF_E_SYNCHRONOUS); }
         if self.0.defer.get() && flags.0 & TF_ES_SYNC.0 == 0 {
             self.0.pending.borrow_mut().push(session.ok()?.clone());
@@ -33,7 +39,12 @@ impl ITfContext_Impl for Context_Impl {
         Ok(S_OK)
     }
     fn InWriteSession(&self, _: u32) -> Result<BOOL> { Ok(true.into()) }
-    fn GetSelection(&self, _: u32, _: u32, _: u32, _: *mut TF_SELECTION, _: *mut u32) -> Result<()> { Err(E_NOTIMPL.into()) }
+    fn GetSelection(&self, _: u32, _: u32, count: u32, selection: *mut TF_SELECTION, fetched: *mut u32) -> Result<()> {
+        if count == 0 { return Err(E_INVALIDARG.into()); }
+        let range: ITfRange = Range { host: self.0.clone(), context: self.to_interface(), offset: Cell::new(0) }.into();
+        unsafe { *selection = TF_SELECTION { range: std::mem::ManuallyDrop::new(Some(range)), style: TF_SELECTIONSTYLE::default() }; *fetched = 1; }
+        Ok(())
+    }
     fn SetSelection(&self, _: u32, _: u32, _: *const TF_SELECTION) -> Result<()> {
         if self.0.fail_caret.replace(false) { return Err(E_FAIL.into()); }
         Ok(())
@@ -44,11 +55,33 @@ impl ITfContext_Impl for Context_Impl {
     fn EnumViews(&self) -> Result<IEnumTfContextViews> { Err(E_NOTIMPL.into()) }
     fn GetStatus(&self) -> Result<TS_STATUS> { Ok(TS_STATUS::default()) }
     fn GetProperty(&self, _: *const GUID) -> Result<ITfProperty> { Err(E_NOTIMPL.into()) }
-    fn GetAppProperty(&self, _: *const GUID) -> Result<ITfReadOnlyProperty> { Err(E_NOTIMPL.into()) }
+    fn GetAppProperty(&self, _: *const GUID) -> Result<ITfReadOnlyProperty> { Ok(ScopeProperty.into()) }
     fn TrackProperties(&self, _: *const *const GUID, _: u32, _: *const *const GUID, _: u32) -> Result<ITfReadOnlyProperty> { Err(E_NOTIMPL.into()) }
     fn EnumProperties(&self) -> Result<IEnumTfProperties> { Err(E_NOTIMPL.into()) }
     fn GetDocumentMgr(&self) -> Result<ITfDocumentMgr> { Err(E_NOTIMPL.into()) }
     fn CreateRangeBackup(&self, _: u32, _: Ref<ITfRange>) -> Result<ITfRangeBackup> { Err(E_NOTIMPL.into()) }
+}
+
+impl ITfCompartmentMgr_Impl for Context_Impl {
+    fn GetCompartment(&self, _: *const GUID) -> Result<ITfCompartment> {
+        if self.0.scope_valid.get() { Ok(Compartment.into()) } else { Err(E_FAIL.into()) }
+    }
+    fn ClearCompartment(&self, _: u32, _: *const GUID) -> Result<()> { Err(E_NOTIMPL.into()) }
+    fn EnumCompartments(&self) -> Result<IEnumGUID> { Err(E_NOTIMPL.into()) }
+}
+#[implement(ITfCompartment)]
+struct Compartment;
+impl ITfCompartment_Impl for Compartment_Impl {
+    fn SetValue(&self, _: u32, _: *const VARIANT) -> Result<()> { Err(E_NOTIMPL.into()) }
+    fn GetValue(&self) -> Result<VARIANT> { Ok(VARIANT::default()) }
+}
+#[implement(ITfReadOnlyProperty)]
+struct ScopeProperty;
+impl ITfReadOnlyProperty_Impl for ScopeProperty_Impl {
+    fn GetType(&self) -> Result<GUID> { Ok(GUID_PROP_INPUTSCOPE) }
+    fn EnumRanges(&self, _: u32, _: OutRef<IEnumTfRanges>, _: Ref<ITfRange>) -> Result<()> { Err(E_NOTIMPL.into()) }
+    fn GetValue(&self, _: u32, _: Ref<ITfRange>) -> Result<VARIANT> { Ok(VARIANT::default()) }
+    fn GetContext(&self) -> Result<ITfContext> { Err(E_NOTIMPL.into()) }
 }
 
 #[implement(ITfRange)]
@@ -129,7 +162,7 @@ fn denied_write_lock_does_not_advance_the_engine() {
     let (service, host, context) = fixture();
     host.deny.set(true);
     service.state.borrow_mut().checked_key = Some(CheckedKey { context: context.clone(), wparam: b'D' as usize,
-        lparam: 0, down: true, observed: system::now_ms(), access: edit::FieldAccess::Ordinary, tray: false });
+        lparam: 0, down: true, observed: system::now_ms(), access: edit::FieldAccess::Ordinary, tray: false, eligible: None });
     let sink = service.to_interface::<ITfKeyEventSink>();
     let _ = unsafe { sink.OnKeyDown(&context, WPARAM(b'D' as usize), LPARAM(0)) };
     assert!(!service.state.borrow().shell.as_ref().unwrap().is_composing(), "denied lock must not leave an unseen first character in the engine");
@@ -165,7 +198,7 @@ fn refused_focus_commit_can_be_retried_without_losing_the_word() {
 
 fn paired_key(service: &ComObject<TextService>, context: &ITfContext, key: u8, access: edit::FieldAccess) -> BOOL {
     service.state.borrow_mut().checked_key = Some(CheckedKey { context: context.clone(), wparam: key as usize,
-        lparam: 0, down: true, observed: system::now_ms(), access, tray: false });
+        lparam: 0, down: true, observed: system::now_ms(), access, tray: false, eligible: None });
     unsafe { service.to_interface::<ITfKeyEventSink>().OnKeyDown(context, WPARAM(key as usize), LPARAM(0)).unwrap() }
 }
 
@@ -275,4 +308,84 @@ fn private_transition_finishes_old_word_inside_the_current_lock() {
     assert!(host.pending.borrow().is_empty(), "a same-context boundary must not enqueue an out-of-order edit");
     assert_eq!(&*host.text.borrow(), "안녕");
     assert!(service.state.borrow().shell.as_ref().unwrap().engine().learning_paused());
+}
+
+#[test]
+fn a_failed_old_context_must_not_block_another_context() {
+    let (service, old, a) = fixture();
+    seed(&service, &old, &a);
+    old.deny.set(true);
+    unsafe { service.to_interface::<ITfKeyEventSink>().OnSetFocus(false).unwrap(); }
+    let next = Rc::new(Host::default());
+    let b: ITfContext = Context(next.clone()).into();
+    seed(&service, &next, &b);
+    assert!(paired_key(&service, &b, b'X', edit::FieldAccess::Ordinary).as_bool(), "an unrelated denied context must not pass this key raw");
+    assert!(service.state.borrow().shell.as_ref().unwrap().is_composing());
+    assert_eq!(next.ended.get(), 0);
+}
+
+#[test]
+fn host_termination_retires_a_queued_finish() {
+    let (service, host, context) = fixture();
+    seed(&service, &host, &context);
+    let composition = service.state.borrow().composition.clone().unwrap();
+    host.defer.set(true);
+    unsafe { service.to_interface::<ITfKeyEventSink>().OnSetFocus(false).unwrap(); }
+    unsafe { service.to_interface::<ITfCompositionSink>().OnCompositionTerminated(1, &composition).unwrap(); }
+    assert!(service.state.borrow().pending_finishes.iter().all(|finish| finish.done.get()));
+    for session in std::mem::take(&mut *host.pending.borrow_mut()) { unsafe { session.DoEditSession(1).unwrap(); } }
+    assert_eq!(host.ended.get(), 0, "the host already ended it; the delayed callback must not end it again");
+}
+
+#[test]
+fn composing_caret_failure_does_not_split_the_word() {
+    let (service, host, context) = fixture();
+    seed(&service, &host, &context);
+    host.fail_caret.set(true);
+    assert!(paired_key(&service, &context, b'X', edit::FieldAccess::Ordinary).as_bool());
+    assert!(service.state.borrow().shell.as_ref().unwrap().is_composing());
+    assert_eq!(host.ended.get(), 0);
+}
+
+#[test]
+fn preserved_probe_suppresses_trace_even_when_the_write_lock_is_denied() {
+    let (service, host, context) = fixture();
+    service.state.borrow_mut().password_field = false;
+    host.deny.set(true);
+    unsafe { let _ = service.to_interface::<ITfKeyEventSink>().OnPreservedKey(&context, &PRESERVED_RECONVERT).unwrap(); }
+    assert!(service.state.borrow().password_field, "unknown scope must suppress both before/after traces even without a write callback");
+}
+
+#[test]
+fn unknown_key_up_never_claims_a_write_or_splits_a_word() {
+    let (service, host, context) = fixture();
+    seed(&service, &host, &context);
+    let sink = service.to_interface::<ITfKeyEventSink>();
+    assert!(!unsafe { sink.OnTestKeyUp(&context, WPARAM(b'D' as usize), LPARAM(0)).unwrap().as_bool() });
+    assert!(!unsafe { sink.OnKeyUp(&context, WPARAM(b'D' as usize), LPARAM(0)).unwrap().as_bool() });
+    assert_eq!(host.write_requests.get(), 0);
+    assert_eq!(host.ended.get(), 0);
+    assert!(service.state.borrow().shell.as_ref().unwrap().is_composing());
+}
+
+#[test]
+fn transient_read_denial_is_rechecked_under_the_write_lock() {
+    let (service, host, context) = fixture();
+    seed(&service, &host, &context);
+    host.scope_valid.set(true);
+    assert_eq!(edit::field_access(1, &context), edit::FieldAccess::Ordinary, "exercise the real field query through the mock COM interfaces");
+    host.deny_read.set(true);
+    let sink = service.to_interface::<ITfKeyEventSink>();
+    assert!(unsafe { sink.OnTestKeyDown(&context, WPARAM(b'X' as usize), LPARAM(0)).unwrap().as_bool() });
+    {
+        let mut st = service.state.borrow_mut();
+        let checked = st.checked_key.as_mut().unwrap();
+        assert!(matches!(checked.access, edit::FieldAccess::Unknown(_)), "the read-only probe was actually denied");
+        // Coexistence has its own integration test. This COM fixture must not depend on the user's live tray.
+        checked.tray = false;
+    }
+    assert!(unsafe { sink.OnKeyDown(&context, WPARAM(b'X' as usize), LPARAM(0)).unwrap().as_bool() });
+    assert_eq!(host.ended.get(), 0);
+    assert!(service.state.borrow().shell.as_ref().unwrap().is_composing());
+    assert_eq!(host.write_requests.get(), 1);
 }

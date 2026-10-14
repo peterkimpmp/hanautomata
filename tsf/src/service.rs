@@ -31,23 +31,38 @@ struct CheckedKey {
     observed: u64,
     access: edit::FieldAccess,
     tray: bool,
+    eligible: Option<bool>,
 }
 
 /// A finalization owns the old range until EndComposition succeeds. Async callbacks may run after host edits or
 /// after a newer synchronous session, so they must check both completion and the exact text we last wrote.
 struct PendingFinish {
     composition: ITfComposition,
+    context: Option<ITfContext>,
     expected: RefCell<String>,
     replacement: RefCell<Option<String>>,
     queued: Cell<bool>,
     done: Cell<bool>,
+    failures: Cell<u8>,
 }
 
 impl PendingFinish {
-    fn context(&self) -> Result<ITfContext> { unsafe { self.composition.GetRange()?.GetContext() } }
-
     fn finish(&self, ec: u32) -> Result<()> {
         if self.done.get() { return Ok(()); }
+        self.update_text(ec)?;
+        unsafe { self.composition.EndComposition(ec)?; }
+        self.done.set(true);
+        Ok(())
+    }
+
+    fn failed(&self, error: &windows::core::Error) {
+        self.failures.set(self.failures.get().saturating_add(1));
+        let terminal = matches!(error.code(), TF_E_DISCONNECTED | windows::Win32::Foundation::E_UNEXPECTED);
+        if terminal || self.failures.get() >= 3 { self.done.set(true); }
+        system::log(&format!("composition finish unavailable: {:?}; attempts={} retired={}", error.code(), self.failures.get(), self.done.get()));
+    }
+
+    fn update_text(&self, ec: u32) -> Result<()> {
         let range = unsafe { self.composition.GetRange()? };
         let expected = self.expected.borrow().clone();
         let unchanged = edit::selection_text(ec, &range, expected.encode_utf16().count())?.as_deref() == Some(&expected);
@@ -66,8 +81,6 @@ impl PendingFinish {
             system::log("composition finalization: host change preserved");
         }
         if let Ok(context) = unsafe { range.GetContext() } { let _ = edit::set_attribute(ec, &context, &range, 0); }
-        unsafe { self.composition.EndComposition(ec)?; }
-        self.done.set(true);
         Ok(())
     }
 }
@@ -264,15 +277,15 @@ impl TextService_Impl {
             return Ok(false.into());
         };
         let e = key_event(wparam, lparam);
-        let checked = if test {
+        let mut checked = if test {
             CheckedKey { context: context.clone(), wparam: wparam.0, lparam: lparam.0, down, observed: e.time,
-                access: self.probe_access(context), tray: system::tray_running() }
+                access: self.probe_access(context), tray: system::tray_running(), eligible: None }
         } else {
             let paired = self.state.borrow_mut().checked_key.take().filter(|key|
                 key.context == *context && key.wparam == wparam.0 && key.lparam == lparam.0 && key.down == down
                 && e.time.saturating_sub(key.observed) <= 100);
             paired.unwrap_or_else(|| CheckedKey { context: context.clone(), wparam: wparam.0, lparam: lparam.0, down,
-                observed: e.time, access: self.probe_access(context), tray: system::tray_running() })
+                observed: e.time, access: self.probe_access(context), tray: system::tray_running(), eligible: None })
         };
         let pass = checked.access.blocks_keys() || checked.tray;
         self.state.borrow_mut().password_field = checked.access.suppresses_trace();
@@ -282,16 +295,26 @@ impl TextService_Impl {
         }
         if test {
             let mut st = self.state.borrow_mut();
-            st.checked_key = Some(checked);
             let Some(shell) = st.shell.as_mut() else {
                 return Ok(false.into());
             };
             let wanted = shell.test_key_in_context(e, down, pass);
             // Request a real callback to end the old composition before passing an unknown/protected key.
             // No document or engine mutation takes place in the test probe.
-            let wanted = wanted || (pass && (st.composition.is_some() || !st.pending_finishes.is_empty()));
+            let cleanup = pass && down && !crate::shell::is_modifier(e.vk)
+                && (st.composition.is_some() || st.pending_finishes.iter().any(|f| !f.done.get() && f.context.as_ref() == Some(context)));
+            let wanted = wanted || cleanup;
+            checked.eligible = Some(wanted);
+            st.checked_key = Some(checked);
             return Ok(wanted.into());
         }
+        let wanted = checked.eligible.unwrap_or_else(|| {
+            let mut st = self.state.borrow_mut();
+            let wanted = st.shell.as_mut().is_some_and(|shell| shell.test_key_in_context(e, down, pass));
+            wanted || (pass && down && !crate::shell::is_modifier(e.vk)
+                && (st.composition.is_some() || st.pending_finishes.iter().any(|f| !f.done.get() && f.context.as_ref() == Some(context))))
+        });
+        if !wanted { return Ok(false.into()); }
         self.key_in_session(context, checked.access, checked.tray, move |shell| {
             if down { shell.key_down(e) } else { shell.key_up(e) }
         })
@@ -308,6 +331,9 @@ impl TextService_Impl {
         let ctx = context.clone();
         let client = self.state.borrow().client;
         let requested = edit::request(context, client, TF_ES_SYNC | TF_ES_READWRITE, move |ec| {
+            // A refused read-only probe is not proof of a field transition. The real write lock can provide a
+            // valid scope now; if it still fails, keep the current key out of the engine and finish only old text.
+            let access = if matches!(access, edit::FieldAccess::Unknown(_)) { edit::field_access(ec, &ctx) } else { access };
             this.drain_finishes(Some((&ctx, ec)))?;
             this.validate_composition(ec, &ctx)?;
             this.apply_context_policy(access, tray, Some((&ctx, ec)))?;
@@ -440,7 +466,13 @@ impl TextService {
         let Some(composition) = composition else { return Ok(()) };
         let range = unsafe { composition.GetRange()? };
         let same_context = unsafe { range.GetContext()? } == *context;
-        let unchanged = same_context && edit::selection_text(ec, &range, expected.encode_utf16().count())?.as_deref() == Some(&expected);
+        if !same_context {
+            let out = self.state.borrow_mut().shell.as_mut().map(|shell| {
+                let out = shell.focus_lost(); shell.engine().forget_reconversion(); out
+            }).unwrap_or_default();
+            return self.finish_original_composition(out, Some((context, ec)));
+        }
+        let unchanged = edit::selection_text(ec, &range, expected.encode_utf16().count())?.as_deref() == Some(&expected);
         if !unchanged {
             // Never advance an old word over text inserted by the host after a refused or unclaimed key.
             if let Some(shell) = self.state.borrow_mut().shell.as_mut() {
@@ -460,8 +492,9 @@ impl TextService {
             if let Some(composition) = st.composition.take() {
                 let expected = std::mem::take(&mut st.composition_text);
                 let replacement = out.ops.into_iter().find_map(|op| if let Op::Commit(text) = op { Some(text) } else { None });
-                st.pending_finishes.push(Rc::new(PendingFinish { composition, expected: RefCell::new(expected),
-                    replacement: RefCell::new(replacement), queued: Cell::new(false), done: Cell::new(false) }));
+                let context = unsafe { composition.GetRange().and_then(|range| range.GetContext()).ok() };
+                st.pending_finishes.push(Rc::new(PendingFinish { composition, context, expected: RefCell::new(expected),
+                    replacement: RefCell::new(replacement), queued: Cell::new(false), done: Cell::new(false), failures: Cell::new(0) }));
             }
         }
         self.drain_finishes(session)
@@ -469,25 +502,36 @@ impl TextService {
 
     fn drain_finishes(&self, session: Option<(&ITfContext, u32)>) -> Result<()> {
         let (pending, client) = { let st = self.state.borrow(); (st.pending_finishes.clone(), st.client) };
+        let mut current_error = None;
         for finish in pending {
             if finish.done.get() { continue; }
-            let context = finish.context()?;
-            if let Some((current, ec)) = session.filter(|(current, _)| **current == context) {
-                let _ = current;
-                finish.finish(ec)?;
+            let Some(context) = finish.context.as_ref() else {
+                finish.done.set(true);
+                system::log("composition owner unavailable; visible text preserved");
+                continue;
+            };
+            if let Some((_, ec)) = session.filter(|(current, _)| *current == context) {
+                if let Err(error) = finish.finish(ec) { finish.failed(&error); current_error = Some(error); }
             } else if !finish.queued.replace(true) {
                 let deferred = finish.clone();
-                let requested = edit::request(&context, client, TF_ES_ASYNCDONTCARE | TF_ES_READWRITE, move |ec| {
+                let called = Rc::new(Cell::new(false));
+                let ran = called.clone();
+                let requested = edit::request(context, client, TF_ES_ASYNCDONTCARE | TF_ES_READWRITE, move |ec| {
+                    ran.set(true);
                     let result = deferred.finish(ec);
                     deferred.queued.set(false);
-                    if let Err(error) = &result { system::log(&format!("composition finish failed; retained for retry: {:?}", error.code())); }
+                    if let Err(error) = &result { deferred.failed(error); }
                     result
                 });
-                if let Err(error) = requested { finish.queued.set(false); return Err(error); }
+                if let Err(error) = requested {
+                    finish.queued.set(false);
+                    if !called.get() { finish.failed(&error); }
+                    // A failure in another context must never abort the current key or skip other finishes.
+                }
             }
         }
         self.state.borrow_mut().pending_finishes.retain(|finish| !finish.done.get());
-        Ok(())
+        current_error.map_or(Ok(()), Err)
     }
 }
 
@@ -585,7 +629,10 @@ impl TextService {
                 st.write_serial = st.write_serial.wrapping_add(1);
             }
             let _ = edit::set_attribute(ec, context, &range, atom);
-            edit::caret_after(ec, context, &range)
+            if let Err(error) = edit::caret_after(ec, context, &range) {
+                system::log(&format!("composition caret update unavailable; text retained in live range: {:?}", error.code()));
+            }
+            Ok(())
         }
     }
 
@@ -775,7 +822,11 @@ impl ITfKeyEventSink_Impl for TextService_Impl {
             // A preserved command need not be preceded by OnTestKeyDown. Recheck password scope and tray coexistence.
             let access = self.probe_access(context);
             let tray = system::tray_running();
-            self.state.borrow_mut().checked_key = None;
+            {
+                let mut st = self.state.borrow_mut();
+                st.checked_key = None;
+                st.password_field = access.suppresses_trace();
+            }
             self.trace("preserved-before");
             let eaten = self.key_in_session(context, access, tray, |shell| shell.reconversion_command())?;
             self.trace("preserved-after");
@@ -788,6 +839,18 @@ impl ITfKeyEventSink_Impl for TextService_Impl {
 impl ITfCompositionSink_Impl for TextService_Impl {
     fn OnCompositionTerminated(&self, ecwrite: u32, pcomposition: Ref<ITfComposition>) -> Result<()> {
         guarded((), || {
+        let pending = self.state.borrow().pending_finishes.iter()
+            .find(|finish| Some(&finish.composition) == pcomposition.as_ref()).cloned();
+        if let Some(finish) = pending {
+            // TSF has already ended this composition. Retire the queued callback and apply a guarded replacement
+            // using the host-provided lock; never call EndComposition again or touch a new engine session.
+            if !finish.done.replace(true) {
+                if let Err(error) = finish.update_text(ecwrite) {
+                    system::log(&format!("terminated composition preserved after final write failure: {:?}", error.code()));
+                }
+            }
+            return Ok(());
+        }
         // A detached composition can finish asynchronously after a new field has acquired focus.
         // Its callback must not clear or commit that field's new session.
         if self.state.borrow().composition.as_ref() != pcomposition.as_ref() || pcomposition.is_none() {
