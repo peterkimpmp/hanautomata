@@ -198,11 +198,14 @@ namespace Hanautomata
         readonly Icon icon;
         readonly EventWaitHandle stopEvent;
         readonly bool testing;
+        bool startupLogged;
+        readonly string launchMode;
         internal InputDiagnostics Diagnostics;
         string lastOtherProcess = "";
         internal TrayApplication(bool background, bool testing, EventWaitHandle stopEvent)
         {
             this.testing = testing; this.stopEvent = stopEvent;
+            launchMode = background ? "background" : "manual";
             Dashboard = new Dashboard(); preview = new PreeditWindow();
             preview.Prepare(); // Create every HWND before keyboard processing, never during a composing key.
             settings = testing ? new Settings() : Settings.Load();
@@ -237,12 +240,20 @@ namespace Hanautomata
             undoLearning = new ToolStripMenuItem("최근 학습 되돌리기", null, delegate { Input.PreservePending(); Words.UndoLast(); }); menu.Items.Add(undoLearning);
             clearLearning = new ToolStripMenuItem("개인 학습 초기화", null, delegate { Input.PreservePending(); Words.Clear(); }); menu.Items.Add(clearLearning);
             menu.Items.Add(new ToolStripSeparator());
-            startup = new ToolStripMenuItem("Windows 시작 시 실행", null, delegate { SetStartup(!StartupEnabled()); }); menu.Items.Add(startup);
+            startup = new ToolStripMenuItem("Windows 로그인 시 실행", null, delegate { SetStartup(!ReadStartup().Enabled); }); menu.Items.Add(startup);
+            menu.Items.Add("자동 시작 상태 확인", null, delegate {
+                StartupStatus state = ReadStartup();
+                MessageBox.Show(state.Detail + "\n\n작업: " + state.TaskName + "\n최근 실행: " + (state.LastRun ?? "기록 없음") +
+                    "\n실행 결과: " + state.LastResult + "\n\n시작 기록: " + state.LogPath, "Hanautomata 자동 시작");
+            });
             menu.Items.Add("Hanautomata 정보 (v" + About.Version + ")", null, delegate { ShowAbout(); });
             menu.Items.Add("종료", null, delegate { ExitThread(); });
             tray = new NotifyIcon { Text = "Hanautomata · 자동 한영 입력", Icon = icon, ContextMenuStrip = menu, Visible = true };
             tray.DoubleClick += delegate { ShowDashboard(); };
-            menu.Opening += delegate { enabled.Checked = Input.Enabled; startup.Checked = StartupEnabled(); recovery.Enabled = Input.Recovery.Length > 0;
+            menu.Opening += delegate { enabled.Checked = Input.Enabled;
+                StartupStatus state = ReadStartup(); startup.Checked = state.Enabled;
+                startup.Text = state.Healthy ? "Windows 로그인 시 실행" : "Windows 로그인 시 실행 (등록 확인 필요)";
+                startup.ToolTipText = state.Detail; recovery.Enabled = Input.Recovery.Length > 0;
                 semicolon.Checked = Input.SemicolonShortcut; learn.Checked = Words.Enabled;
                 foreach (ToolStripMenuItem option in sensitivity.DropDownItems) option.Checked = (string)option.Tag == currentSensitivity;
                 undoLearning.Enabled = Words.CanUndo; clearLearning.Enabled = Words.Count > 0; clearLearning.Text = "개인 학습 초기화 (" + Words.Count + "개)";
@@ -273,6 +284,7 @@ namespace Hanautomata
         internal string Sensitivity { get { return currentSensitivity; } }
         void Tick(object sender, EventArgs args)
         {
+            if (!testing && !startupLogged) { startupLogged = true; StartupLog.Write("ready", launchMode, null); }
             if (stopEvent != null && stopEvent.WaitOne(0)) { ExitThread(); return; }
             Input.CheckHook(); Input.ValidatePending(); var snapshot = Focus.Snapshot;
             if (Diagnostics != null) Diagnostics.Tick(Input, Focus);
@@ -321,33 +333,18 @@ namespace Hanautomata
                 finally { Native.DestroyIcon(native); }
             }
         }
-        // Carries the autostart entry over from the previous name so two instances never hook the keyboard together.
-        internal static void MigrateLegacyStartup()
+        static StartupStatus ReadStartup()
         {
-            try
-            {
-                using (RegistryKey key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", true))
-                {
-                    if (key == null || key.GetValue("HanFlow") == null) return;
-                    key.DeleteValue("HanFlow", false);
-                    key.SetValue("Hanautomata", "\"" + Application.ExecutablePath + "\" --background");
-                }
-            }
-            catch (System.Security.SecurityException) { }
-            catch (UnauthorizedAccessException) { }
-            catch (IOException) { }
-        }
-        static bool StartupEnabled()
-        {
-            using (RegistryKey key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run"))
-                return key != null && string.Equals(key.GetValue("Hanautomata") as string, "\"" + Application.ExecutablePath + "\" --background", StringComparison.OrdinalIgnoreCase);
+            try { return StartupRegistration.Current(Application.ExecutablePath, "status"); }
+            catch (Exception ex) { return new StartupStatus { Healthy = false, Detail = "자동 시작 상태를 읽지 못했습니다: " + ex.Message, LogPath = StartupLog.FilePath }; }
         }
         static void SetStartup(bool enabled)
         {
-            using (RegistryKey key = Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run"))
+            try { StartupRegistration.Current(Application.ExecutablePath, enabled ? "enable" : "disable"); }
+            catch (Exception ex)
             {
-                if (enabled) key.SetValue("Hanautomata", "\"" + Application.ExecutablePath + "\" --background");
-                else key.DeleteValue("Hanautomata", false);
+                StartupLog.Write("registration-failed", "menu", ex);
+                MessageBox.Show("자동 시작 설정을 저장하지 못했습니다.\n" + ex.Message + "\n설정을 확인한 뒤 다시 켜 주세요.", "Hanautomata", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
         protected override void ExitThreadCore()
@@ -375,6 +372,12 @@ namespace Hanautomata
         [STAThread]
         static int Main(string[] args)
         {
+            if (args.Length == 3 && args[0] == "--startup")
+            {
+                if (args[1] != "status") Settings.MigrateLegacyData();
+                return StartupRegistration.Command(Application.ExecutablePath, args[1], args[2]);
+            }
+            Application.SetUnhandledExceptionMode(UnhandledExceptionMode.ThrowException);
             Application.EnableVisualStyles(); Application.SetCompatibleTextRenderingDefault(false);
             // Shorter, less frequent blocking collections keep the hook thread inside LowLevelHooksTimeout.
             System.Runtime.GCSettings.LatencyMode = System.Runtime.GCLatencyMode.SustainedLowLatency;
@@ -387,26 +390,35 @@ namespace Hanautomata
             }
             if (args.Length == 2 && args[0] == "--integration-test") return IntegrationTests.Run(args[1]);
             if (args.Length == 3 && args[0] == "--corpus-integration") return IntegrationTests.RunCorpus(args[1], args[2]);
+            bool background = args.Contains("--background");
+            string mode = args.Contains("--autostart") ? "autostart" : background ? "background" : "manual";
+            // Copy legacy data before diagnostics creates the new data directory.
+            Settings.MigrateLegacyData();
+            StartupLog.Write("starting", mode, null);
+            AppDomain.CurrentDomain.UnhandledException += delegate(object sender, UnhandledExceptionEventArgs e) { StartupLog.Write("unhandled", mode, e.ExceptionObject as Exception); };
             if (LegacyInstanceRunning())
             {
-                MessageBox.Show("이전 이름의 HanFlow가 실행 중입니다. 두 앱이 같은 키를 함께 처리하지 않도록 트레이에서 HanFlow를 종료한 뒤 다시 실행하세요.", "Hanautomata");
-                return 0;
+                StartupLog.Write("legacy-running", mode, null);
+                if (!background) MessageBox.Show("이전 이름의 HanFlow가 실행 중입니다. 두 앱이 같은 키를 함께 처리하지 않도록 트레이에서 HanFlow를 종료한 뒤 다시 실행하세요.", "Hanautomata");
+                return 1;
             }
             bool created;
             using (var mutex = new Mutex(true, "Local\\Hanautomata.Instance." + sid, out created))
             {
-                if (!created) { MessageBox.Show("Hanautomata가 이미 실행 중입니다. 작업 표시줄의 한 아이콘을 확인하세요.", "Hanautomata"); return 0; }
+                if (!created) { StartupLog.Write("already-running", mode, null); if (!background) MessageBox.Show("Hanautomata가 이미 실행 중입니다. 작업 표시줄의 한 아이콘을 확인하세요.", "Hanautomata"); return 0; }
                 using (var stop = new EventWaitHandle(false, EventResetMode.ManualReset, stopName))
                 {
                     try
                     {
-                        Settings.MigrateLegacyData(); TrayApplication.MigrateLegacyStartup();
-                        var app = new TrayApplication(args.Contains("--background"), false, stop);
+                        try { StartupRegistration.Current(Application.ExecutablePath, "migrate"); }
+                        catch (Exception ex) { StartupLog.Write("migration-failed", mode, ex); }
+                        var app = new TrayApplication(background, false, stop);
                         int diagnostic = Array.IndexOf(args, "--diagnose-input");
                         if (diagnostic >= 0 && diagnostic + 1 < args.Length) app.Input.Diagnostics = app.Diagnostics = new InputDiagnostics(args[diagnostic + 1]);
                         Application.Run(app);
+                        StartupLog.Write("stopped", mode, null);
                     }
-                    catch (Exception ex) { MessageBox.Show("Hanautomata를 시작하지 못했습니다.\n" + ex.Message, "Hanautomata", MessageBoxButtons.OK, MessageBoxIcon.Error); return 1; }
+                    catch (Exception ex) { StartupLog.Write("failed", mode, ex); if (!background) MessageBox.Show("Hanautomata를 시작하지 못했습니다.\n" + ex.Message, "Hanautomata", MessageBoxButtons.OK, MessageBoxIcon.Error); return 1; }
                 }
                 mutex.ReleaseMutex();
             }

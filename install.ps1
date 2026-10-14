@@ -81,11 +81,16 @@ foreach ($shortcutDirectory in @([Environment]::GetFolderPath('Desktop'), [Envir
     [HanautomataInstall.Shortcut]::Create($shortcutPath, $installedExe, $destination)
     if ([HanautomataInstall.Shortcut]::ReadTarget($shortcutPath) -ne $installedExe) { throw 'Shortcut target verification failed.' }
 }
-if ($Startup) {
-    $runKey = 'HKCU:/Software/Microsoft/Windows/CurrentVersion/Run'
-    $null = New-Item -Path $runKey -Force
-    Set-ItemProperty -Path $runKey -Name 'Hanautomata' -Value ('"' + $installedExe + '" --background')
-    Remove-ItemProperty -Path $runKey -Name 'HanFlow' -ErrorAction SilentlyContinue
-}
+$startupReport = Join-Path ([IO.Path]::GetTempPath()) ('hanautomata-startup-' + [Guid]::NewGuid().ToString('N') + '.json')
+try {
+    # Explicit -Startup enables/repairs registration. A normal update only migrates an enabled legacy Run entry.
+    $operation = if ($Startup) { 'enable' } else { 'migrate' }
+    $configure = Start-Process -FilePath $installedExe -ArgumentList @('--startup', $operation, ('"' + $startupReport + '"')) -PassThru -WindowStyle Hidden
+    if (-not $configure.WaitForExit(15000)) { $configure.Kill(); throw 'Startup registration timed out; retry from the tray menu.' }
+    if ($configure.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $startupReport)) { throw 'Startup registration failed; see %LOCALAPPDATA%\Hanautomata\startup.log and retry from the tray menu.' }
+    $startupState = Get-Content -LiteralPath $startupReport -Raw | ConvertFrom-Json
+    if ($Startup -and -not $startupState.Enabled) { throw 'Startup registration could not be verified.' }
+    Write-Output ('Startup: ' + $startupState.Detail)
+} finally { if (Test-Path -LiteralPath $startupReport) { Remove-Item -LiteralPath $startupReport -Force } }
 if (-not $NoLaunch) { Start-Process -FilePath $installedExe -WindowStyle Hidden }
 Write-Output "Installed for current user: $installedExe"

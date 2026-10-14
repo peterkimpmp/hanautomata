@@ -30,6 +30,9 @@ jobs:
       - name: Portable installation and packaging regression tests
         shell: pwsh
         run: .\tests\ReleaseTests.ps1
+      - name: Startup registration and Windows-disabled regression tests
+        shell: pwsh
+        run: .\tests\StartupTests.ps1
       - name: SHA-256
         shell: pwsh
         run: Get-FileHash build\Hanautomata.exe -Algorithm SHA256 | Format-List
