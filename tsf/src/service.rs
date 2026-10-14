@@ -46,6 +46,14 @@ struct PendingFinish {
     failures: Cell<u8>,
 }
 
+/// Deactivation may be refused a final write lock. In all cases, queued callbacks must stop editing on return.
+struct FinishRetirement(Vec<Rc<PendingFinish>>);
+impl Drop for FinishRetirement {
+    fn drop(&mut self) {
+        for finish in &self.0 { finish.done.set(true); }
+    }
+}
+
 impl PendingFinish {
     fn finish(&self, ec: u32) -> Result<()> {
         if self.done.get() { return Ok(()); }
@@ -209,11 +217,15 @@ fn key_event(wparam: WPARAM, lparam: LPARAM) -> KeyEvent {
 
 /// Never let a panic cross into the application (C-CMP-11): the key passes.
 fn guarded<T>(fallback: T, f: impl FnOnce() -> Result<T>) -> Result<T> {
+    guarded_result(Ok(fallback), f)
+}
+
+fn guarded_result<T>(fallback: Result<T>, f: impl FnOnce() -> Result<T>) -> Result<T> {
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
         Ok(result) => result,
         Err(_) => {
-            system::log("panic caught in key handling; key passed");
-            Ok(fallback)
+            system::log("panic caught at text-service callback boundary");
+            fallback
         }
     }
 }
@@ -244,22 +256,8 @@ impl TextService_Impl {
         access
     }
 
-    /// Applies the shell's operations to `context` in one synchronous edit session, then sends any Caps Lock press.
-    fn apply(&self, context: &ITfContext, out: &Outcome) -> Result<()> {
-        let document_ops: Vec<Op> = out
-            .ops
-            .iter()
-            .filter(|op| !matches!(op, Op::ToggleCapsLock))
-            .cloned()
-            .collect();
-        if !document_ops.is_empty() {
-            let this = self.this();
-            let ctx = context.clone();
-            let client = self.state.borrow().client;
-            edit::request(context, client, TF_ES_SYNC | TF_ES_READWRITE, move |ec| {
-                this.run_ops(ec, &ctx, document_ops)
-            })?;
-        }
+    /// Control effects follow the shell even if its accompanying document commit failed.
+    fn apply_effects(&self, out: &Outcome) {
         if out.ops.iter().any(|op| matches!(op, Op::ToggleCapsLock)) {
             if let Some(shell) = self.state.borrow_mut().shell.as_mut() {
                 shell.expect_injected_caps_lock();
@@ -269,7 +267,6 @@ impl TextService_Impl {
             }
         }
         self.update_indicator();
-        Ok(())
     }
 
     fn handle_key(&self, pic: Ref<ITfContext>, wparam: WPARAM, lparam: LPARAM, down: bool, test: bool) -> Result<BOOL> {
@@ -325,8 +322,8 @@ impl TextService_Impl {
         key: impl FnOnce(&mut Shell) -> Outcome + 'static) -> Result<BOOL> {
         let result = Rc::new(RefCell::new(None));
         let output = result.clone();
-        let before_write = Rc::new(Cell::new(0));
-        let write_baseline = before_write.clone();
+        let materialized = Rc::new(Cell::new(false));
+        let written_key = materialized.clone();
         let this = self.this();
         let ctx = context.clone();
         let client = self.state.borrow().client;
@@ -338,21 +335,20 @@ impl TextService_Impl {
             this.validate_composition(ec, &ctx)?;
             this.apply_context_policy(access, tray, Some((&ctx, ec)))?;
             if access.blocks_keys() || tray { return Ok(()); }
-            write_baseline.set(this.state.borrow().write_serial);
             let out = match this.state.borrow_mut().shell.as_mut() {
                 Some(shell) => key(shell), None => return Ok(()),
             };
             *output.borrow_mut() = Some(out.clone());
             this.trace("key-after-shell");
-            this.run_ops(ec, &ctx, out.ops.iter().filter(|op| !matches!(op, Op::ToggleCapsLock)).cloned().collect())?;
+            this.run_ops(ec, &ctx, out.ops.iter().filter(|op| !matches!(op, Op::ToggleCapsLock)).cloned().collect(), &written_key)?;
             this.trace("key-after-document");
             *output.borrow_mut() = Some(out);
             Ok(())
         });
         if let Err(error) = requested {
             let attempted = result.borrow_mut().take();
-            let written = self.state.borrow().write_serial != before_write.get();
-            let eaten = attempted.as_ref().is_some_and(|out| out.eaten && written);
+            let written = materialized.get();
+            let eaten = attempted.as_ref().is_some_and(|out| out.eaten && (written || out.control_handled));
             if attempted.is_some() {
                 // A failed SetText must not replay its speculative key through focus_lost. Keep exactly what is
                 // already visible. If SetText succeeded but caret/end failed, consuming the key prevents duplication.
@@ -366,14 +362,15 @@ impl TextService_Impl {
             } else {
                 self.commit_on_focus_change();
             }
+            if let Some(out) = &attempted { self.apply_effects(out); }
             system::log(&format!("key edit unavailable: {:?}; visible_write={} eaten={}", error.code(), written, eaten));
             return Ok(eaten.into());
         }
         let out = result.borrow_mut().take().unwrap_or_default();
         // Only non-document effects remain; do not request a second document edit session.
-        let effects = Outcome { ops: out.ops.iter().filter(|op| matches!(op, Op::ToggleCapsLock)).cloned().collect(), ..Outcome::default() };
-        self.apply(context, &effects)?;
-        Ok(out.eaten.into())
+        self.apply_effects(&out);
+        let has_document_op = out.ops.iter().any(|op| !matches!(op, Op::ToggleCapsLock));
+        Ok((out.eaten && (out.control_handled || !has_document_op || materialized.get())).into())
     }
 
     fn update_indicator(&self) {
@@ -486,17 +483,24 @@ impl TextService {
 
     /// Flush into the original range. Same-context key handling uses its existing synchronous lock; focus callbacks
     /// queue a guarded edit. Failed requests retain ownership and are retried before the next edit or focus callback.
-    fn finish_original_composition(&self, out: Outcome, session: Option<(&ITfContext, u32)>) -> Result<()> {
-        {
+    fn capture_finish(&self, out: Outcome) {
+        let captured = {
             let mut st = self.state.borrow_mut();
-            if let Some(composition) = st.composition.take() {
+            st.composition.take().map(|composition| {
                 let expected = std::mem::take(&mut st.composition_text);
-                let replacement = out.ops.into_iter().find_map(|op| if let Op::Commit(text) = op { Some(text) } else { None });
-                let context = unsafe { composition.GetRange().and_then(|range| range.GetContext()).ok() };
-                st.pending_finishes.push(Rc::new(PendingFinish { composition, context, expected: RefCell::new(expected),
-                    replacement: RefCell::new(replacement), queued: Cell::new(false), done: Cell::new(false), failures: Cell::new(0) }));
-            }
+                (composition, expected)
+            })
+        };
+        if let Some((composition, expected)) = captured {
+            let replacement = out.ops.into_iter().find_map(|op| if let Op::Commit(text) = op { Some(text) } else { None });
+            let context = unsafe { composition.GetRange().and_then(|range| range.GetContext()).ok() };
+            self.state.borrow_mut().pending_finishes.push(Rc::new(PendingFinish { composition, context, expected: RefCell::new(expected),
+                replacement: RefCell::new(replacement), queued: Cell::new(false), done: Cell::new(false), failures: Cell::new(0) }));
         }
+    }
+
+    fn finish_original_composition(&self, out: Outcome, session: Option<(&ITfContext, u32)>) -> Result<()> {
+        self.capture_finish(out);
         self.drain_finishes(session)
     }
 
@@ -537,8 +541,13 @@ impl TextService {
 
 impl TextService {
     /// Runs inside the edit session: the document operations of one key, in order.
-    fn run_ops(&self, ec: u32, context: &ITfContext, ops: Vec<Op>) -> Result<()> {
-        for op in ops {
+    fn run_ops(&self, ec: u32, context: &ITfContext, ops: Vec<Op>, materialized: &Cell<bool>) -> Result<()> {
+        // The final document operation represents this key; earlier operations only finish previous text. Count
+        // its SetText even when later caret/end bookkeeping fails, but never count an earlier word's write.
+        let last = ops.iter().rposition(|op| !matches!(op, Op::ToggleCapsLock));
+        for (index, op) in ops.into_iter().enumerate() {
+            let before = self.state.borrow().write_serial;
+            let result = guarded_result(Err(E_FAIL.into()), || -> Result<()> {
             match op {
                 Op::Commit(text) => self.commit(ec, context, &text)?,
                 Op::Compose(text) => self.compose(ec, context, &text)?,
@@ -549,14 +558,19 @@ impl TextService {
                             None => Outcome::default(),
                         };
                         let rest: Vec<Op> = after.ops;
-                        self.run_ops(ec, context, rest)?;
+                        self.run_ops(ec, context, rest, &Cell::new(false))?;
                     } else {
+                        if let Some(shell) = self.state.borrow().shell.as_ref() { shell.engine().forget_reconversion(); }
                         system::log("reconversion skipped: text before the caret changed");
                     }
                 }
                 Op::FlipSelection => self.flip_selection(ec, context)?,
                 Op::ToggleCapsLock => {}
             }
+            Ok(())
+            });
+            if Some(index) == last && self.state.borrow().write_serial != before { materialized.set(true); }
+            result?;
         }
         Ok(())
     }
@@ -698,8 +712,23 @@ impl ITfTextInputProcessor_Impl for TextService_Impl {
     }
 
     fn Deactivate(&self) -> Result<()> {
+        guarded((), || {
         self.trace("deactivate");
+        let out = self.state.borrow_mut().shell.as_mut().map(Shell::focus_lost).unwrap_or_default();
+        self.capture_finish(out);
         let st = std::mem::take(&mut *self.state.borrow_mut());
+        let retiring = FinishRetirement(st.pending_finishes.clone());
+        for finish in &retiring.0 {
+            if finish.done.get() { continue; }
+            if let Some(context) = finish.context.as_ref() {
+                let pending = finish.clone();
+                // Try only synchronously. Teardown cannot leave an edit that may overwrite the next input method.
+                if let Err(error) = edit::request(context, st.client, TF_ES_SYNC | TF_ES_READWRITE, move |ec| pending.finish(ec)) {
+                    system::log(&format!("deactivation final write unavailable; visible text preserved: {:?}", error.code()));
+                }
+            }
+        }
+        drop(retiring);
         if let Some(tm) = st.thread_mgr.as_ref() {
             unsafe {
                 if let Ok(keystrokes) = tm.cast::<ITfKeystrokeMgr>() {
@@ -724,11 +753,13 @@ impl ITfTextInputProcessor_Impl for TextService_Impl {
         }
         system::log("deactivate");
         Ok(())
+        })
     }
 }
 
 impl ITfTextInputProcessorEx_Impl for TextService_Impl {
     fn ActivateEx(&self, ptim: Ref<ITfThreadMgr>, tid: u32, _flags: u32) -> Result<()> {
+        let result = guarded_result(Err(E_FAIL.into()), || {
         self.diagnostics.set(
             system::process_name().eq_ignore_ascii_case("WINWORD.EXE")
                 && !system::elevated()
@@ -786,6 +817,9 @@ impl ITfTextInputProcessorEx_Impl for TextService_Impl {
             system::caps_lock_on()
         ));
         Ok(())
+        });
+        if result.is_err() { let _ = self.Deactivate(); }
+        result
     }
 }
 
@@ -894,6 +928,7 @@ impl ITfThreadMgrEventSink_Impl for TextService_Impl {
     }
 
     fn OnSetFocus(&self, pdimfocus: Ref<ITfDocumentMgr>, pdimprevfocus: Ref<ITfDocumentMgr>) -> Result<()> {
+        guarded((), || {
         if pdimfocus.as_ref() == pdimprevfocus.as_ref() { return Ok(()); }
         self.commit_on_focus_change();
         let mut st = self.state.borrow_mut();
@@ -901,16 +936,21 @@ impl ITfThreadMgrEventSink_Impl for TextService_Impl {
         drop(st);
         self.update_indicator();
         Ok(())
+        })
     }
 
     fn OnPushContext(&self, pic: Ref<ITfContext>) -> Result<()> {
+        guarded((), || {
         if self.context_event_affects_focus(pic) { self.commit_on_focus_change(); }
         Ok(())
+        })
     }
 
     fn OnPopContext(&self, pic: Ref<ITfContext>) -> Result<()> {
+        guarded((), || {
         if self.context_event_affects_focus(pic) { self.commit_on_focus_change(); }
         Ok(())
+        })
     }
 }
 
@@ -934,6 +974,7 @@ impl ITfDisplayAttributeProvider_Impl for TextService_Impl {
 impl ITfCompartmentEventSink_Impl for TextService_Impl {
     /// The user clicked the system indicator (가/A): follow it. A, English; 가, automatic unless Korean was fixed.
     fn OnChange(&self, rguid: *const GUID) -> Result<()> {
+        guarded((), || {
         if self.writing_compartment.get() || rguid.is_null() {
             return Ok(());
         }
@@ -967,5 +1008,6 @@ impl ITfCompartmentEventSink_Impl for TextService_Impl {
         drop(st);
         self.trace("indicator-after");
         Ok(())
+        })
     }
 }

@@ -21,6 +21,7 @@ struct Host {
     scope_valid: Cell<bool>,
     deny_read: Cell<bool>,
     write_requests: Cell<u32>,
+    caret_selection: Cell<bool>,
     pending: RefCell<Vec<ITfEditSession>>,
 }
 
@@ -41,7 +42,8 @@ impl ITfContext_Impl for Context_Impl {
     fn InWriteSession(&self, _: u32) -> Result<BOOL> { Ok(true.into()) }
     fn GetSelection(&self, _: u32, _: u32, count: u32, selection: *mut TF_SELECTION, fetched: *mut u32) -> Result<()> {
         if count == 0 { return Err(E_INVALIDARG.into()); }
-        let range: ITfRange = Range { host: self.0.clone(), context: self.to_interface(), offset: Cell::new(0) }.into();
+        let offset = if self.0.caret_selection.get() { self.0.text.borrow().encode_utf16().count() } else { 0 };
+        let range: ITfRange = Range { host: self.0.clone(), context: self.to_interface(), offset: Cell::new(offset) }.into();
         unsafe { *selection = TF_SELECTION { range: std::mem::ManuallyDrop::new(Some(range)), style: TF_SELECTIONSTYLE::default() }; *fetched = 1; }
         Ok(())
     }
@@ -98,22 +100,34 @@ impl ITfRange_Impl for Range_Impl {
     fn SetText(&self, _: u32, _: u32, value: &PCWSTR, n: i32) -> Result<()> {
         if self.host.fail_set.replace(false) { return Err(E_FAIL.into()); }
         assert!(n >= 0);
-        *self.host.text.borrow_mut() = if n == 0 { String::new() }
-            else { String::from_utf16(unsafe { std::slice::from_raw_parts(value.0, n as usize) }).unwrap() };
+        let mut units: Vec<u16> = self.host.text.borrow().encode_utf16().collect();
+        units.truncate(self.offset.get());
+        if n > 0 { units.extend_from_slice(unsafe { std::slice::from_raw_parts(value.0, n as usize) }); }
+        *self.host.text.borrow_mut() = String::from_utf16(&units).unwrap();
         self.host.writes.set(self.host.writes.get() + 1);
         Ok(())
     }
     fn GetFormattedText(&self, _: u32) -> Result<IDataObject> { Err(E_NOTIMPL.into()) }
     fn GetEmbedded(&self, _: u32, _: *const GUID, _: *const GUID) -> Result<IUnknown> { Err(E_NOTIMPL.into()) }
     fn InsertEmbedded(&self, _: u32, _: u32, _: Ref<IDataObject>) -> Result<()> { Err(E_NOTIMPL.into()) }
-    fn ShiftStart(&self, _: u32, _: i32, _: *mut i32, _: *const TF_HALTCOND) -> Result<()> { Err(E_NOTIMPL.into()) }
+    fn ShiftStart(&self, _: u32, shift: i32, moved: *mut i32, _: *const TF_HALTCOND) -> Result<()> {
+        let before = self.offset.get() as i32;
+        let end = self.host.text.borrow().encode_utf16().count() as i32;
+        let after = (before + shift).clamp(0, end);
+        self.offset.set(after as usize);
+        unsafe { *moved = after - before; }
+        Ok(())
+    }
     fn ShiftEnd(&self, _: u32, _: i32, _: *mut i32, _: *const TF_HALTCOND) -> Result<()> { Err(E_NOTIMPL.into()) }
     fn ShiftStartToRange(&self, _: u32, _: Ref<ITfRange>, _: TfAnchor) -> Result<()> { Err(E_NOTIMPL.into()) }
     fn ShiftEndToRange(&self, _: u32, _: Ref<ITfRange>, _: TfAnchor) -> Result<()> { Err(E_NOTIMPL.into()) }
     fn ShiftStartRegion(&self, _: u32, _: TfShiftDir) -> Result<BOOL> { Err(E_NOTIMPL.into()) }
     fn ShiftEndRegion(&self, _: u32, _: TfShiftDir) -> Result<BOOL> { Err(E_NOTIMPL.into()) }
     fn IsEmpty(&self, _: u32) -> Result<BOOL> { Ok((self.offset.get() >= self.host.text.borrow().encode_utf16().count()).into()) }
-    fn Collapse(&self, _: u32, _: TfAnchor) -> Result<()> { Ok(()) }
+    fn Collapse(&self, _: u32, anchor: TfAnchor) -> Result<()> {
+        if anchor == TF_ANCHOR_END { self.offset.set(self.host.text.borrow().encode_utf16().count()); }
+        Ok(())
+    }
     fn IsEqualStart(&self, _: u32, _: Ref<ITfRange>, _: TfAnchor) -> Result<BOOL> { Err(E_NOTIMPL.into()) }
     fn IsEqualEnd(&self, _: u32, _: Ref<ITfRange>, _: TfAnchor) -> Result<BOOL> { Err(E_NOTIMPL.into()) }
     fn CompareStart(&self, _: u32, _: Ref<ITfRange>, _: TfAnchor) -> Result<i32> { Err(E_NOTIMPL.into()) }
@@ -388,4 +402,101 @@ fn transient_read_denial_is_rechecked_under_the_write_lock() {
     assert_eq!(host.ended.get(), 0);
     assert!(service.state.borrow().shell.as_ref().unwrap().is_composing());
     assert_eq!(host.write_requests.get(), 1);
+}
+
+#[test]
+fn skipped_reconversion_passes_f2_and_discards_stale_history() {
+    let (service, host, context) = fixture();
+    seed(&service, &host, &context);
+    assert!(paired_key(&service, &context, b' ', edit::FieldAccess::Ordinary).as_bool());
+    assert!(service.state.borrow().shell.as_ref().unwrap().engine().reconversion().is_some());
+    // The host now has a non-collapsed selection, so the previous word cannot be replaced safely.
+    let before = host.text.borrow().clone();
+    let writes = host.writes.get();
+    assert!(!paired_key(&service, &context, crate::shell::vk::F2 as u8, edit::FieldAccess::Ordinary).as_bool(),
+        "a skipped F2 must remain available to the application");
+    assert_eq!(&*host.text.borrow(), &before);
+    assert_eq!(host.writes.get(), writes);
+    assert!(service.state.borrow().shell.as_ref().unwrap().engine().reconversion().is_none());
+}
+
+#[test]
+fn deactivation_finishes_a_live_composition_before_releasing_state() {
+    let (service, host, context) = fixture();
+    seed(&service, &host, &context);
+    unsafe { service.to_interface::<ITfTextInputProcessorEx>().Deactivate().unwrap(); }
+    assert_eq!(host.ended.get(), 1);
+    assert_eq!(&*host.text.borrow(), "안녕");
+    assert!(service.state.borrow().shell.is_none());
+}
+
+#[test]
+fn deactivation_invalidates_queued_edits_when_final_lock_is_denied() {
+    let (service, host, context) = fixture();
+    let preview = seed(&service, &host, &context);
+    host.defer.set(true);
+    unsafe { service.to_interface::<ITfKeyEventSink>().OnSetFocus(false).unwrap(); }
+    assert_eq!(host.pending.borrow().len(), 1);
+    host.deny.set(true);
+    unsafe { service.to_interface::<ITfTextInputProcessorEx>().Deactivate().unwrap(); }
+    let writes = host.writes.get();
+    for session in std::mem::take(&mut *host.pending.borrow_mut()) { unsafe { session.DoEditSession(1).unwrap(); } }
+    assert_eq!(host.writes.get(), writes, "an old edit must not write after service deactivation");
+    assert_eq!(host.ended.get(), 0);
+    assert_eq!(&*host.text.borrow(), &preview);
+}
+
+#[test]
+fn an_earlier_commit_cannot_consume_a_later_unwritten_character() {
+    let (service, host, context) = fixture();
+    seed(&service, &host, &context);
+    let sink = service.to_interface::<ITfKeyEventSink>();
+    let implementation = sink.cast_object_ref::<TextService>().unwrap();
+    // Exercise the future-compatible multi-operation contract. The existing composition commits successfully,
+    // then this host refuses the new composition (no ITfInsertAtSelection). The new key must pass exactly once.
+    let eaten = implementation.key_in_session(&context, edit::FieldAccess::Ordinary, false, |_| Outcome {
+        eaten: true, ops: vec![Op::Commit("안녕".into()), Op::Compose("ㅌ".into())], ..Outcome::default()
+    }).unwrap();
+    assert!(!eaten.as_bool(), "writing the previous word is not proof the current character was inserted");
+    assert_eq!(&*host.text.borrow(), "안녕");
+    host.text.borrow_mut().push('x');
+    assert_eq!(&*host.text.borrow(), "안녕x");
+}
+
+#[test]
+fn a_completed_pause_command_is_not_passed_again_after_commit_failure() {
+    let (service, host, context) = fixture();
+    let preview = seed(&service, &host, &context);
+    host.fail_set.set(true);
+    let eaten = paired_key(&service, &context, crate::shell::vk::F12 as u8, edit::FieldAccess::Ordinary);
+    assert!(service.state.borrow().shell.as_ref().unwrap().engine().paused());
+    assert!(eaten.as_bool(), "the pause was already applied; do not run the host's F12 too");
+    assert_eq!(&*host.text.borrow(), &preview);
+}
+
+#[test]
+fn reconversion_round_trip_preserves_the_prefix_without_language_property_support() {
+    let (service, host, context) = fixture();
+    seed(&service, &host, &context);
+    assert!(paired_key(&service, &context, b' ', edit::FieldAccess::Ordinary).as_bool());
+    *host.text.borrow_mut() = "prefix 안녕 ".into();
+    host.caret_selection.set(true);
+    assert!(paired_key(&service, &context, crate::shell::vk::F2 as u8, edit::FieldAccess::Ordinary).as_bool());
+    assert_eq!(&*host.text.borrow(), "prefix dkssud ");
+    assert!(paired_key(&service, &context, crate::shell::vk::F2 as u8, edit::FieldAccess::Ordinary).as_bool());
+    assert_eq!(&*host.text.borrow(), "prefix 안녕 ");
+}
+
+#[test]
+fn reconversion_never_overwrites_host_changed_text_at_the_caret() {
+    let (service, host, context) = fixture();
+    seed(&service, &host, &context);
+    assert!(paired_key(&service, &context, b' ', edit::FieldAccess::Ordinary).as_bool());
+    *host.text.borrow_mut() = "prefix host-changed ".into();
+    host.caret_selection.set(true);
+    let writes = host.writes.get();
+    assert!(!paired_key(&service, &context, crate::shell::vk::F2 as u8, edit::FieldAccess::Ordinary).as_bool());
+    assert_eq!(&*host.text.borrow(), "prefix host-changed ");
+    assert_eq!(host.writes.get(), writes);
+    assert!(service.state.borrow().shell.as_ref().unwrap().engine().reconversion().is_none());
 }

@@ -134,6 +134,8 @@ pub struct Outcome {
     pub ops: Vec<Op>,
     /// The personal dictionary changed.
     pub learned: bool,
+    /// The key already changed a control state (pause/mode/gesture), independently of document writes.
+    pub control_handled: bool,
 }
 
 impl Outcome {
@@ -144,6 +146,7 @@ impl Outcome {
     fn eaten() -> Outcome {
         Outcome {
             eaten: true,
+            control_handled: true,
             ..Outcome::default()
         }
     }
@@ -458,6 +461,7 @@ impl Shell {
                 if e.mods.shift {
                     if self.is_composing() {
                         let mut out = Outcome::eaten();
+                        out.control_handled = false;
                         let r = self.engine.commit_pending();
                         self.apply(r, &mut out);
                         out.eaten = true;
@@ -468,6 +472,7 @@ impl Shell {
                         eaten: true,
                         ops: vec![Op::FlipSelection],
                         learned: false,
+                        control_handled: false,
                     };
                 }
                 return match self.engine.reconversion() {
@@ -478,6 +483,7 @@ impl Shell {
                             new: swap.new,
                         }],
                         learned: false,
+                        control_handled: false,
                     },
                     None => Outcome::pass(),
                 };
@@ -608,6 +614,7 @@ impl Shell {
     fn switch(&mut self) -> Outcome {
         let mut out = self.run(KeyKind::Switch, ' ', ' ');
         out.eaten = true;
+        out.control_handled = true;
         out
     }
 
