@@ -15,6 +15,14 @@ crate-type = ["cdylib", "rlib"]
 name = "hanautomata-ime-setup"
 path = "src/bin/setup.rs"
 
+[[bin]]
+name = "hanautomata-config-probe"
+path = "src/bin/config_probe.rs"
+required-features = ["quality-probes"]
+
+[features]
+quality-probes = ["windows/Win32_Security_Isolation", "windows/Win32_UI_Shell"]
+
 [dependencies]
 hanautomata-ffi = { path = "../ffi", default-features = false }
 serde = { version = "1", features = ["derive"] }

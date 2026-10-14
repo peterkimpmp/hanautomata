@@ -259,3 +259,48 @@ AppContainer와 패키지 앱에서 `%LOCALAPPDATA%`가 같은 사용자의 설�
 시험 UI에는 제품과 같은 manifest에 더해 같은 .NET Framework 4.8 runtime config를 복사하도록 빌드 스크립트를 보완했다. 재빌드와 config SHA256 일치를 확인했다(`restore-preview-parity.log` 및 실행 출력). 최종 바이너리 해시는 `identity-recovery-final-hashes.json`이다. 사용자에게 격리된 시험 화면을 직접 열어 달라고 요청했으며 실제 화면 확인은 아직 대기다.
 
 개발 커밋 `0c0196d6fb5c1dfef09127bf85613a15756bb03a`를 `codex/windows-quality`에 푸시했다. [CI 38592303028](https://github.com/peterkimpmp/hanautomata/actions/runs/38592303028)의 `windows-build`와 `cross-platform-tests`가 모두 성공했다. 실행 결과는 `identity-recovery-ci.json`, 소스·바이너리 연결은 `identity-recovery-build-record.json`에 보존했다. CI 성공은 실제 UI·설치·6종 앱 승인을 대체하지 않는다.
+
+## AppContainer 설정·트레이 경계의 실제 재현 — 2026-10-15
+
+`quality-probes` 기능으로만 빌드되는 `hanautomata-config-probe`를 추가했다. 일반 사용자 프로세스가 고유한 시험 프로필·설정 파일·mutex를 만들고 제한 토큰의 자식에서 실제 제품 로더를 호출한다. 시험은 패키지 없는 AppContainer, capability 0개, LPAC 아님이다. 실제 패키지 앱·시작 검색·Word의 시험을 대체하지 않는다. 시스템 입력기 등록과 실제 설정·트레이 mutex는 변경하지 않았다.
+
+| 관측 | 기본 권한 시험 | 임시 파일·mutex의 읽기 권한 시험 |
+|---|---|---|
+| 일반 프로세스 기준 | 설정 바이트·옵션 일치, mutex 감지 | 동일 |
+| 자식 토큰 | AppContainer true, elevated false | 동일 |
+| 기존 환경 변수 경로 | 프로필의 AC 폴더로 바뀜. 파일 없음(error 3), 로더는 기본값 반환 | 동일; 경로 수정도 필요 |
+| NO_PACKAGE_REDIRECTION 경로 | 실제 사용자 경로를 얻지만 읽기 거부(error 5) | 합성 설정 바이트·옵션 일치 |
+| Local 시험 mutex | OpenMutex(SYNCHRONIZE) 접근 거부(0x80070005) | 감지 성공 |
+| 제한된 권한 확인 | 해당 없음 | 설정의 쓰기용 열기와 mutex MODIFY_STATE 모두 접근 거부 |
+| 실제 트레이 감지(읽기만) | 일반 프로세스 true, 자식 false | 실제 트레이 권한은 바꾸지 않아 자식 false 유지 |
+| 진단 종료 | exit 1, incompatible, probe_error null | exit 0, shared_read_pass; 제품 호환성 값은 null |
+| 정리 | 생성한 파일·프로필 루트·레지스트리 mapping 없음 | 동일; DeleteAppContainerProfile 1회 성공 |
+
+기본 시험은 **설정 경로·파일 읽기 권한·트레이 감지의 세 경계를 함께 고쳐야 한다는 실제 실패 증거**다. `--shared-read`는 이 실행이 create_new로 만든 파일에 FILE_GENERIC_READ, 새 mutex에 SYNCHRONIZE만 ALL APPLICATION PACKAGES(S-1-15-2-1) ACE로 추가한다. 기존 DACL은 병합하며 디렉터리·실제 사용자 파일의 ACL은 변경하지 않는다. 시험 성공은 이 제한 환경에서 보강 방향이 성립한다는 근거이며 제품 구현·설치 승인이 아니다. LPAC와 실제 패키지 호스트는 별도 미검증이다.
+
+실행·검사 기록은 `build/windows-quality/`에 보존한다.
+
+| 기록 | 결과 |
+|---|---|
+| appcontainer-probe-bounds-before.log → bounds-after.log | 무제한 읽기의 실패를 재현한 뒤 최대 크기를 제한 |
+| appcontainer-verdict-before.log → appcontainer-final-tests.log | 실험 ACE를 제품 호환성으로 오인하는 판정 실패를 재현·수정. 최종 검사 4개 통과 |
+| appcontainer-final-build.log | x64 진단 실행 파일 release 빌드 성공 |
+| appcontainer-probe-negative.json | 일반 토큰의 worker 실행은 exit 2, 결과 파일 미생성 |
+| appcontainer-baseline-20261015.json / baseline-cleanup.json | 기본 권한에서 실제 실패, 정리 후 부재 확인 |
+| appcontainer-shared-read-20261015.json / shared-cleanup.json | 명시적 읽기 권한 시험 성공, 정리 및 소스·바이너리 해시 확인 |
+| appcontainer-probe-review.json / review-followup.json | 반대 공급자 소스 검토의 실행 전 보완 반영 후 Medium/High 없음. 검토자는 실행하지 않음 |
+| appcontainer-shared-review.json | 실험/제품 판정 혼합 Medium 1건; 이후 실패 검사와 수정 후 통과로 해소. 마지막 수정의 재리뷰를 수행했다고 주장하지 않음 |
+
+도구는 변경 전에 pending 보고서를 동기화하며, 기준 읽기 실패를 제품 결함과 구분한다. 프로필 삭제 직전에 전체 고유 루트 범위를 다시 확인하고, 자식 종료 확인 없이 삭제하지 않는다. 생성한 빈 데이터 디렉터리만 비재귀 방식으로 정리한다. 부모 강제 종료 시 자동 정리를 보장하지 않으며 보고서의 고유 이름을 확인해 재개해야 한다. 개인 경로를 포함한 원시 보고서는 공개 문서에 복제하지 않는다.
+
+재현 명령(일반 사용자 PowerShell, 별도 ASCII Cargo target 사용):
+
+```powershell
+cargo test --release --manifest-path tsf/Cargo.toml --features quality-probes --bin hanautomata-config-probe
+cargo build --release --manifest-path tsf/Cargo.toml --features quality-probes --bin hanautomata-config-probe
+# $probe는 위 빌드의 실행 파일, 결과 경로는 기존 파일이 없는 위치를 사용한다.
+& $probe --output $baselineReport
+& $probe --output $sharedReadReport --shared-read
+```
+
+다음 구현은 환경 변수와 분리된 TSF 설정 경로, 설정의 원자적 저장·복원 후 읽기 ACE 유지, 새 트레이 mutex의 제한된 읽기 권한이다. 특히 [ReplaceFileW](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-replacefilew)는 교체 대상의 DACL을 보존하므로 임시 파일에만 ACE를 붙이는 것으로 기존 파일 갱신을 보장할 수 없다. [SetEntriesInAclW](https://learn.microsoft.com/en-us/windows/win32/api/aclapi/nf-aclapi-setentriesinaclw)와 [IME 요구사항](https://learn.microsoft.com/en-us/windows/apps/develop/input/input-method-editor-requirements)의 명시적 파일 접근 계약을 따르며 사용자 프로필 전체를 개방하지 않는다. 실제 앱 승인 0/6과 전체 인수 게이트 미완료를 유지한다.
