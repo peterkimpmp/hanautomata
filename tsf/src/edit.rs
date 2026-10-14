@@ -162,6 +162,7 @@ pub enum FieldAccess {
 }
 
 impl FieldAccess {
+    #[cfg(test)]
     pub fn from_result(result: Result<Self>) -> Self {
         result.unwrap_or_else(|error| Self::Unknown(error.code()))
     }
@@ -169,28 +170,88 @@ impl FieldAccess {
     pub fn suppresses_trace(self) -> bool { self != Self::Ordinary }
 }
 
+/// Fixed operation names only: never include field values, keys or document contents in diagnostics.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FieldQueryStage {
+    EditSession, CallbackNotRun, Status, CompartmentInterface,
+    DisabledCompartment, DisabledValue, EmptyCompartment, EmptyValue,
+    Selection, ScopeProperty, ScopeValue, ScopeContents,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FieldQueryFailure {
+    pub stage: FieldQueryStage,
+    pub code: HRESULT,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FieldProbe {
+    pub access: FieldAccess,
+    pub failure: Option<FieldQueryFailure>,
+}
+
+impl FieldProbe {
+    pub fn failed(stage: FieldQueryStage, code: HRESULT) -> Self {
+        Self { access: FieldAccess::Unknown(code), failure: Some(FieldQueryFailure { stage, code }) }
+    }
+}
+
 /// Private fields still support composition, but must not learn. Passwords/PINs pass through. Unknown is preserved as
 /// a separate verdict so a failed probe cannot silently destroy the current composition.
 pub fn field_access(ec: u32, context: &ITfContext) -> FieldAccess {
+    field_probe(ec, context).access
+}
+
+pub fn field_probe(ec: u32, context: &ITfContext) -> FieldProbe {
+    let stage = std::cell::Cell::new(FieldQueryStage::Status);
     let read = || -> Result<FieldAccess> {
         let status = unsafe { context.GetStatus()? };
         if status.dwDynamicFlags & (TF_SD_READONLY | TF_SD_LOADING) != 0 { return Ok(FieldAccess::Protected); }
+        stage.set(FieldQueryStage::CompartmentInterface);
         let compartments: ITfCompartmentMgr = context.cast()?;
-        for guid in [GUID_COMPARTMENT_KEYBOARD_DISABLED, GUID_COMPARTMENT_EMPTYCONTEXT] {
+        for (guid, lookup, value_stage) in [
+            (GUID_COMPARTMENT_KEYBOARD_DISABLED, FieldQueryStage::DisabledCompartment, FieldQueryStage::DisabledValue),
+            (GUID_COMPARTMENT_EMPTYCONTEXT, FieldQueryStage::EmptyCompartment, FieldQueryStage::EmptyValue),
+        ] {
+            stage.set(lookup);
             let compartment = unsafe { compartments.GetCompartment(&guid)? };
+            stage.set(value_stage);
             let mut value = unsafe { compartment.GetValue()? };
             let disabled = compartment_disabled(&value);
             unsafe { let _ = VariantClear(&mut value); }
             if disabled? { return Ok(FieldAccess::Protected); }
         }
+        stage.set(FieldQueryStage::Selection);
         let range = selection(ec, context)?;
-        let prop = unsafe { context.GetAppProperty(&GUID_PROP_INPUTSCOPE)? };
+        stage.set(FieldQueryStage::ScopeProperty);
+        let Some(prop) = input_scope_property(context)? else { return Ok(FieldAccess::Ordinary); };
+        stage.set(FieldQueryStage::ScopeValue);
         let mut var = unsafe { prop.GetValue(ec, &range)? };
+        stage.set(FieldQueryStage::ScopeContents);
         let result = read_scope_variant(&var);
         unsafe { let _ = VariantClear(&mut var); }
         result
     };
-    FieldAccess::from_result(read())
+    match read() {
+        Ok(access) => FieldProbe { access, failure: None },
+        Err(error) => FieldProbe::failed(stage.get(), error.code()),
+    }
+}
+
+fn input_scope_property(context: &ITfContext) -> Result<Option<ITfReadOnlyProperty>> {
+    use windows::Win32::Foundation::{E_UNEXPECTED, S_FALSE, S_OK};
+    // windows 0.59's convenience method loses S_FALSE and turns a null interface into Error::empty().
+    // Preserve the native optional-property contract. Other successes, null S_OK and actual failures stay closed.
+    // https://learn.microsoft.com/windows/win32/api/msctf/nf-msctf-itfcontext-getappproperty
+    let mut raw = std::ptr::null_mut();
+    let hr = unsafe { (context.vtable().GetAppProperty)(context.as_raw(), &GUID_PROP_INPUTSCOPE, &mut raw) };
+    let property = if raw.is_null() { None } else { Some(unsafe { ITfReadOnlyProperty::from_raw(raw) }) };
+    match hr {
+        S_OK if property.is_some() => Ok(property),
+        S_FALSE if property.is_none() => Ok(None),
+        _ if hr.is_err() => Err(hr.into()),
+        _ => Err(E_UNEXPECTED.into()),
+    }
 }
 
 fn compartment_disabled(value: &VARIANT) -> Result<bool> {

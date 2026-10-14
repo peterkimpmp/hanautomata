@@ -13,7 +13,7 @@ disposition: local-reusable
 - C# 단위 단언 26,391개가 현재 기준 소스에서 통과했다.
 - 트레이 통합 시험은 TSF 동시 처리 제거 후 106/106이다.
 - 후보 레이아웃과 학습 저장 코어를 보강했으며 TSF 학습 연결은 남아 있다.
-- Word 언어 속성 후보의 실제 효과와 6종 앱 승인은 미검증이다.
+- 설치 후보의 Word F2 직접 시험은 실패했으며 6종 앱 승인은 0/6이다.
 
 ## 판정과 검증 경로
 
@@ -598,6 +598,8 @@ flowchart LR
 
 ## 최신 후보의 시스템 적용과 일반 사용자 준비 — 2026-10-15
 
+> 아래는 적용 직후의 기록이다. 설정 생성과 물리 키 응답 대기에 관한 판단은 후속 「에이전트 직접 시험과 파일 경로 증거 정정」으로 정정한다. 설치 해시·프로세스 DLL 증거는 유지한다.
+
 `5971010`의 최종 [CI 두 작업](https://github.com/peterkimpmp/hanautomata/actions/runs/38640629068)이 통과했다. 개발 ZIP을 `build/tsf/wq-5971010-20261015`에 동결했다. ZIP SHA256은 `F198A4D06223860E22841328EF2BB69074659CF1EA14A7B0071D7FBC8D2ECA1C`이며 여섯 payload를 개별 검증했다. 적용 래퍼는 updater·payload 도우미·바이너리 해시 목록을 고정 해시로 확인한다. PowerShell 7/5.1의 읽기 전용 사전 점검과, 도우미 없음·updater 변경·payload 도우미 변경·manifest 변경의 거부 검사 4개가 통과했다. 이 검사는 실제 등록 실패·롤백 성공을 대신하지 않는다.
 
 사용자가 화면의 관리자 PowerShell에서 동결 묶음을 적용했다. 설치 영수증의 판정은 `updated-user-preparation-required`이며 설치된 DLL·setup·설정 편집기·실행 설정 여섯 파일은 동결 해시와 일치한다. 이전 `d2-word-correction-20261013`의 경로와 복구 도구는 영수증에 보존됐다. 자동 앱 종료·재부팅·기본 입력기 변경은 수행하지 않았다.
@@ -619,3 +621,43 @@ flowchart LR
 사용자는 문서 저장 후 Word 종료·재실행, 트레이 종료, 한오토마타 선택을 완료했다고 응답했다. 새 `문서1 - Word` 창의 핸들 1838498을 PID 28784와 대조했고 최신 DLL 적재를 확인했다. 이전 PID 9732는 창 핸들 0이며 시험 대상에 포함하지 않는다. 새 Word 창을 앞으로 가져온 뒤 빈 문서와 입력 커서를 관측했다. 물리 키 `dkssud`→Space→F2 결과를 사용자에게 요청했고 응답을 기다린다. 자동 고침 ON은 사용자 준비 응답의 범위이며 옵션 대화상자를 직접 검수한 근거는 아직 없다. **앱 승인 0/6**을 유지한다.
 
 같은 턴의 설정 저장·재열기 시험은 Sky의 `accessibility window-opened handler did not become ready` 오류로 새 검수 창을 열지 못했다. 재조회에서도 이전 시험 창만 확인돼 다른 실행면으로 열거나 이전 파일을 최신 검증에 사용하지 않았다. 앞선 정상 표시 승인은 유지하며 저장·재열기는 별도 미검증이다. 재사용 범위는 `local-reusable`다.
+
+## 에이전트 직접 시험과 파일 경로 증거 정정 — 2026-10-15
+
+사용자가 모든 시험을 직접 수행하고 질문 없이 진행하라고 지시했다. 물리 키 응답 대기를 종료하고 Sky의 개별 키 주입으로 실제 앱을 시험했다. **Word와 메모장 모두 실패 관측, 전체 앱 승인 0/6**이다. Chrome·Edge·시작 검색·관리자 메모장은 이 단계에서 새 승인 근거가 없다.
+
+| 직접 관측 | 결과와 한계 |
+|---|---|
+| Word PID 28784, 새 `문서2` | 설치된 `wq-5971010-20261015` DLL을 확인. `dkssud`→Space는 `안녕`, F2 뒤에도 그대로. Undo는 `자동 고침 취소`. 이전 사용자 `문서1`은 보존 |
+| Word 실제 로그 | `mode=Auto`, `tray=false`, 입력 필드 조회 `E_FAIL`, `preserved F2 handled=false`. 한글 표시는 Word 자동 고침으로 설명될 가능성이 있으며 TSF 성공으로 인정하지 않음 |
+| 메모장 PID 7924, 새 탭 | 편집 영역 포커스 후 같은 설치 DLL 적재. 개별 `d k s s u d`→Space→F2 뒤 `dkssud ` 유지. 이 앱의 실제 모드·실패 단계는 별도 추적하지 못했으므로 Word와 같은 원인으로 단정하지 않음 |
+| 설정 검수본 | `options-content-fit-20261015`에서 자동 판별→한글 변경·저장 메시지·시험 JSON을 확인. 창 종료 후 다시 실행했을 때 한글 유지, 저장 버튼 비활성 확인. 실제 사용자 설정·입력기 메뉴 연결을 승인한 시험은 아님 |
+
+### LocalAppData 파일 관측의 정정
+
+에이전트가 `LocalAppData/Hanautomata`라는 문자열로 연 로그·설정 파일은 `GetFinalPathNameByHandleW`로 확인하면 **Codex 패키지의 LocalCache**에 있었다. 반면 네이티브 메모장이 연 같은 논리 경로의 실제 로그에는 새 Word PID 28784의 기록이 있었다. 메모장 「다른 이름으로 저장」으로 작업 폴더에 내보낸 로그를 읽어 대조했다. 사용자·세션이 같고 프로세스에 패키지 ID가 없다는 확인만으로 파일 접근의 리디렉션 부재를 증명할 수 없다.
+
+따라서 앞선 `enable-user`의 설정 생성·해시는 **에이전트가 본 파일의 생성** 근거다. 실제 Word가 읽는 사용자 설정의 존재·내용·권한은 아직 검증되지 않았다. Program Files 설치 해시와 Word의 적재 DLL 경로는 별도 증거로 유지한다. 이 정정은 실제 앱의 실패를 파일 리디렉션 하나로 단정하는 것이 아니다.
+
+### 옵션 속성 ABI 수정과 실패 단계 진단
+
+[Microsoft GetAppProperty 계약](https://learn.microsoft.com/en-us/windows/win32/api/msctf/nf-msctf-itfcontext-getappproperty)의 `S_FALSE`는 호스트가 그 속성을 제공하지 않는 경우다. 입력 범위 조회는 [ITfInputScope 문서](https://learn.microsoft.com/en-us/windows/win32/api/inputscope/nn-inputscope-itfinputscope)의 `GetAppProperty` 경로를 유지했다. Context7 CLI는 미설치로 실패하여 공식 문서와 로컬 `windows 0.59.0` 바인딩 소스로 대체했다.
+
+실제 COM ABI의 `S_FALSE`·null 출력으로 회귀를 만들자 기존 바인딩은 `Unknown(HRESULT(0))`으로 판정해 일반 입력을 막았다. 수정은 원래 HRESULT를 보존하여 **정확한 `S_FALSE`·null 조합만 선택적 속성 없음으로 처리**한다. `S_OK`·null, 알 수 없는 성공 코드, `E_FAIL`·`E_NOTIMPL`·연결 끊김 등은 여전히 차단한다. 읽기 전용·disabled/empty context 확인은 이 처리보다 앞선다. 기존 비밀번호/PIN/비공개 범위 정책도 유지한다.
+
+이 회귀의 오류 코드는 실제 Word의 `E_FAIL`과 다르므로 **Word 원인을 해결했다고 주장하지 않는다**. 다음 설치에서 실패 위치를 구분하도록 편집 세션·상태·compartment·선택·속성·값·내용 해석의 고정 단계 이름과 HRESULT만 진단한다. 입력 내용이나 키는 추가로 기록하지 않는다. 같은 실패를 억제하되 정상 조회로 회복하면 억제 상태를 해제한다.
+
+| 근거 (`build/windows-quality/`) | 판정 |
+|---|---|
+| `word-host-log-20261015-0659.log`, `word-host-trace-20261015-0705.log` | 실제 사용자 로그를 네이티브 메모장으로 내보낸 증거 |
+| `file-view-probe.ps1`, `file-view-probe-20261015.json` | 열린 파일 핸들의 물리 경로 읽기 전용 재현 |
+| `word-direct-f2-20261015.json/.jpg`, `notepad-direct-f2-20261015.json/.jpg` | 개별 키 주입 실제 화면 실패. 물리 키 시험으로 계산하지 않음 |
+| `options-save-reopen-20261015.json/.jpg` | 격리 검수본 저장·종료·재실행 유지 통과 |
+| `scope-property-red.log` | 수정 전 optional-property 회귀 1건 실패 |
+| `field-probe-final-build.log` | **213개 통과(84 core + 110 TSF lib + 19 shell)**, 부모가 실행하는 자식 fixture 2개 제외, x64/x86 release·DLL selftest 성공 |
+| `field-probe-x86-tests.log` | x86 TSF lib 110개 통과, 부모가 실행하는 자식 fixture 1개 제외. x64와 검사 수 중복 합산하지 않음 |
+| `field-probe-preflight.json`, `field-probe-preflight-ps51.json` | PowerShell 7/5.1에서 새 후보의 해시·이전 설치·복구 도구 사전 점검 통과, 시스템 변경 없음 |
+
+후보는 `build/tsf/wq-field-probe-20261015`에 동결했다. **미설치**이며 현재 설치본 `wq-5971010-20261015`를 그대로 둔다. 실제 Word의 실패 단계 확인, 새 DLL 실제 앱 재검증, TSF 영속 학습 연결과 나머지 필수 게이트는 계속 남는다. 개발 검사와 설정 검수본 통과만으로 점수나 앱 승인을 올리지 않는다. 원문 로그·화면·자세한 PC 경로는 무시된 build에 보존하고 공개 문서에는 필요한 결과만 남긴다.
+
+시험 뒤 이번에 만든 진단 표시 파일 두 개를 각각 비활성 이름으로 바꿨다. LocalCache 것은 파일 경로 확인 후 셸에서, 실제 사용자 것은 네이티브 탐색기에서 이름 변경을 확인했다. 캐시된 진단 플래그를 가진 입력기를 비활성화하도록 기존 Microsoft 입력기를 세션에 다시 선택했고 API 성공을 기록했다. 자동 로그오프·재부팅·사용자 문서 종료는 하지 않았다. 이 정리의 증거는 `diagnostics-native-cleanup-20261015.json`과 `field-probe-restore-ms-ime.log`다. 현재 단계의 소스·바이너리·시험 증거 연결은 `field-probe-checkpoint-20261015.json`에 보존한다.

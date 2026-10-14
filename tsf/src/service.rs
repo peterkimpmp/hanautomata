@@ -187,7 +187,7 @@ struct State {
     tray_running: bool,
     excluded_app: bool,
     checked_key: Option<CheckedKey>,
-    last_query_failure: Option<(ITfContext, windows::core::HRESULT)>,
+    last_query_failure: Option<(ITfContext, edit::FieldQueryFailure)>,
     /// Our own composition sink, for StartComposition (released on Deactivate, which breaks the cycle).
     sink: Option<ITfCompositionSink>,
 }
@@ -291,22 +291,27 @@ impl TextService_Impl {
     /// A read-only probe. In particular, OnTestKeyDown must not flush/reset the engine or end a composition.
     fn probe_access(&self, context: &ITfContext) -> edit::FieldAccess {
         let client = self.state.borrow().client;
-        let result = std::rc::Rc::new(Cell::new(edit::FieldAccess::Unknown(E_FAIL)));
+        let result = std::rc::Rc::new(Cell::new(edit::FieldProbe::failed(edit::FieldQueryStage::CallbackNotRun, E_FAIL)));
         let out = result.clone();
         let ctx = context.clone();
         let query = edit::request(context, client, TF_ES_SYNC | TF_ES_READ, move |ec| {
-            out.set(edit::field_access(ec, &ctx));
+            out.set(edit::field_probe(ec, &ctx));
             Ok(())
         });
-        let access = match query { Ok(()) => result.get(), Err(error) => edit::FieldAccess::Unknown(error.code()) };
-        if let edit::FieldAccess::Unknown(code) = access {
+        let probe = match query {
+            Ok(()) => result.get(),
+            Err(error) => edit::FieldProbe::failed(edit::FieldQueryStage::EditSession, error.code()),
+        };
+        if let Some(failure) = probe.failure {
             let mut st = self.state.borrow_mut();
-            if self.diagnostics.get() && st.last_query_failure.as_ref() != Some(&(context.clone(), code)) {
-                system::log(&format!("field query unavailable: {:?}; current key will pass without entering engine", code));
-                st.last_query_failure = Some((context.clone(), code));
+            if self.diagnostics.get() && st.last_query_failure.as_ref() != Some(&(context.clone(), failure)) {
+                system::log(&format!("field query unavailable stage={:?} code={:?}; current key will pass without entering engine", failure.stage, failure.code));
+                st.last_query_failure = Some((context.clone(), failure));
             }
+        } else {
+            self.state.borrow_mut().last_query_failure = None;
         }
-        access
+        probe.access
     }
 
     /// Control effects follow the shell even if its accompanying document commit failed.

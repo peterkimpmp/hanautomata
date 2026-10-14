@@ -19,6 +19,11 @@ struct Host {
     fail_end: Cell<bool>,
     fail_caret: Cell<bool>,
     scope_valid: Cell<bool>,
+    app_property_result: Cell<Option<HRESULT>>,
+    status_failure: Cell<bool>,
+    read_only: Cell<bool>,
+    selection_failure: Cell<bool>,
+    scope_value_failure: Cell<bool>,
     deny_read: Cell<bool>,
     write_requests: Cell<u32>,
     caret_selection: Cell<bool>,
@@ -41,6 +46,7 @@ impl ITfContext_Impl for Context_Impl {
     }
     fn InWriteSession(&self, _: u32) -> Result<BOOL> { Ok(true.into()) }
     fn GetSelection(&self, _: u32, _: u32, count: u32, selection: *mut TF_SELECTION, fetched: *mut u32) -> Result<()> {
+        if self.0.selection_failure.get() { return Err(E_FAIL.into()); }
         if count == 0 { return Err(E_INVALIDARG.into()); }
         let offset = if self.0.caret_selection.get() { self.0.text.borrow().encode_utf16().count() } else { 0 };
         let range: ITfRange = Range { host: self.0.clone(), context: self.to_interface(), offset: Cell::new(offset) }.into();
@@ -55,9 +61,19 @@ impl ITfContext_Impl for Context_Impl {
     fn GetEnd(&self, _: u32) -> Result<ITfRange> { Err(E_NOTIMPL.into()) }
     fn GetActiveView(&self) -> Result<ITfContextView> { Err(E_NOTIMPL.into()) }
     fn EnumViews(&self) -> Result<IEnumTfContextViews> { Err(E_NOTIMPL.into()) }
-    fn GetStatus(&self) -> Result<TS_STATUS> { Ok(TS_STATUS::default()) }
+    fn GetStatus(&self) -> Result<TS_STATUS> {
+        if self.0.status_failure.get() { return Err(E_FAIL.into()); }
+        Ok(TS_STATUS { dwDynamicFlags: if self.0.read_only.get() { TF_SD_READONLY } else { 0 }, ..TS_STATUS::default() })
+    }
     fn GetProperty(&self, _: *const GUID) -> Result<ITfProperty> { Err(E_NOTIMPL.into()) }
-    fn GetAppProperty(&self, _: *const GUID) -> Result<ITfReadOnlyProperty> { Ok(ScopeProperty.into()) }
+    fn GetAppProperty(&self, _: *const GUID) -> Result<ITfReadOnlyProperty> {
+        // The generated COM adapter returns this HRESULT without writing the caller's null output.
+        // S_FALSE is the documented "owner does not support the property" result.
+        if let Some(code) = self.0.app_property_result.get() {
+            return Err(windows::core::Error::from_hresult(code));
+        }
+        Ok(ScopeProperty(self.0.clone()).into())
+    }
     fn TrackProperties(&self, _: *const *const GUID, _: u32, _: *const *const GUID, _: u32) -> Result<ITfReadOnlyProperty> { Err(E_NOTIMPL.into()) }
     fn EnumProperties(&self) -> Result<IEnumTfProperties> { Err(E_NOTIMPL.into()) }
     fn GetDocumentMgr(&self) -> Result<ITfDocumentMgr> { Err(E_NOTIMPL.into()) }
@@ -78,11 +94,14 @@ impl ITfCompartment_Impl for Compartment_Impl {
     fn GetValue(&self) -> Result<VARIANT> { Ok(VARIANT::default()) }
 }
 #[implement(ITfReadOnlyProperty)]
-struct ScopeProperty;
+struct ScopeProperty(Rc<Host>);
 impl ITfReadOnlyProperty_Impl for ScopeProperty_Impl {
     fn GetType(&self) -> Result<GUID> { Ok(GUID_PROP_INPUTSCOPE) }
     fn EnumRanges(&self, _: u32, _: OutRef<IEnumTfRanges>, _: Ref<ITfRange>) -> Result<()> { Err(E_NOTIMPL.into()) }
-    fn GetValue(&self, _: u32, _: Ref<ITfRange>) -> Result<VARIANT> { Ok(VARIANT::default()) }
+    fn GetValue(&self, _: u32, _: Ref<ITfRange>) -> Result<VARIANT> {
+        if self.0.scope_value_failure.get() { return Err(E_FAIL.into()); }
+        Ok(VARIANT::default())
+    }
     fn GetContext(&self) -> Result<ITfContext> { Err(E_NOTIMPL.into()) }
 }
 
@@ -402,6 +421,53 @@ fn transient_read_denial_is_rechecked_under_the_write_lock() {
     assert_eq!(host.ended.get(), 0);
     assert!(service.state.borrow().shell.as_ref().unwrap().is_composing());
     assert_eq!(host.write_requests.get(), 1);
+}
+
+#[test]
+fn unsupported_optional_input_scope_does_not_disable_an_ordinary_context() {
+    let (_, host, context) = fixture();
+    host.scope_valid.set(true);
+    host.app_property_result.set(Some(windows::Win32::Foundation::S_FALSE));
+    let mut raw = std::ptr::null_mut();
+    let hr = unsafe { (context.vtable().GetAppProperty)(context.as_raw(), &GUID_PROP_INPUTSCOPE, &mut raw) };
+    assert_eq!(hr, windows::Win32::Foundation::S_FALSE);
+    assert!(raw.is_null(), "reproduce the native optional-property ABI, not a Rust None");
+    assert_eq!(edit::field_access(1, &context), edit::FieldAccess::Ordinary);
+    host.read_only.set(true);
+    assert_eq!(edit::field_access(1, &context), edit::FieldAccess::Protected, "absent scope must not override the host's protection");
+    host.read_only.set(false);
+    host.scope_valid.set(false);
+    assert!(edit::field_access(1, &context).blocks_keys(), "absent scope must not hide a compartment failure");
+}
+
+#[test]
+fn failed_or_invalid_scope_property_never_allows_input() {
+    let (_, host, context) = fixture();
+    host.scope_valid.set(true);
+    for code in [E_FAIL, E_NOTIMPL, E_INVALIDARG, TF_E_DISCONNECTED, S_OK, HRESULT(2)] {
+        host.app_property_result.set(Some(code));
+        let probe = edit::field_probe(1, &context);
+        assert!(probe.access.blocks_keys(), "unexpected property result {code:?}");
+        let failure = probe.failure.unwrap();
+        assert_eq!(failure.stage, edit::FieldQueryStage::ScopeProperty);
+        assert_eq!(failure.code, if code.is_err() { code } else { windows::Win32::Foundation::E_UNEXPECTED });
+    }
+}
+
+#[test]
+fn field_diagnostics_distinguish_identical_hresult_without_document_contents() {
+    use edit::FieldQueryStage as Stage;
+    let (_, host, context) = fixture();
+    for expected in [Stage::Status, Stage::DisabledCompartment, Stage::Selection, Stage::ScopeValue] {
+        host.status_failure.set(expected == Stage::Status);
+        host.scope_valid.set(expected != Stage::DisabledCompartment);
+        host.selection_failure.set(expected == Stage::Selection);
+        host.scope_value_failure.set(expected == Stage::ScopeValue);
+        let probe = edit::field_probe(1, &context);
+        assert_eq!(probe.access, edit::FieldAccess::Unknown(E_FAIL));
+        assert_eq!(probe.failure, Some(edit::FieldQueryFailure { stage: expected, code: E_FAIL }));
+        assert_eq!(host.writes.get(), 0);
+    }
 }
 
 #[test]
