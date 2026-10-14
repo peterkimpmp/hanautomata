@@ -18,6 +18,44 @@ fn shell(name: &str) -> Shell {
 }
 
 #[test]
+fn candidate_tracks_composition_and_f2_but_never_survives_commit_or_private_input() {
+    let mut s = shell("candidate-lifecycle");
+    let mut out = Outcome::default();
+    for key in b"DKSSUD" { out = s.key_down(KeyEvent::new(*key as u16, Mods::NONE)); }
+    let preview = out.preview.unwrap().unwrap();
+    assert_eq!((preview.text.as_str(), preview.alternative.as_str()), ("안녕", "dkssud"));
+    assert!(s.test_key_down(KeyEvent::new(vk::F2, Mods::NONE)));
+    let flipped = s.key_down(KeyEvent::new(vk::F2, Mods::NONE)).preview.unwrap().unwrap();
+    assert_eq!((flipped.text.as_str(), flipped.alternative.as_str()), ("dkssud", "안녕"));
+    assert_eq!(s.key_down(KeyEvent::new(vk::SPACE, Mods::NONE)).preview, Some(None));
+    s.context_policy(false, true);
+    for key in b"DKSSUD" {
+        assert_eq!(s.key_down(KeyEvent::new(*key as u16, Mods::NONE)).preview, Some(None));
+    }
+}
+
+#[test]
+fn candidate_correction_respects_disabled_fixed_sebeolsik_and_paused_modes() {
+    let mut disabled = shell("candidate-disabled");
+    disabled.settings.correction_keys = false;
+    let out = disabled.key_down(KeyEvent::new(b'D' as u16, Mods::NONE));
+    assert!(!out.preview.unwrap().unwrap().correction, "Do not advertise an unavailable F2");
+    assert!(!disabled.key_down(KeyEvent::new(vk::F2, Mods::NONE)).eaten);
+    assert_eq!(disabled.reconversion_command(), Outcome::default());
+
+    for variant in ["korean", "sebeolsik", "paused"] {
+        let mut s = shell(&format!("candidate-{variant}"));
+        if variant == "korean" { s.set_mode(InputMode::Korean); }
+        if variant == "sebeolsik" { s.engine().set_keyboard(hanautomata_ffi::KeyboardKind::Sebeolsik390); }
+        s.key_down(KeyEvent::new(b'D' as u16, Mods::NONE));
+        if variant == "paused" { s.key_down(KeyEvent::new(vk::F12, Mods::NONE)); }
+        assert!(!s.test_key_down(KeyEvent::new(vk::F2, Mods::NONE)), "{variant}");
+        assert!(!s.key_down(KeyEvent::new(vk::F2, Mods::NONE)).eaten, "{variant}");
+        assert_eq!(s.reconversion_command(), Outcome::default(), "{variant}");
+    }
+}
+
+#[test]
 fn preserved_reconversion_routes_a_fresh_word_and_leaves_other_f2_to_the_app() {
     let mut s = shell("preserved-f2");
     assert_eq!(s.reconversion_command(), Outcome::default());
@@ -34,7 +72,9 @@ fn preserved_reconversion_routes_a_fresh_word_and_leaves_other_f2_to_the_app() {
     d.apply(&mut s, &again);
     assert_eq!(d.text, "안녕 ");
     d.key(&mut s, b'X' as u16, Mods::NONE, None);
-    assert_eq!(s.reconversion_command(), Outcome::default(), "A new composition invalidates F2");
+    assert!(s.reconversion_command().eaten, "The preserved route now switches a current automatic composition");
+    s.key_down(KeyEvent::new(vk::ESCAPE, Mods::NONE));
+    assert_eq!(s.reconversion_command(), Outcome::default(), "An empty session leaves F2 to the app");
 }
 
 #[test]
@@ -361,10 +401,9 @@ fn f2_swaps_the_last_word_and_shift_f2_flips_the_selection() {
     assert!(d.key(&mut s, vk::F2, Mods::NONE, None));
     assert_eq!(d.text, "안녕 ", "and again swaps back");
     d.type_str(&mut s, "abc");
-    assert!(
-        !d.key(&mut s, vk::F2, Mods::NONE, None) || d.text.ends_with("abc"),
-        "F2 without a fresh word passes"
-    );
+    assert!(d.key(&mut s, vk::F2, Mods::NONE, None), "A current automatic composition also owns F2");
+    d.key(&mut s, vk::ESCAPE, Mods::NONE, None);
+    assert!(!d.key(&mut s, vk::F2, Mods::NONE, None), "No current or fresh word leaves F2 to the app");
     let mut flip = shell("flip");
     let mut fd = Doc {
         text: "rkskek".into(),

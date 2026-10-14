@@ -2,31 +2,13 @@
 //! edit session (synchronously from a key event, asynchronously elsewhere); the helpers below are the document
 //! operations the shell asks for.
 
-use std::cell::RefCell;
 use std::mem::ManuallyDrop;
-use windows::core::{implement, Interface, Result, HRESULT};
+use windows::core::{Interface, Result, HRESULT};
 use windows::Win32::System::Variant::{VariantClear, VARIANT, VT_EMPTY, VT_I4, VT_UNKNOWN};
 use windows::Win32::UI::TextServices::*;
 
-type Action = Box<dyn FnOnce(u32) -> Result<()>>;
-
-#[implement(ITfEditSession)]
-struct EditSession {
-    action: RefCell<Option<Action>>,
-}
-
-impl ITfEditSession_Impl for EditSession_Impl {
-    fn DoEditSession(&self, ec: u32) -> Result<()> {
-        let action = self.action.borrow_mut().take();
-        match action {
-            // This callback crosses a COM ABI boundary. An outer key-handler guard cannot catch a panic after it
-            // has crossed that boundary; catch here, including asynchronous focus edits.
-            Some(f) => std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(ec)))
-                .unwrap_or_else(|_| Err(windows::Win32::Foundation::E_FAIL.into())),
-            None => Ok(()),
-        }
-    }
-}
+#[path = "edit_session.rs"]
+mod session;
 
 /// Runs `f` in an edit session of `context`. With TF_ES_SYNC the closure has run when this returns.
 pub fn request(
@@ -35,10 +17,7 @@ pub fn request(
     flags: TF_CONTEXT_EDIT_CONTEXT_FLAGS,
     f: impl FnOnce(u32) -> Result<()> + 'static,
 ) -> Result<()> {
-    let session: ITfEditSession = EditSession {
-        action: RefCell::new(Some(Box::new(f))),
-    }
-    .into();
+    let session = session::new(Box::new(f));
     let hr: HRESULT = unsafe { context.RequestEditSession(client, &session, flags)? };
     hr.ok()
 }

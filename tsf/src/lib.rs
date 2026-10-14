@@ -5,14 +5,17 @@
 //!
 //! S0 scope: registration step by step, composition and commit in real applications, the switch keys (⇧Space, Caps Lock
 //! short/long, 한/영, right Alt tap), F2/Shift+F2, F12 pause, the system mode indicator (가/A), pass-through in password
-//! fields, beside the tray app (W-17) and in elevated processes (W-14). Not yet: the candidate window, a settings window,
-//! saving learning (one learning file and many processes: decided after S0, see core/src/store.rs).
+//! fields, beside the tray app (W-17) and in elevated processes (W-14). Candidate preview and a separate settings editor
+//! are development implementations awaiting real-app/visual acceptance. Saving learning is not implemented yet
+//! (one learning file and many processes: see core/src/store.rs).
 
 pub mod shell;
 pub mod settings;
 
 #[cfg(windows)]
 mod display;
+#[cfg(windows)]
+mod candidate;
 #[cfg(windows)]
 mod configuration;
 #[cfg(windows)]

@@ -12,7 +12,7 @@ disposition: local-reusable
 
 - C# 단위 단언 26,391개가 현재 기준 소스에서 통과했다.
 - 트레이 통합 시험은 TSF 동시 처리 제거 후 106/106이다.
-- TSF 133개 검사와 양쪽 빌드를 통과했으며 실제 앱 검증이 남아 있다.
+- Rust 160개 검사와 양쪽 빌드를 통과했으며 후보 레이아웃 보강이 남아 있다.
 - Word 언어 속성 후보의 실제 효과와 6종 앱 승인은 미검증이다.
 
 ## 판정과 검증 경로
@@ -393,3 +393,73 @@ cargo build --release --manifest-path tsf/Cargo.toml --features quality-probes -
 R2는 리뷰 입력에서 빠진 DLL 수명 코드에 대한 조건부 우려였다. 작성자가 `exports.rs::DllCanUnloadNow`의 상시 S_FALSE, `service.rs::Show`·`guarded_result`와 windows-rs 0.59의 Show shim에 반환 후 서비스 상태 접근이 없음을 직접 확인했다. 이를 미관측된 확정 High로 기록하지 않으며 실제 호스트의 강제 종료·수명 시험을 대체하지 않는다. 낮은 심각도의 잔여는 비정상 대기 후 편집기 중복 실행 가능성(CAS로 저장 충돌 거부), 상세 OS 오류 표시, 압축/reparse 변형, 정상 데스크톱 토큰별 실행 진단, foreground 복귀와 호스트 job 종료 영향이다.
 
 최종 필터 회귀를 포함한 `configuration-owner-final-build.log`는 **144개(52+75+17) 통과 + 자식 fixture 1개 제외**, x64/x86 release·DLL selftest 성공이다. 빌드·시험은 개발 소스의 근거이며 실제 설정 창·Windows 메뉴·6종 앱·설치 승인으로 합산하지 않는다.
+
+## TSF 후보 표시 개발 — 2026-10-15
+
+엔진의 조합 문자열·다른 후보·근거 라벨을 shell의 결과로 전달하고, 문서 변경 성공 후에만 TSF 후보 요소를 제공한다. read-only 후보창은 키보드 포커스를 받지 않으며 기존 입력 처리를 대신하지 않는다. [UI-less 협상 계약](https://learn.microsoft.com/en-us/windows/win32/tsf/uiless-mode-overview)에 따라 Begin/Update/End를 호출하며 앱이 표시를 맡으면 자체 창을 열지 않는다. 전체 UI-less 활성화를 선언하는 범주는 아직 추가하지 않았다.
+
+일반 입력 필드·현재 문서/컨텍스트·접힌 선택·실제 전경 창을 확인한다. [GetTextExt](https://learn.microsoft.com/en-us/windows/win32/api/msctf/nf-msctf-itfcontextview-gettextext)의 `TS_E_NOLAYOUT`과 잘림·숨김은 위치 대기로 처리한다. 후보 데이터는 보존하지만 자체 창을 추정 위치에 띄우지 않는다. 초점 상실·선택/조합 원문 변경·조합 종료·비공개/보호/조회 실패·트레이 공존·해제에서 후보를 정리한다. 정상 배치 변경이나 조합 원문을 바꾸지 않은 편집은 읽기 잠금으로 재검증한다. 보관된 COM 요소도 End 호출 전에 문자열과 문서 참조를 비워 재호출로 복원하지 못하게 한다. 관찰자 해제 도중 자기 콜백 객체를 유지하며, native 창 정리는 개별 소유 토큰으로 HWND 재사용을 구분한다.
+
+| 검증 | 근거와 결과 | 인수 범위 |
+|---|---|---|
+| 후보 전달 실패 재현 | `candidate-before.log`: Outcome 후보 필드 부재로 컴파일 실패 | 구현 전 계약 부재 |
+| 조합 중 F2 실패 재현 | `candidate-focused-fixed.log`: COM 9개 통과 후 shell 후보 전환 실패 | TSF가 조합 중 F2를 전달하지 않는 차이 발견 |
+| 후보 집중 검사 | `candidate-guard-tests.log`: 12개 통과 | 2개 후보·페이지 경계·재진입·실패·내용 제거·배치·모드 제한 |
+| native 창 검사 | 자신의 숨은 STATIC 창을 만들고 96/144/192 DPI 글꼴·비활성 스타일·해제 확인 | 실제 창 표시·입력·화면 검수 아님 |
+| 재진입 보강 후 회귀·빌드 | `candidate-retirement-build.log`: **157개(52+86+19) 통과**, 자식 fixture 1개 제외, x64/x86 release·selftest 통과 | 중간 소스 검사 |
+| 검토 후 보안 경계 보강 | `candidate-security-build.log`: **160개(52+89+19) 통과**, 자식 fixture 1개 제외, x64/x86 release·selftest 통과 | 중간 개발 검사·이 시점 H1 미해결 |
+| H1 지연 위치 계약 추가 | `candidate-layout-before.log`: LayoutSource/Geometry 부재로 컴파일 실패 | 구현 전 비동기 계약 부재; 실기 재현은 아님 |
+| 지연 위치·apartment 수정 | `candidate-layout-portable-build.log`: **169개(52+98+19) 통과**, 자식 fixture 1개 제외, x64/x86 release·selftest 통과 | NOLAYOUT 대기, 재배치, 편집 재검증, 오래된 콜백/관찰자, COM 경계 |
+
+F2는 자동 모드 두벌식의 조합 중에도 후보를 전환하도록 보강했다. 원래 Space 확정 후 F2와 Shift+F2는 유지하며, 교정 꺼짐·고정 한글·세벌식·일시정지에서 새 조합 전환을 하지 않는 것을 검사했다. F2 꺼짐 상태에서는 후보 안내도 기능을 광고하지 않는다. 기존의 조합 중 F2 통과 기대는 새 요구에 맞춰 바꾸었고, 빈 세션 F2는 여전히 앱으로 전달함을 확인했다.
+
+초기 155개와 중간 156·157개 통과를 합산하지 않는다. 작성자 검토에서 EndUIElement를 엔진 처리 뒤·문서 쓰기 전에 호출하면 초점 재진입에 취약함을 확인해, 후보 종료를 키 처리 시작 전으로 옮겼다. 종료 뒤 현재 컨텍스트를 다시 확인하고 오래된 편집 요청은 엔진에 전달하지 않는다. End 콜백의 재진입·단일 종료 검사를 추가했다. 이 단계는 커밋·설치·출시 승인 기록이 아니다.
+
+미검증 항목은 실제 Word의 레이아웃 계산 시점, 문자마다 창을 재생성하는 비용·깜빡임, 스크롤 후 다음 입력에서의 재표시, 긴 후보 줄바꿈, 실제 DPI/멀티 모니터·고대비·Narrator 및 후보 AutomationId/이벤트, 제한/관리자 호스트다. [표준 STATIC](https://learn.microsoft.com/en-us/windows/win32/controls/static-control-styles)의 텍스트와 [NOACTIVATE](https://learn.microsoft.com/en-us/windows/win32/winmsg/extended-window-styles) 스타일만으로 전체 접근성·입력 무간섭을 승인하지 않는다. 설치된 DLL과 동결된 관리자 적용 묶음은 변경하지 않았으며 실제 앱 승인은 **0/6**, WQ-07은 진행 중이다.
+
+### 독립 검토와 처리 상태
+
+반대 공급자 Claude의 도구 없는 독립 소스 검토(`candidate-review.json`, 858,607ms)는 초기 후보 구현에 High 2건·Medium 5건을 제기했다. 실제 앱을 실행한 검토가 아니며, 다음 표는 작성자가 소스·회귀로 대조한 처리 상태다. H1 후속 검토는 `candidate-layout-review.json`으로 별도 추적한다.
+
+| 지적 | 처리와 근거 |
+|---|---|
+| H1: 쓰기 중 GetTextExt 실패 또는 정상 relayout 후 후보 소실 | 소스 수정·169개 회귀/빌드 통과. `TS_E_NOLAYOUT`을 대기로 보존하고 layout 통지 뒤 읽기 세션에서 필드·초점·선택·조합 원문을 다시 확인한다. 같은 단어의 배치 갱신은 새 창 대신 위치를 이동하고, 소유 창/DPI 변경은 다시 구성한다. 실제 Word/스크롤 재시험과 독립 후속 검토는 별개다. |
+| H2: 앱 전환 시 최상위 후보창 잔류 | ThreadFocusSink 인터페이스 부재를 `candidate-review-before.log`에서 실패로 확인했다. OnKillThreadFocus에서 후보를 비우고 구독 실패 시 후보 기능만 억제한다. HWND_TOPMOST를 HWND_TOP으로 바꿨다. 인터페이스/세대 무효화 회귀는 통과했으며 실제 Alt+Tab 검증은 남아 있다. |
+| M1: 다른 스레드의 루트 창 소유 | 자체 창은 필드 HWND와 루트 HWND 모두 현재 스레드일 때만 허용한다. 조건 불충족 시 호스트가 그릴 후보 데이터는 유지한다. 실제 WebView/UWP 소유 관계는 미검증이다. |
+| M2: 높은 권한 입력이 창 caption으로 노출 | 자체 STATIC 창은 기존의 실패 시 거부하는 일반 데스크톱 판정이 모두 참일 때만 허용한다. 관리자·AppContainer·패키지·제한/불명 환경에서는 자체 창을 만들지 않는다. 호스트 표시 경로는 별개이며 실제 권한별 시험은 남았다. |
+| M3: 엔진 변경과 결과 기록 사이의 외부 teardown | 종료를 엔진 처리/쓰기 잠금 앞으로 옮긴 위 보강으로 제거했다. 외부 종료 후 입력 대상도 재확인한다. 실제 호스트 재진입 시험은 남아 있다. |
+| M4: F2/후보 조건 차이 | 코어의 고정 모드·세벌식은 decision을 주지 않고, 자동 두벌식의 비어 있지 않은 Candidate는 handled를 돌려줌을 소스로 확인했다. 꺼짐·고정·세벌식·일시정지 회귀는 통과했다. 꺼짐 상태는 F2를 광고하지 않는 읽기 전용 다른 후보 표시다. 다른 전환 키는 별도 옵션이므로 대안 텍스트가 있다는 이유만으로 선택 불가능을 단정하지 않는다. |
+| M5: windows-implement 0.59의 IAgileObject 기본 응답 | 설치된 매크로에서 확인했고 외부 스레드 GetCount가 성공하는 실패 회귀를 남겼다. 새 Element/Observer의 모든 COM 메서드는 상태 접근 전에 생성 스레드를 확인해 RPC_E_WRONG_THREAD를 돌려준다. 소유 Watch가 Weak를 비운 뒤 참조를 풀어 외부에 남은 sink의 마지막 해제도 비스레드안전 참조를 건드리지 않게 했다. 편집 콜백은 `IUnknown`/`ITfEditSession`만 구현하는 apartment 객체로 바꿨고 agile/marshal QI 거부·외부 직접 호출 거부·단일 실행·panic 경계를 검사했다. 기존 TextService 등 나머지 COM 표면 감사와 실제 apartment 간 marshaling 시험은 별도 잔여다. |
+
+낮은 지적 중 OnUninit의 guard, GetDescription의 경계, Snapshot COM 해제 시 borrow 해제, 관찰자 콜백의 자기 참조 유지는 보강했다. 원래 있던 보존 F2의 Caps 상태 갱신, 소유 창이 먼저 사라질 때 property atom 처리, 실제 고대비·UIA·DPI는 잔여다. 검토자에게 제공하지 않은 `DllCanUnloadNow`는 상시 S_FALSE이며 release는 `panic=unwind`임을 재확인했다. 이 확인은 다른 COM 객체의 스레드 안전성 증명이 아니다.
+
+### H1 지연 레이아웃 보강
+
+원래 caret와 조합 범위를 복제해 보관하고 [읽기 편집 세션](https://learn.microsoft.com/en-us/windows/win32/api/msctf/nf-msctf-itfcontext-requesteditsession)에서 원문·선택·범위 소유·일반 필드·초점을 다시 확인한다. 위치만 조회하지 못하면 자체 창을 억제하고 호스트용 후보 데이터는 보존한다. 원문·선택·보호 상태 등의 검증 실패는 폐기한다. 통지 반복은 한 번의 읽기로 합치고 그 사이 배치가 다시 바뀌면 오래된 위치 대신 다시 읽는다. 등록 전 지나간 layout 통지도 놓치지 않도록 최초 등록 뒤 한 번 재조회한다. 정상 편집은 OnEndEdit의 읽기 쿠키로 확인하며 조합 밖의 교정·서식 변경만으로 후보를 지우지 않는다.
+
+문서 읽기와 창 이동은 메시지 전용 창의 큐로 분리했다. 잠금 요청 호출과 실제 읽기 콜백 중에만 큐 실행을 보류하고 비동기 잠금을 기다리는 동안에는 보류하지 않는다. 폐기할 때 대기 작업을 제거한다. 메시지는 Rust 포인터 대신 nonce를 담으며 HWND는 생성부터 파괴까지 큐의 별도 소유 참조를 유지하고 콜백은 실행 동안 추가 참조를 잡는다. 창 이동·표시·해제는 각 창의 고유 토큰과 생성 스레드를 다시 확인한다. 이 검사는 소유한 숨은 시험 창만 사용했고 사용자 앱이나 설치를 자동 조작하지 않았다.
+
+`candidate-layout-build.log`는 x64 169개 검사와 selftest 후 x86 창 포인터 타입 불일치로 실패한 중간 기록이다. 포인터 폭에 맞게 변환한 `candidate-layout-portable-build.log`가 양쪽 빌드 성공 근거다. 초기 API 부재 및 중간 실패를 통과로 계산하지 않는다. 코드 검토는 원래 스크립트가 Codex를 고정 호출하여 작성자와 같은 공급자가 되는 점을 확인하고, 도구 없는 Claude CLI로 수행했다. vault waiver: 이번 좁은 코드 검토는 소스와 기존 품질 원장을 근거로 하며 별도 지식 검색은 관련성이 낮다.
+
+두 번째 독립 소스 검토(`candidate-layout-review.json`, 397,593ms)는 핵심 H1 수정은 확인했으나 High 1·Medium 3·Low 4를 제기했다. 다음 회귀와 소스로 대조했고 최종 설치 승인을 뜻하지 않는다.
+
+| 지적 | 조치와 검증 범위 |
+|---|---|
+| 이전 비동기 읽기가 새 단어의 큐를 막음 | `candidate-layout-review-before.log`에서 새 읽기 0건(기대 1건)으로 재현. 보류 범위를 실제 호출/콜백으로 제한하고 기다리는 기간은 해제 |
+| 호출 없이 폐기한 읽기의 reading 플래그 잔류 | 같은 로그에서 폐기 뒤 active 유지로 재현. 사용하지 않은 콜백을 해제하면 동일 세대의 후보도 종료. `phrSession` 실패는 기존 `hr.ok()`가 이미 오류로 처리 |
+| 외부 스레드에서 마지막 서비스 참조 해제 | `candidate-owner-drop-before.log`의 소유 참조 소실 재현. 서비스의 apartment 자원은 정상 스레드에서만 파괴하고 예외적인 외부 최종 해제에는 프로세스 수명 동안 보유. HWND 자체도 큐를 소유. 이는 전체 COM agility 해결이 아니며 예외 경로 자원 보유를 잔여로 명시 |
+| 위치 조회 실패로 호스트 후보도 제거 | 원문·필드 검증과 geometry 실패를 분리. view/extent 오류는 자체 창만 억제하며 호스트 문자열 유지 |
+| 편집 종료의 NOLAYOUT 뒤 재조회 없음 | 같은 실패 로그에서 재조회 0건으로 재현. OnEndEdit에서 위치 대기이면 한 번 새 읽기 요청 |
+| 폐기된 콜백의 본문 재조회/문자열 보유 | 먼저 세대 확인 후 Weak anchor를 올린다. 대기 콜백은 원문/범위를 소유하지 않음. 폐기 후 source 해제와 조회 횟수 불변 회귀 추가 |
+| 호스트가 메시지를 버린 뒤 posted 상태 고착 | 영구 posted 표식을 제거해 후속 enqueue가 다시 게시. PostMessage의 지속 실패/메시지 할당량과 대량 입력 성능은 실제 부하 시험에 남김 |
+| 소유 창 선행 파괴/외부 해제의 글꼴·property 정리 | 외부 최종 해제에서 자원을 잘못 파괴하지 않는 경계 추가. property atom 누수는 확정 근거가 없으며 실제 소유 창 선행 파괴와 자원 계측은 미검증 |
+
+자신의 메시지 창이 콜백 도중 파괴되는 경우와 오래된 nonce 무시 검사는 `candidate-dispatch-lifetime.log`에서 통과했다. 위 지적 보강 후 TSF 라이브러리 104개 + shell 19개 통과 기록은 `candidate-layout-review-after.log`이며 기존 169개와 더하지 않는다. 후속 독립 검토는 `candidate-layout-followup-review.json`으로 별도 기록한다.
+
+`candidate-layout-reviewed-build.log`에서 전체 **175개(52+104+19) 통과 + 자식 fixture 1개 제외**, x64/x86 release·selftest 성공을 확인했다. `candidate-layout-reviewed-x86-tests.log`는 32비트 라이브러리 **104개 통과 + 같은 fixture 1개 제외**다. 두 아키텍처에서 실행한 같은 검사를 서로 다른 104개로 합산하지 않는다. 새 설정 파일 작성·시스템 등록·실제 앱 입력·로그인·공개 릴리즈는 이 검사에 포함되지 않는다.
+
+후속 소스 검토(`candidate-layout-followup-review.json`, 198,750ms)는 앞선 대기·취소·수명 보강에서 확인된 새 회귀가 없다고 판정했다. Low 재시도 경로와 조건부 외부 스레드 폐기·기존 agility 표면의 잔여를 구분했다. layout 통지만 이어질 때 메시지가 제거되면 읽기가 고착되는 경우와 보류 해제 시 게시 실패가 무시되는 경우를 `candidate-wake-before.log`에서 **2건 실패**로 재현했다. 이미 queued인 요청도 다시 깨우며, 보류 해제 시 게시 오류는 후보에 전달해 종료하도록 수정했다. 편집 세션의 잘못된 raw foreign Release도 미호출 closure를 다른 스레드에서 파괴하지 않고 예외적으로 보유한다.
+
+작성자는 `State`/`PendingFinish` 필드와 서비스 자기 참조 경로에 raw self·윈도 데이터·타이머·후크 역참조가 없음을 확인했다. `this()`는 소유 COM 참조이며 `Deactivate`는 먼저 후보를 비운다. 이 소스 대조는 모든 호스트의 정상 Deactivate 호출이나 나머지 COM 인터페이스의 스레드 안전성을 증명하지 않는다. 비정상 외부 최종 해제의 자원 보유와 Deactivate 생략 경로는 전체 agility 감사·실제 수명 시험에 남긴다.
+
+마지막 wake/게시 오류·편집 closure 폐기 보강의 전체 결과는 `candidate-final-reviewed-build.log`: **178개(52+107+19) 통과 + 자식 fixture 1개 제외**, x64/x86 release·selftest 성공이다. `candidate-final-x86-tests.log`에서도 32비트 라이브러리 **107개 통과 + 같은 fixture 1개 제외**를 확인했다. 마지막 세부 보강은 작성자 회귀로 확인했으며 그 뒤 별도 독립 재검토를 했다고 주장하지 않는다. 기존 설치와 동결 관리자 묶음은 유지하며 **실제 앱 승인 0/6**이다.

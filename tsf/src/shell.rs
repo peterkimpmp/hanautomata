@@ -7,7 +7,7 @@
 //! a long Caps Lock press (or Shift+Caps Lock) keeps the real Caps Lock (C-MOD-10). F2 swaps the word just committed
 //! (C-COR-02), Shift+F2 flips the selection (C-COR-03), F12 pauses (C-MOD-04, as in the tray app).
 
-use hanautomata_ffi::{Engine, InputMode, KeyKind, KeyResult};
+use hanautomata_ffi::{Engine, InputMode, KeyboardKind, KeyKind, KeyResult};
 use std::sync::Arc;
 
 /// Virtual-key codes used here (winuser.h).
@@ -128,6 +128,14 @@ pub enum Op {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Preview {
+    pub text: String,
+    pub alternative: String,
+    pub label: String,
+    pub correction: bool,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Outcome {
     /// Consume the key; otherwise the application receives it after the operations.
     pub eaten: bool,
@@ -136,6 +144,9 @@ pub struct Outcome {
     pub learned: bool,
     /// The key already changed a control state (pause/mode/gesture), independently of document writes.
     pub control_handled: bool,
+    /// None leaves the preview unchanged (e.g. a modifier); Some(None) clears it.
+    /// The service must publish this only AFTER its document operations succeed.
+    pub preview: Option<Option<Preview>>,
 }
 
 impl Outcome {
@@ -328,6 +339,11 @@ impl Shell {
 
     pub fn private_context(&self) -> bool { self.private_learning_before.is_some() }
 
+    fn candidate_active(&self) -> bool {
+        self.is_composing() && self.engine.mode() == InputMode::Auto
+            && self.engine.keyboard() == KeyboardKind::Dubeolsik
+    }
+
     /// The context changed: the caller removed or kept the composition on its side; the engine starts clean.
     pub fn reset(&mut self, caps: bool) {
         self.shown = false;
@@ -407,8 +423,8 @@ impl Shell {
             vk::HANGUL => return s.hangul_key,
             vk::SPACE if e.mods.shift && !e.mods.chord() && s.shift_space => return true,
             vk::F2 if s.correction_keys && !e.mods.chord() => {
-                // F2 alone only right after a Space commit (Excel and others use it); Shift+F2 always (C-COR-03).
-                return e.mods.shift || self.engine.reconversion().is_some();
+                // An automatic composition or a fresh Space commit belongs to us; otherwise preserve the app's F2.
+                return e.mods.shift || self.candidate_active() || self.engine.reconversion().is_some();
             }
             _ => {}
         }
@@ -472,8 +488,10 @@ impl Shell {
                         ops: vec![Op::FlipSelection],
                         learned: false,
                         control_handled: true,
+                        preview: Some(None),
                     };
                 }
+                if self.candidate_active() { return self.run(KeyKind::Candidate, ' ', ' '); }
                 return match self.engine.reconversion() {
                     Some(swap) => Outcome {
                         eaten: true,
@@ -483,6 +501,7 @@ impl Shell {
                         }],
                         learned: false,
                         control_handled: false,
+                        preview: Some(None),
                     },
                     None => Outcome::pass(),
                 };
@@ -554,9 +573,9 @@ impl Shell {
     }
 
     /// TSF may deliver F2 as a preserved command instead of a normal key. Keep the same eligibility rules, and leave
-    /// the application's F2 untouched when there is no freshly committed word, or correction is unavailable.
+    /// the application's F2 untouched when there is no automatic composition/fresh word, or correction is unavailable.
     pub fn reconversion_command(&mut self) -> Outcome {
-        if !self.settings.correction_keys || self.engine.reconversion().is_none() {
+        if !self.settings.correction_keys || (!self.candidate_active() && self.engine.reconversion().is_none()) {
             return Outcome::pass();
         }
         let event = KeyEvent::new(vk::F2, Mods::NONE);
@@ -632,6 +651,10 @@ impl Shell {
 
     /// Insert the commit, then show the composition (an empty one removes it), as on macOS.
     fn apply(&mut self, r: KeyResult, out: &mut Outcome) {
+        out.preview = Some((!r.failed && !self.private_context() && !self.pass_through
+            && !r.marked.is_empty() && !r.alternative.is_empty() && r.marked != r.alternative)
+            .then(|| Preview { text: r.marked.clone(), alternative: r.alternative.clone(), label: r.label.clone(),
+                correction: self.settings.correction_keys }));
         if r.failed {
             // C-CMP-11: the engine gave the word back as typed; keep it and fall back to pass-through.
             let _ = self.engine.set_paused(true);

@@ -3,6 +3,7 @@
 //! system indicator (가/A) through the conversion-mode compartment (W-07).
 
 use std::cell::{Cell, RefCell};
+use std::mem::ManuallyDrop;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -113,6 +114,36 @@ mod session_tests {
     use crate::shell::{vk, Mods};
 
     #[test]
+    fn thread_focus_loss_invalidates_candidate_generation() {
+        let service = windows::core::ComObject::new(TextService::new());
+        let tip: ITfTextInputProcessorEx = service.to_interface();
+        let focus = tip.cast::<ITfThreadFocusSink>().expect("thread focus must be observable");
+        let before = service.candidates.ticket();
+        unsafe { focus.OnKillThreadFocus().unwrap(); }
+        assert_ne!(service.candidates.ticket(), before);
+        unsafe { focus.OnSetThreadFocus().unwrap(); }
+        assert!(!service.candidates.active());
+    }
+
+    #[test]
+    fn foreign_final_release_does_not_destroy_apartment_owned_candidate_state() {
+        let service = windows::core::ComObject::new(TextService::new());
+        let candidates = Rc::clone(&service.candidates);
+        let tip: ITfTextInputProcessorEx = service.to_interface();
+        drop(service);
+        let raw = Interface::into_raw(tip) as usize;
+        std::thread::spawn(move || unsafe {
+            drop(ITfTextInputProcessorEx::from_raw(raw as *mut _));
+        }).join().unwrap();
+        assert_eq!(Rc::strong_count(&candidates), 2, "foreign final Release must retain rather than free owner-only resources");
+        // Intentional process-lifetime retention is the fallback for windows-implement's false agility.
+        // Normal owner-thread destruction still releases its resources.
+        let service = windows::core::ComObject::new(TextService::new());
+        let normal = Rc::clone(&service.candidates);
+        drop(service); assert_eq!(Rc::strong_count(&normal), 1);
+    }
+
+    #[test]
     fn another_service_activation_does_not_discard_an_in_progress_word() {
         let nonce = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
         let store = std::env::temp_dir().join(format!("hanautomata-service-isolation-{nonce}.json"));
@@ -142,6 +173,7 @@ struct State {
     thread_mgr: Option<ITfThreadMgr>,
     client: u32,
     thread_sink_cookie: u32,
+    thread_focus_cookie: Option<u32>,
     compartment_sink_cookie: u32,
     reconversion_key_registered: bool,
     composition: Option<ITfComposition>,
@@ -165,12 +197,15 @@ struct State {
     ITfKeyEventSink,
     ITfCompositionSink,
     ITfThreadMgrEventSink,
+    ITfThreadFocusSink,
     ITfDisplayAttributeProvider,
     ITfCompartmentEventSink,
     ITfFnConfigure
 )]
 pub struct TextService {
-    state: RefCell<State>,
+    thread: u32,
+    state: ManuallyDrop<RefCell<State>>,
+    candidates: ManuallyDrop<Rc<crate::candidate::Presenter>>,
     diagnostic_id: u64,
     diagnostics: Cell<bool>,
     /// We are writing the conversion compartment ourselves: ignore the change notice.
@@ -180,7 +215,9 @@ pub struct TextService {
 impl TextService {
     pub fn new() -> TextService {
         TextService {
-            state: RefCell::new(State::default()),
+            thread: unsafe { windows::Win32::System::Threading::GetCurrentThreadId() },
+            state: ManuallyDrop::new(RefCell::new(State::default())),
+            candidates: ManuallyDrop::new(Rc::default()),
             diagnostic_id: NEXT_SERVICE_ID.fetch_add(1, Ordering::Relaxed),
             diagnostics: Cell::new(false),
             writing_compartment: Cell::new(false),
@@ -203,6 +240,20 @@ impl TextService {
             shell.engine().reconversion().is_some(), shell.pass_through, shell.engine().paused(),
             st.reconversion_key_registered
         ));
+    }
+}
+
+impl Drop for TextService {
+    fn drop(&mut self) {
+        // windows-implement 0.59 advertises agility even for this apartment-bound service. A foreign
+        // final Release must not drop Rc/RefCell/COM/windows on that thread. Retain those resources
+        // for process lifetime in this exceptional path; normal Deactivate/owner destruction releases them.
+        // Removing false agility from the remaining multi-interface COM surfaces is a separate audit.
+        if unsafe { windows::Win32::System::Threading::GetCurrentThreadId() } != self.thread { return; }
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| unsafe {
+            ManuallyDrop::drop(&mut self.candidates);
+            ManuallyDrop::drop(&mut self.state);
+        }));
     }
 }
 
@@ -297,6 +348,8 @@ impl TextService_Impl {
                 observed: e.time, access: self.probe_access(context), tray: system::tray_running(), eligible: None })
         };
         let pass = checked.access.blocks_keys() || checked.tray || self.state.borrow().excluded_app;
+        // A read-only test probe may hide stale UI without mutating the engine or document.
+        if checked.access != edit::FieldAccess::Ordinary || checked.tray { self.candidates.clear(); }
         self.state.borrow_mut().password_field = checked.access.suppresses_trace();
         let trace_key = down && (e.vk == crate::shell::vk::SPACE || e.vk == crate::shell::vk::F2);
         if trace_key {
@@ -332,7 +385,20 @@ impl TextService_Impl {
     /// The engine must not accept a key until the application grants the write lock.
     fn key_in_session(&self, context: &ITfContext, access: edit::FieldAccess, tray: bool,
         key: impl FnOnce(&mut Shell) -> Outcome + 'static) -> Result<BOOL> {
+        // EndUIElement is external code and may change focus. Retire the old preview BEFORE the engine
+        // accepts this key or we take the write lock, then reject a target invalidated by that callback.
+        let had_preview = self.candidates.active();
+        self.candidates.clear();
+        let preview_ticket = self.candidates.ticket();
+        if had_preview {
+            let tm = self.state.borrow().thread_mgr.clone();
+            if !tm.as_ref().is_some_and(|tm| crate::candidate::focused(context, tm).unwrap_or(false)) {
+                return Ok(false.into());
+            }
+        }
         let result = Rc::new(RefCell::new(None));
+        let preview = Rc::new(RefCell::new(None));
+        let preview_output = preview.clone();
         let output = result.clone();
         let materialized = Rc::new(Cell::new(false));
         let written_key = materialized.clone();
@@ -340,6 +406,7 @@ impl TextService_Impl {
         let ctx = context.clone();
         let client = self.state.borrow().client;
         let requested = edit::request(context, client, TF_ES_SYNC | TF_ES_READWRITE, move |ec| {
+            if this.candidates.ticket() != preview_ticket { return Ok(()); }
             // A refused read-only probe is not proof of a field transition. The real write lock can provide a
             // valid scope now; if it still fails, keep the current key out of the engine and finish only old text.
             let access = if matches!(access, edit::FieldAccess::Unknown(_)) { edit::field_access(ec, &ctx) } else { access };
@@ -353,11 +420,26 @@ impl TextService_Impl {
             *output.borrow_mut() = Some(out.clone());
             this.trace("key-after-shell");
             this.run_ops(ec, &ctx, out.ops.iter().filter(|op| !matches!(op, Op::ToggleCapsLock)).cloned().collect(), &written_key)?;
+            if let Some(Some(data)) = &out.preview {
+                let (tm, composition) = {
+                    let st = this.state.borrow();
+                    (st.thread_focus_cookie.and(st.thread_mgr.clone()), st.composition.clone())
+                };
+                if let (Some(tm), Some(composition)) = (tm, composition) {
+                    // A failed/unknown candidate query must never undo an already successful document edit.
+                    if let Ok(snapshot) = crate::candidate::capture(ec, &ctx, &tm, client, &composition, data.clone()) {
+                        if let Ok(manager) = tm.cast::<ITfUIElementMgr>() {
+                            *preview_output.borrow_mut() = Some((manager, snapshot, preview_ticket));
+                        }
+                    }
+                }
+            }
             this.trace("key-after-document");
             *output.borrow_mut() = Some(out);
             Ok(())
         });
         if let Err(error) = requested {
+            self.candidates.clear();
             let attempted = result.borrow_mut().take();
             let written = materialized.get();
             let eaten = attempted.as_ref().is_some_and(|out| out.eaten && (written || out.control_handled));
@@ -379,6 +461,12 @@ impl TextService_Impl {
             return Ok(eaten.into());
         }
         let out = result.borrow_mut().take().unwrap_or_default();
+        if let Some((manager, snapshot, ticket)) = preview.borrow_mut().take() {
+            // UI callbacks run outside the edit lock and without a borrow of the service state.
+            if guarded_result(Err(E_FAIL.into()), || self.candidates.present(manager, snapshot, ticket)).is_err() {
+                self.candidates.clear();
+            }
+        }
         // Only non-document effects remain; do not request a second document edit session.
         self.apply_effects(&out);
         let has_document_op = out.ops.iter().any(|op| !matches!(op, Op::ToggleCapsLock));
@@ -414,6 +502,7 @@ impl TextService_Impl {
 
     /// Focus leaves the composition's context: commit the word there, asynchronously (it may not allow a sync session).
     fn commit_on_focus_change(&self) {
+        self.candidates.clear();
         self.trace("focus-before");
         let out = {
             let mut st = self.state.borrow_mut();
@@ -455,6 +544,7 @@ impl TextService_Impl {
 
 impl TextService {
     fn apply_context_policy(&self, access: edit::FieldAccess, tray: bool, session: Option<(&ITfContext, u32)>) -> Result<()> {
+        if access != edit::FieldAccess::Ordinary || tray { self.candidates.clear(); }
         let mut st = self.state.borrow_mut();
         st.password_field = access.suppresses_trace();
         st.tray_running = tray;
@@ -740,6 +830,7 @@ impl ITfTextInputProcessor_Impl for TextService_Impl {
 
     fn Deactivate(&self) -> Result<()> {
         guarded((), || {
+        self.candidates.clear();
         self.trace("deactivate");
         let out = self.state.borrow_mut().shell.as_mut().map(Shell::focus_lost).unwrap_or_default();
         self.capture_finish(out);
@@ -768,6 +859,7 @@ impl ITfTextInputProcessor_Impl for TextService_Impl {
                 }
                 if let Ok(source) = tm.cast::<ITfSource>() {
                     let _ = source.UnadviseSink(st.thread_sink_cookie);
+                    if let Some(cookie) = st.thread_focus_cookie { let _ = source.UnadviseSink(cookie); }
                 }
                 if let Ok(manager) = tm.cast::<ITfCompartmentMgr>() {
                     if let Ok(conversion) = manager.GetCompartment(&GUID_COMPARTMENT_KEYBOARD_INPUTMODE_CONVERSION) {
@@ -822,6 +914,10 @@ impl ITfTextInputProcessorEx_Impl for TextService_Impl {
             let source: ITfSource = thread_mgr.cast()?;
             let cookie = source.AdviseSink(&ITfThreadMgrEventSink::IID, &self.to_interface::<ITfThreadMgrEventSink>())?;
             self.state.borrow_mut().thread_sink_cookie = cookie;
+            match source.AdviseSink(&ITfThreadFocusSink::IID, &self.to_interface::<ITfThreadFocusSink>()) {
+                Ok(cookie) => self.state.borrow_mut().thread_focus_cookie = Some(cookie),
+                Err(_) => system::log("candidate UI disabled: thread focus notifications unavailable"),
+            }
             if let Ok(manager) = thread_mgr.cast::<ITfCompartmentMgr>() {
                 if let Ok(conversion) = manager.GetCompartment(&GUID_COMPARTMENT_KEYBOARD_INPUTMODE_CONVERSION) {
                     if let Ok(source) = conversion.cast::<ITfSource>() {
@@ -859,6 +955,22 @@ impl ITfTextInputProcessorEx_Impl for TextService_Impl {
         });
         if result.is_err() { let _ = self.Deactivate(); }
         result
+    }
+}
+
+impl ITfThreadFocusSink_Impl for TextService_Impl {
+    fn OnSetThreadFocus(&self) -> Result<()> {
+        if unsafe { windows::Win32::System::Threading::GetCurrentThreadId() } != self.thread {
+            return Err(windows::Win32::Foundation::RPC_E_WRONG_THREAD.into());
+        }
+        Ok(())
+    }
+    fn OnKillThreadFocus(&self) -> Result<()> {
+        if unsafe { windows::Win32::System::Threading::GetCurrentThreadId() } != self.thread {
+            return Err(windows::Win32::Foundation::RPC_E_WRONG_THREAD.into());
+        }
+        let _keep_alive = self.this();
+        guarded((), || { self.candidates.clear(); Ok(()) })
     }
 }
 
@@ -930,6 +1042,7 @@ impl ITfCompositionSink_Impl for TextService_Impl {
         if self.state.borrow().composition.as_ref() != pcomposition.as_ref() || pcomposition.is_none() {
             return Ok(());
         }
+        self.candidates.clear();
         self.trace("terminated-before");
         let expected = {
             let mut st = self.state.borrow_mut();
@@ -964,7 +1077,7 @@ impl ITfThreadMgrEventSink_Impl for TextService_Impl {
     }
 
     fn OnUninitDocumentMgr(&self, _pdim: Ref<ITfDocumentMgr>) -> Result<()> {
-        Ok(())
+        guarded((), || { self.candidates.clear(); Ok(()) })
     }
 
     fn OnSetFocus(&self, pdimfocus: Ref<ITfDocumentMgr>, pdimprevfocus: Ref<ITfDocumentMgr>) -> Result<()> {
