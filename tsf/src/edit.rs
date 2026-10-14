@@ -19,7 +19,10 @@ impl ITfEditSession_Impl for EditSession_Impl {
     fn DoEditSession(&self, ec: u32) -> Result<()> {
         let action = self.action.borrow_mut().take();
         match action {
-            Some(f) => f(ec),
+            // This callback crosses a COM ABI boundary. An outer key-handler guard cannot catch a panic after it
+            // has crossed that boundary; catch here, including asynchronous focus edits.
+            Some(f) => std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(ec)))
+                .unwrap_or_else(|_| Err(windows::Win32::Foundation::E_FAIL.into())),
             None => Ok(()),
         }
     }

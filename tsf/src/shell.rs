@@ -323,6 +323,8 @@ impl Shell {
         self.shown || self.engine.is_composing()
     }
 
+    pub fn private_context(&self) -> bool { self.private_learning_before.is_some() }
+
     /// The context changed: the caller removed or kept the composition on its side; the engine starts clean.
     pub fn reset(&mut self, caps: bool) {
         self.shown = false;
