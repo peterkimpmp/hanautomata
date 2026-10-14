@@ -304,3 +304,5 @@ cargo build --release --manifest-path tsf/Cargo.toml --features quality-probes -
 ```
 
 다음 구현은 환경 변수와 분리된 TSF 설정 경로, 설정의 원자적 저장·복원 후 읽기 ACE 유지, 새 트레이 mutex의 제한된 읽기 권한이다. 특히 [ReplaceFileW](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-replacefilew)는 교체 대상의 DACL을 보존하므로 임시 파일에만 ACE를 붙이는 것으로 기존 파일 갱신을 보장할 수 없다. [SetEntriesInAclW](https://learn.microsoft.com/en-us/windows/win32/api/aclapi/nf-aclapi-setentriesinaclw)와 [IME 요구사항](https://learn.microsoft.com/en-us/windows/apps/develop/input/input-method-editor-requirements)의 명시적 파일 접근 계약을 따르며 사용자 프로필 전체를 개방하지 않는다. 실제 앱 승인 0/6과 전체 인수 게이트 미완료를 유지한다.
+
+진단 소스·기록 커밋은 `e53a765bb9b4a991560d5d61d66dec6a7af4024b`다. 같은 최종 바이너리의 기본 모드에서도 실패와 정리를 다시 확인했다(`appcontainer-baseline-final-20261015.json`, `appcontainer-baseline-final-check.json`). 소스·바이너리·실행 기록 연결은 `appcontainer-build-record.json`이다. 해당 커밋의 [CI 38598858626](https://github.com/peterkimpmp/hanautomata/actions/runs/38598858626)는 두 작업 모두 성공했다(`appcontainer-ci.json`). 이 CI는 기존 C# 빌드·검사 범위이며 새 Rust 진단의 4개 검사와 실제 AppContainer 실행은 위 로컬 근거다. 설치 후보와 제품 런타임은 이번 변경에 포함하지 않았다.
