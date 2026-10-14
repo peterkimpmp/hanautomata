@@ -525,3 +525,32 @@ fn post_write_control_effect_panics_do_not_escape_to_the_key_fallback() {
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| implementation.apply_effects(&Outcome::default())));
     assert!(result.is_ok(), "a post-write indicator failure must not make the outer callback replay a written key");
 }
+
+#[test]
+fn excluded_app_stays_pass_through_after_context_changes_and_edit_dispatch() {
+    let (service, host, context) = fixture();
+    service.state.borrow_mut().excluded_app = true;
+    service.apply_context_policy(edit::FieldAccess::Ordinary, false, None).unwrap();
+    assert!(service.state.borrow().shell.as_ref().unwrap().pass_through);
+    let sink = service.to_interface::<ITfKeyEventSink>();
+    let implementation = sink.cast_object_ref::<TextService>().unwrap();
+    let eaten = implementation.key_in_session(&context, edit::FieldAccess::Ordinary, false,
+        |_| panic!("excluded application must never run the engine command")).unwrap();
+    assert!(!eaten.as_bool());
+    assert_eq!(host.writes.get(), 0);
+}
+
+#[test]
+fn excluded_app_passes_ordinary_and_preserved_keys_without_requesting_a_write() {
+    let (service, host, context) = fixture();
+    service.state.borrow_mut().excluded_app = true;
+    let sink = service.to_interface::<ITfKeyEventSink>();
+    for key in [b'D' as u16, crate::shell::vk::F2, crate::shell::vk::F12, crate::shell::vk::HANGUL] {
+        assert!(!unsafe { sink.OnTestKeyDown(&context, WPARAM(key as usize), LPARAM(0)).unwrap().as_bool() });
+        assert!(!paired_key(&service, &context, key as u8, edit::FieldAccess::Ordinary).as_bool());
+    }
+    assert!(!unsafe { sink.OnPreservedKey(&context, &PRESERVED_RECONVERT).unwrap().as_bool() });
+    assert_eq!(host.write_requests.get(), 0);
+    assert_eq!(host.writes.get(), 0);
+    assert!(!service.state.borrow().shell.as_ref().unwrap().is_composing());
+}

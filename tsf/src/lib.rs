@@ -9,6 +9,7 @@
 //! saving learning (one learning file and many processes: decided after S0, see core/src/store.rs).
 
 pub mod shell;
+pub mod settings;
 
 #[cfg(windows)]
 mod display;

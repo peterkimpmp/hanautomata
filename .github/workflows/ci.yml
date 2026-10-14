@@ -27,6 +27,9 @@ jobs:
       - name: Release build
         shell: pwsh
         run: .\build.ps1
+      - name: IME settings persistence and editor build
+        shell: pwsh
+        run: .\tests\ImeSettingsTests.ps1 -BuildPreview
       - name: Portable installation and packaging regression tests
         shell: pwsh
         run: .\tests\ReleaseTests.ps1
@@ -42,3 +45,5 @@ jobs:
           path: |
             build/Hanautomata.exe
             build/Hanautomata.exe.config
+            build/Hanautomata.ImeOptions.exe
+            build/Hanautomata.ImeOptions.exe.config

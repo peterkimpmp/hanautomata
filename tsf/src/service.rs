@@ -153,6 +153,7 @@ struct State {
     /// Password/private scope or a failed field query. Never trace these contexts.
     password_field: bool,
     tray_running: bool,
+    excluded_app: bool,
     checked_key: Option<CheckedKey>,
     last_query_failure: Option<(ITfContext, windows::core::HRESULT)>,
     /// Our own composition sink, for StartComposition (released on Deactivate, which breaks the cycle).
@@ -192,7 +193,7 @@ impl TextService {
         }
         let Ok(st) = self.state.try_borrow() else { return };
         let Some(shell) = st.shell.as_ref() else { return };
-        if st.password_field {
+        if st.password_field || st.excluded_app {
             return;
         }
         system::log(&format!(
@@ -279,6 +280,7 @@ impl TextService_Impl {
     }
 
     fn handle_key(&self, pic: Ref<ITfContext>, wparam: WPARAM, lparam: LPARAM, down: bool, test: bool) -> Result<BOOL> {
+        if self.state.borrow().excluded_app { return Ok(false.into()); }
         let Some(context) = pic.as_ref() else {
             return Ok(false.into());
         };
@@ -293,7 +295,7 @@ impl TextService_Impl {
             paired.unwrap_or_else(|| CheckedKey { context: context.clone(), wparam: wparam.0, lparam: lparam.0, down,
                 observed: e.time, access: self.probe_access(context), tray: system::tray_running(), eligible: None })
         };
-        let pass = checked.access.blocks_keys() || checked.tray;
+        let pass = checked.access.blocks_keys() || checked.tray || self.state.borrow().excluded_app;
         self.state.borrow_mut().password_field = checked.access.suppresses_trace();
         let trace_key = down && (e.vk == crate::shell::vk::SPACE || e.vk == crate::shell::vk::F2);
         if trace_key {
@@ -343,7 +345,7 @@ impl TextService_Impl {
             this.drain_finishes(Some((&ctx, ec)))?;
             this.validate_composition(ec, &ctx)?;
             this.apply_context_policy(access, tray, Some((&ctx, ec)))?;
-            if access.blocks_keys() || tray { return Ok(()); }
+            if access.blocks_keys() || tray || this.state.borrow().excluded_app { return Ok(()); }
             let out = match this.state.borrow_mut().shell.as_mut() {
                 Some(shell) => key(shell), None => return Ok(()),
             };
@@ -387,7 +389,7 @@ impl TextService_Impl {
             let st = self.state.borrow();
             let Some(tm) = st.thread_mgr.clone() else { return };
             let Some(shell) = st.shell.as_ref() else { return };
-            (tm, st.client, shell.mode())
+            (tm, st.client, if shell.pass_through { InputMode::English } else { shell.mode() })
         };
         let Ok(manager) = thread_mgr.cast::<ITfCompartmentMgr>() else {
             return;
@@ -455,10 +457,11 @@ impl TextService {
         let mut st = self.state.borrow_mut();
         st.password_field = access.suppresses_trace();
         st.tray_running = tray;
+        let pass = access.blocks_keys() || tray || st.excluded_app;
         let finish = st.shell.as_mut().and_then(|shell| {
             let private = if matches!(access, edit::FieldAccess::Unknown(_)) { shell.private_context() }
                 else { access == edit::FieldAccess::Private };
-            shell.context_policy(access.blocks_keys() || tray, private)
+            shell.context_policy(pass, private)
         });
         drop(st);
         if let Some(out) = finish { self.finish_original_composition(out, session)?; }
@@ -777,13 +780,24 @@ impl ITfTextInputProcessorEx_Impl for TextService_Impl {
         let thread_mgr = ptim.ok()?.clone();
         let mut shell = Shell::new(engine(system::home_dir(), system::data_dir().join("words.json")));
         shell.reset(system::caps_lock_on());
+        // Read once at activation. Never perform configuration I/O on the key callback path. Invalid/unreadable
+        // configuration passes keys rather than silently turning on options the user might have disabled.
+        let (options, unavailable) = match crate::settings::Settings::load(&system::data_dir().join("tsf-settings.json")) {
+            Ok(options) => (options, false),
+            Err(_) => { system::log("settings unavailable; passing keys until configuration is repaired");
+                (crate::settings::Settings::default(), true) }
+        };
+        options.apply_new_session(&mut shell);
+        let excluded = unavailable || options.excludes(&system::process_name());
         let tray = system::tray_running();
+        shell.pass_through = tray || excluded;
         {
             let mut st = self.state.borrow_mut();
             st.thread_mgr = Some(thread_mgr.clone());
             st.client = tid;
             st.shell = Some(shell);
             st.tray_running = tray;
+            st.excluded_app = excluded;
             st.sink = Some(self.to_interface::<ITfCompositionSink>());
         }
         unsafe {
@@ -858,6 +872,7 @@ impl ITfKeyEventSink_Impl for TextService_Impl {
 
     fn OnPreservedKey(&self, pic: Ref<ITfContext>, rguid: *const GUID) -> Result<BOOL> {
         guarded(false.into(), || {
+            if self.state.borrow().excluded_app { return Ok(false.into()); }
             if rguid.is_null() || unsafe { *rguid } != PRESERVED_RECONVERT {
                 return Ok(false.into());
             }
@@ -984,7 +999,7 @@ impl ITfCompartmentEventSink_Impl for TextService_Impl {
     /// The user clicked the system indicator (가/A): follow it. A, English; 가, automatic unless Korean was fixed.
     fn OnChange(&self, rguid: *const GUID) -> Result<()> {
         guarded((), || {
-        if self.writing_compartment.get() || rguid.is_null() {
+        if self.writing_compartment.get() || rguid.is_null() || self.state.borrow().excluded_app {
             return Ok(());
         }
         if unsafe { *rguid } != GUID_COMPARTMENT_KEYBOARD_INPUTMODE_CONVERSION {

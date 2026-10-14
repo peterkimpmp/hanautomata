@@ -17,6 +17,8 @@ path = "src/bin/setup.rs"
 
 [dependencies]
 hanautomata-ffi = { path = "../ffi", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 
 [build-dependencies]
 # The setup tool's manifest (asInvoker): without one, Windows treats a 32-bit exe named "...setup..." as an installer

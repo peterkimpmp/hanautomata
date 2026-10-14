@@ -372,6 +372,8 @@ namespace Hanautomata
         [STAThread]
         static int Main(string[] args)
         {
+            // The options editor never acquires the hook/tray instance mutex or changes startup registration.
+            if (args.Length == 1 && args[0] == "--ime-settings") return ImeOptionsProgram.Run(ImeSettingsStore.DefaultPath);
             if (args.Length == 3 && args[0] == "--startup")
             {
                 if (args[1] != "status") Settings.MigrateLegacyData();
