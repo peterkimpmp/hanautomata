@@ -571,3 +571,23 @@ flowchart LR
 파일 교체 시험은 프로세스 중단 복구다. 디스크·전원 장애 전체 내구성이나 악의적인 디렉터리 교체 방어를 증명하지 않는다. 전용 비공유 디렉터리·플랫폼이 고른 고정 파일명이 전제이며 ID는 인증 수단이 아니다. 경로의 8.3 별칭·하드 링크, 비 Windows 잠금 파일 삭제를 방어했다고 주장하지 않는다. 오래된 정상 백업을 같은 store ID로 되돌리는 경우는 감지하지 못하므로 복구 시 새 incarnation 정책이 필요하다. 논리적인 단어 삭제·초기화는 디스크의 안전한 소거가 아니며 마지막 요청의 재시도 지문을 통해 사전 대입이 가능하다. 오류 후에는 pending 사본이 재개방 전까지 남을 수 있고 정본 손상 시 자동 제거하지 않는다.
 
 인증된 동일 사용자·세션 브로커, TSF의 비동기 연결·대기열, 제한 앱·LPAC, 학습 일시 정지·민감 필드·교정 취소, 기존 학습 가져오기, 설치·수명·실제 앱 재시작을 후속 작업으로 남긴다. 개발용 관리 명령을 제품 클라이언트에 그대로 공개하지 않는다. **WQ-07과 전체 목표는 미완료, 실제 앱 승인 0/6**이다.
+
+## 설정 탭의 잘림 보강과 사용자 확인
+
+2026-10-15 사용자가 “탭 안의 옵션·설명”이 잘린다고 알렸다. 당시 프로세스 경로는 `ime-settings-tests`의 이전 시험 파일로 확인됐다. 같은 실행 파일 이름으로 혼동할 수 있어 새 미리보기 제목에 `화면 검수본`을 붙였다. 요청했던 `options-layout-fixed`를 직접 열어 화면을 대조한 뒤, 현재 소스에서도 고정 행 높이 때문에 마지막 옵션이 기본 창의 스크롤 아래로 밀리는 것을 확인했다.
+
+회귀에서 **9건 실패**를 재현했다(`options-content-red.log`): 기본 입력/단축키 탭의 옵션 숨김 2건, 폭 220px의 체크박스 글자 높이 부족 4건, 목록 라벨이 행 밖으로 나오는 경우 3건이다. 처음에는 native tab이 생성되기 전의 임시 viewport를 측정했으므로 그 결과(`options-content-before.log`)를 정본 실패 근거로 쓰지 않는다. hidden form에 native control handle을 생성해 실제 탭 치수로 측정하되 사용자 창은 표시하지 않는다.
+
+체크박스의 글꼴·글자 폭·체크 표시를 기준으로 높이를 계산하고 목록 행은 라벨·입력 상자 중 필요한 높이를 택한다. 글꼴·너비 변경 때 다시 계산하며 고정 여백을 줄였다. 초기 자식 추가 때도 탭 너비를 적용한다. [Microsoft의 AutoSize/PreferredSize 설명](https://learn.microsoft.com/en-us/dotnet/desktop/winforms/controls/layout)과 [FlowLayoutPanel의 세로 흐름 규칙](https://learn.microsoft.com/en-us/dotnet/desktop/winforms/controls/how-to-anchor-and-dock-child-controls-in-a-flowlayoutpanel-control)을 참고했다. 모델 원칙 설명을 근거로 실제 렌더를 생략하지 않았다.
+
+| 최종 근거 (`build/windows-quality/`) | 관측 |
+|---|---|
+| `options-content-final.log` | 설정 저장 **28개**, 배치 **40개 통과**. 현재 DPI 192, 초기 client 1320×1220 |
+| 같은 배치 검사 | 입력 content 528px·단축키 464px, viewport 589px. 기본 창에서 두 탭의 모든 옵션 표시. 폭 220/500px 글자 높이도 검사 |
+| `options-content-products.log`, `options-content-release.log` | 앱·옵션 EXE 재빌드, 패키지 검사 **21개 통과** |
+| `options-content-visual-20261015.json`, `options-content-input-20261015.jpg` | Sky로 새 창을 활성화해 세 탭 관측. 입력 8개·단축키 6개와 안내문 표시, 제외 앱 칸 아래까지 스크롤 확인 |
+| 사용자 재확인 | 제목 `한오토마타 입력기 설정 · 화면 검수본`을 명시한 질문에 **“모두 정상으로 보임”** |
+
+새 실행 파일은 `build/windows-quality/options-content-fit-20261015/Hanautomata.ImeOptions.Preview.exe`다. 실제 설정을 변경하거나 기존 DLL을 설치하지 않았다. 다른 창이 덮은 최초 캡처를 UI 증거로 사용하지 않고, 대상 창을 앞으로 가져온 뒤 확인했다. 이전 캡처 오류의 원인을 단정하지 않는다. 창 크기 변경 시도는 크기가 바뀐 것을 관측하지 못했으므로 통과로 계산하지 않는다.
+
+이로써 **현재 배율의 탭 표시 확인은 통과**다. 실제 UI 저장·재열기, 100/150%·다중 모니터, 설치 메뉴 연결, Word F2와 6개 앱 승인은 별도로 남는다. 전체 목표나 WQ-07 전체 통과로 올리지 않는다. 재사용 범위는 `local-reusable`이며 vault·atlas는 UI 소스·회귀·사용자 확인을 직접 근거로 하는 좁은 결함 수정이므로 추가 검색을 생략한다.

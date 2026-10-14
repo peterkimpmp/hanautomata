@@ -124,6 +124,7 @@ namespace Hanautomata
             var tab = new TabPage(title) { Padding = new Padding(12) };
             var panel = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = true };
             panel.SizeChanged += delegate { foreach (Control child in panel.Controls) child.Width = Math.Max(220, panel.ClientSize.Width - 24); };
+            panel.ControlAdded += delegate(object sender, ControlEventArgs e) { e.Control.Width = Math.Max(220, panel.ClientSize.Width - 24); };
             tab.Controls.Add(panel); tabs.TabPages.Add(tab); return panel;
         }
         void Note(FlowLayoutPanel page, string text)
@@ -139,17 +140,35 @@ namespace Hanautomata
         }
         void Combo(FlowLayoutPanel page, string property, string label, params Choice[] choices)
         {
-            var row = new TableLayoutPanel { ColumnCount = 2, Height = 35, Margin = new Padding(3, 3, 3, 6) };
+            var row = new TableLayoutPanel { ColumnCount = 2, Margin = new Padding(3, 2, 3, 2) };
             row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 40)); row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 60));
-            row.Controls.Add(new Label { Text = label, AutoSize = true, Anchor = AnchorStyles.Left }, 0, 0);
+            var caption = new Label { Text = label, AutoSize = true, Anchor = AnchorStyles.Left };
+            row.Controls.Add(caption, 0, 0);
             var box = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Dock = DockStyle.Fill, AccessibleName = label };
             box.Items.AddRange(choices); box.SelectedIndexChanged += delegate { Changed(); };
-            bindings.Add(property, box); row.Controls.Add(box, 1, 0); page.Controls.Add(row);
+            bindings.Add(property, box); row.Controls.Add(box, 1, 0);
+            EventHandler fit = delegate {
+                int labelWidth = Math.Max(1, (int)(row.ClientSize.Width * 0.4) - caption.Margin.Horizontal);
+                int needed = Math.Max(caption.GetPreferredSize(new Size(labelWidth, 0)).Height + caption.Margin.Vertical,
+                    box.PreferredHeight + box.Margin.Vertical);
+                if (row.Height != needed) row.Height = needed;
+            };
+            row.SizeChanged += fit; caption.FontChanged += fit; box.FontChanged += fit;
+            page.Controls.Add(row); fit(row, EventArgs.Empty);
         }
         void Toggle(FlowLayoutPanel page, string property, string label)
         {
-            var box = new CheckBox { Text = label, AutoSize = false, Height = 34, Margin = new Padding(3), AccessibleName = label };
-            bindings.Add(property, box); box.CheckedChanged += delegate { Changed(); }; page.Controls.Add(box);
+            var box = new CheckBox { Text = label, AutoSize = false, Margin = new Padding(3, 2, 3, 2), Padding = new Padding(0, 2, 0, 2), AccessibleName = label };
+            EventHandler fit = delegate {
+                int glyph = Math.Max(SystemInformation.MenuCheckSize.Width, box.Font.Height);
+                int textWidth = Math.Max(1, box.ClientSize.Width - box.Padding.Horizontal - glyph - Math.Max(4, box.Font.Height / 3));
+                int textHeight = TextRenderer.MeasureText(box.Text, box.Font, new Size(textWidth, int.MaxValue),
+                    TextFormatFlags.WordBreak | TextFormatFlags.TextBoxControl).Height;
+                int needed = Math.Max(glyph, textHeight) + box.Padding.Vertical;
+                if (box.Height != needed) box.Height = needed;
+            };
+            box.SizeChanged += fit; box.FontChanged += fit;
+            bindings.Add(property, box); box.CheckedChanged += delegate { Changed(); }; page.Controls.Add(box); fit(box, EventArgs.Empty);
         }
         void Populate(ImeSettings value)
         {
