@@ -290,6 +290,7 @@ pub struct Shell {
     ralt_down: bool,
     /// No other key went down since the right Alt did.
     ralt_clean: bool,
+    private_learning_before: Option<bool>,
 }
 
 impl Shell {
@@ -306,6 +307,7 @@ impl Shell {
             caps_injected: 0,
             ralt_down: false,
             ralt_clean: false,
+            private_learning_before: None,
         }
     }
 
@@ -334,13 +336,34 @@ impl Shell {
         self.pass_through
     }
 
-    /// A protected field/tray takes over: discard engine-only state without writing old text into the new field.
-    /// The TSF host retains its visible composition until termination; F2 history must never cross this boundary.
-    pub fn set_pass_through(&mut self, pass: bool) {
-        if pass && !self.pass_through {
-            self.reset(self.last_caps);
+    /// Only real key/focus handling calls this, never an OnTestKey probe. The caller must apply the returned commit
+    /// to the ORIGINAL composition range, before starting a word in another field.
+    pub fn context_policy(&mut self, pass: bool, private: bool) -> Option<Outcome> {
+        let boundary = (pass && !self.pass_through) || private != self.private_learning_before.is_some();
+        let out = if boundary {
+            let out = self.focus_lost();
+            self.engine.forget_reconversion();
+            self.caps_down_at = None;
+            self.ralt_down = false;
+            Some(out)
+        } else { None };
+        if private && self.private_learning_before.is_none() {
+            self.private_learning_before = Some(self.engine.learning_paused());
+            self.engine.set_learning_paused(true);
+        } else if !private {
+            if let Some(paused) = self.private_learning_before.take() { self.engine.set_learning_paused(paused); }
         }
         self.pass_through = pass;
+        out
+    }
+
+    pub fn test_key_in_context(&mut self, e: KeyEvent, down: bool, pass: bool) -> bool {
+        if pass { return false; }
+        let previous = self.pass_through;
+        self.pass_through = false;
+        let wanted = if down { self.test_key_down(e) } else { self.test_key_up(e) };
+        self.pass_through = previous;
+        wanted
     }
 
     /// Whether the key event goes to `key_down`. No engine state changes here: an application may ask more than once.

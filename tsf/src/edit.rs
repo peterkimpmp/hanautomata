@@ -102,6 +102,9 @@ pub fn selection_text(ec: u32, range: &ITfRange, limit: usize) -> Result<Option<
     read_bounded_selection(limit, |buf| {
         let mut n = 0;
         unsafe { scan.GetText(ec, TF_TF_MOVESTART, buf, &mut n)?; }
+        if n == 0 && !unsafe { scan.IsEmpty(ec)?.as_bool() } {
+            return Err(windows::Win32::Foundation::E_FAIL.into());
+        }
         Ok(n as usize)
     })
 }
@@ -114,9 +117,11 @@ fn read_bounded_selection(limit: usize, mut read: impl FnMut(&mut [u16]) -> Resu
         let n = read(&mut buf)?;
         if n > buf.len() { return Err(windows::Win32::Foundation::E_INVALIDARG.into()); }
         if n == 0 {
-            return String::from_utf16(&all).map(Some).map_err(|_| windows::Win32::Foundation::E_INVALIDARG.into());
+            return Ok(String::from_utf16(&all).ok());
         }
         if n > limit.saturating_sub(all.len()) { return Ok(None); }
+        // U+FFFC represents an embedded object, not replaceable plain text. SetText would destroy that object.
+        if buf[..n].contains(&0xfffc) { return Ok(None); }
         all.extend_from_slice(&buf[..n]);
     }
 }
@@ -127,8 +132,16 @@ fn read_bounded_selection(limit: usize, mut read: impl FnMut(&mut [u16]) -> Resu
 pub fn set_correction_language(ec: u32, context: &ITfContext, range: &ITfRange, text: &str) -> Result<bool> {
     let Some(langid) = correction_language(text) else { return Ok(false) };
     let property = unsafe { context.GetProperty(&GUID_PROP_LANGID)? };
+    let mut current = unsafe { property.GetValue(ec, range)? };
+    let keep = same_primary_language(variant_as_i32(&current), langid);
+    unsafe { let _ = VariantClear(&mut current); }
+    if keep { return Ok(false); }
     unsafe { property.SetValue(ec, range, &variant_i4(langid as i32))?; }
     Ok(true)
+}
+
+fn same_primary_language(current: Option<i32>, target: u16) -> bool {
+    current.is_some_and(|current| current as u16 & 0x03ff == target & 0x03ff)
 }
 
 fn correction_language(text: &str) -> Option<u16> {
@@ -158,19 +171,35 @@ pub fn set_attribute(ec: u32, context: &ITfContext, range: &ITfRange, atom: u32)
     }
 }
 
-/// Protected or unreadable fields must not feed the engine (C-CTX-01). VT_EMPTY is an ordinary field without a hint;
-/// an unsuccessful query is different, and must not be remembered as permission to process its keys.
-pub fn is_password_field(ec: u32, context: &ITfContext) -> bool {
-    let read = || -> Result<bool> {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FieldAccess {
+    Ordinary,
+    Private,
+    Protected,
+    Unknown(HRESULT),
+}
+
+impl FieldAccess {
+    pub fn from_result(result: Result<Self>) -> Self {
+        result.unwrap_or_else(|error| Self::Unknown(error.code()))
+    }
+    pub fn blocks_keys(self) -> bool { matches!(self, Self::Protected | Self::Unknown(_)) }
+    pub fn suppresses_trace(self) -> bool { self != Self::Ordinary }
+}
+
+/// Private fields still support composition, but must not learn. Passwords/PINs pass through. Unknown is preserved as
+/// a separate verdict so a failed probe cannot silently destroy the current composition.
+pub fn field_access(ec: u32, context: &ITfContext) -> FieldAccess {
+    let read = || -> Result<FieldAccess> {
         let status = unsafe { context.GetStatus()? };
-        if status.dwDynamicFlags & (TF_SD_READONLY | TF_SD_LOADING) != 0 { return Ok(true); }
+        if status.dwDynamicFlags & (TF_SD_READONLY | TF_SD_LOADING) != 0 { return Ok(FieldAccess::Protected); }
         let compartments: ITfCompartmentMgr = context.cast()?;
         for guid in [GUID_COMPARTMENT_KEYBOARD_DISABLED, GUID_COMPARTMENT_EMPTYCONTEXT] {
             let compartment = unsafe { compartments.GetCompartment(&guid)? };
             let mut value = unsafe { compartment.GetValue()? };
             let disabled = compartment_disabled(&value);
             unsafe { let _ = VariantClear(&mut value); }
-            if disabled? { return Ok(true); }
+            if disabled? { return Ok(FieldAccess::Protected); }
         }
         let range = selection(ec, context)?;
         let prop = unsafe { context.GetAppProperty(&GUID_PROP_INPUTSCOPE)? };
@@ -179,11 +208,7 @@ pub fn is_password_field(ec: u32, context: &ITfContext) -> bool {
         unsafe { let _ = VariantClear(&mut var); }
         result
     };
-    protected_query(read())
-}
-
-fn protected_query(result: Result<bool>) -> bool {
-    result.unwrap_or(true)
+    FieldAccess::from_result(read())
 }
 
 fn compartment_disabled(value: &VARIANT) -> Result<bool> {
@@ -194,13 +219,19 @@ fn compartment_disabled(value: &VARIANT) -> Result<bool> {
 
 fn protected_scope(scopes: &[InputScope]) -> bool {
     scopes.iter().any(|scope| matches!(*scope,
-        IS_PASSWORD | IS_PRIVATE | IS_NUMERIC_PASSWORD | IS_NUMERIC_PIN | IS_ALPHANUMERIC_PIN | IS_ALPHANUMERIC_PIN_SET))
+        IS_PASSWORD | IS_NUMERIC_PASSWORD | IS_NUMERIC_PIN | IS_ALPHANUMERIC_PIN | IS_ALPHANUMERIC_PIN_SET))
 }
 
-fn read_scope_variant(var: &VARIANT) -> Result<bool> {
+fn scope_access(scopes: &[InputScope]) -> FieldAccess {
+    if protected_scope(scopes) { FieldAccess::Protected }
+    else if scopes.contains(&IS_PRIVATE) { FieldAccess::Private }
+    else { FieldAccess::Ordinary }
+}
+
+fn read_scope_variant(var: &VARIANT) -> Result<FieldAccess> {
     unsafe {
         let inner = &*var.Anonymous.Anonymous;
-        if inner.vt == VT_EMPTY { return Ok(false); }
+        if inner.vt == VT_EMPTY { return Ok(FieldAccess::Ordinary); }
         if inner.vt != VT_UNKNOWN { return Err(windows::Win32::Foundation::E_INVALIDARG.into()); }
         let unknown = inner.Anonymous.punkVal.as_ref().ok_or(windows::Win32::Foundation::E_POINTER)?;
         let scope = unknown.cast::<ITfInputScope>()?;
@@ -208,9 +239,9 @@ fn read_scope_variant(var: &VARIANT) -> Result<bool> {
         let mut count = 0u32;
         let read = scope.GetInputScopes(&mut scopes, &mut count);
         let result = read.and_then(|_| {
-            if count == 0 { return Ok(false); }
+            if count == 0 { return Ok(FieldAccess::Ordinary); }
             if scopes.is_null() || count > 256 { return Err(windows::Win32::Foundation::E_INVALIDARG.into()); }
-            Ok(protected_scope(std::slice::from_raw_parts(scopes, count as usize)))
+            Ok(scope_access(std::slice::from_raw_parts(scopes, count as usize)))
         });
         if !scopes.is_null() {
             windows::Win32::System::Com::CoTaskMemFree(Some(scopes as *const _));
@@ -222,21 +253,31 @@ fn read_scope_variant(var: &VARIANT) -> Result<bool> {
 #[cfg(test)]
 mod protection_tests {
     use super::*;
+    fn protected_query(result: Result<FieldAccess>) -> bool { FieldAccess::from_result(result).blocks_keys() }
 
     #[test]
     fn failed_scope_query_must_not_allow_the_engine_to_read_keys() {
         for failure in [windows::Win32::Foundation::E_FAIL, TF_E_NOLOCK, TF_E_DISCONNECTED] {
             assert!(protected_query(Err(failure.into())), "failed field query must pass keys to the application");
         }
-        assert!(!protected_query(Ok(false)), "ordinary fields remain usable");
-        assert!(protected_query(Ok(true)));
+        assert!(!protected_query(Ok(FieldAccess::Ordinary)), "ordinary fields remain usable");
+        assert!(protected_query(Ok(FieldAccess::Protected)));
     }
 
     #[test]
-    fn password_pin_and_private_fields_never_enter_composition_or_learning() {
-        for scope in [IS_PASSWORD, IS_PRIVATE, IS_NUMERIC_PASSWORD, IS_NUMERIC_PIN, IS_ALPHANUMERIC_PIN, IS_ALPHANUMERIC_PIN_SET] {
+    fn password_and_pin_fields_never_enter_composition_or_learning() {
+        for scope in [IS_PASSWORD, IS_NUMERIC_PASSWORD, IS_NUMERIC_PIN, IS_ALPHANUMERIC_PIN, IS_ALPHANUMERIC_PIN_SET] {
             assert!(protected_scope(&[IS_DEFAULT, scope]), "protected input scope {}", scope.0);
         }
+    }
+
+    #[test]
+    fn private_scope_keeps_korean_input_available_without_learning_or_trace() {
+        let access = scope_access(&[IS_TEXT, IS_PRIVATE]);
+        assert_eq!(access, FieldAccess::Private);
+        assert!(!access.blocks_keys());
+        assert!(access.suppresses_trace());
+        assert_eq!(scope_access(&[IS_PASSWORD, IS_PRIVATE]), FieldAccess::Protected);
     }
 
     #[test]
@@ -297,9 +338,9 @@ mod selection_tests {
     fn failed_read_or_malformed_utf16_never_becomes_a_replacement() {
         assert!(read_bounded_selection(4096, |_| Err(TF_E_NOLOCK.into())).is_err());
         let mut first = true;
-        assert!(read_bounded_selection(4096, |buf| {
+        assert_eq!(read_bounded_selection(4096, |buf| {
             if first { first = false; buf[0] = 0xd800; Ok(1) } else { Ok(0) }
-        }).is_err());
+        }).unwrap(), None);
         assert_eq!(read_selection("", 10, 0), Some(String::new()));
         assert_eq!(read_selection("a", 10, 0), None);
     }
@@ -317,5 +358,17 @@ mod selection_tests {
         for selected in ["한글 API", "123 !", "", "🙂", "café", "東京", "漢字 한글"] {
             assert_eq!(correction_language(selected), None, "do not guess the language of {selected}");
         }
+    }
+
+    #[test]
+    fn inline_objects_are_never_flattened_by_selection_conversion() {
+        assert_eq!(read_selection("한글\u{fffc}tail", 1, 4096), None);
+    }
+
+    #[test]
+    fn english_language_variants_keep_their_proofing_locale() {
+        for locale in [0x0409, 0x0809, 0x0c09] { assert!(same_primary_language(Some(locale), 0x0409)); }
+        assert!(!same_primary_language(Some(0x0412), 0x0409));
+        assert!(!same_primary_language(None, 0x0409));
     }
 }

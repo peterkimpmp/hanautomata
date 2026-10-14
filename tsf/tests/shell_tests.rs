@@ -60,19 +60,56 @@ fn protected_transition_discards_pending_and_reconversion_state() {
         let mut s = shell(&format!("protected-transition-{committed}"));
         for key in b"DKSSUD" { s.key_down(KeyEvent::new(*key as u16, Mods::NONE)); }
         if committed { s.key_down(KeyEvent::new(vk::SPACE, Mods::NONE)); }
-        s.set_pass_through(true);
+        let finish = s.context_policy(true, false).expect("first transition");
+        if !committed {
+            assert!(finish.ops.iter().any(|op| *op == Op::Commit("안녕".into())), "resolve pending text into its original field");
+        }
         assert!(!s.is_composing());
         assert!(s.engine().reconversion().is_none());
         assert_eq!(s.key_down(KeyEvent::new(b'P' as u16, Mods::NONE)), Outcome::default());
         assert_eq!(s.reconversion_command(), Outcome::default());
-        s.set_pass_through(false);
+        s.context_policy(false, false);
         assert_eq!(s.reconversion_command(), Outcome::default(), "F2 history must not cross protected fields");
         let mut d = Doc::default();
-        for key in b"GKS RMF".iter().filter(|k| **k != b' ') {
+        for key in b"GKSRMF" {
             d.key(&mut s, *key as u16, Mods::NONE, None);
         }
         d.key(&mut s, vk::SPACE, Mods::NONE, None);
         assert_eq!(d.text, "한글 ", "no stale prefix from the previous field");
+    }
+}
+
+#[test]
+fn protected_test_probes_do_not_end_or_reset_a_composition() {
+    let mut s = shell("nonmutating-field-probe");
+    for key in b"DKS" { s.key_down(KeyEvent::new(*key as u16, Mods::NONE)); }
+    for _ in 0..3 {
+        assert!(!s.test_key_in_context(KeyEvent::new(b'S' as u16, Mods::NONE), true, true));
+        assert!(s.is_composing());
+        assert!(!s.pass_through);
+    }
+    let mut d = Doc::default();
+    for key in b"SUD" { d.key(&mut s, *key as u16, Mods::NONE, None); }
+    d.key(&mut s, vk::SPACE, Mods::NONE, None);
+    assert_eq!(d.text, "안녕 ");
+}
+
+#[test]
+fn private_context_composes_and_reconverts_without_learning_and_restores_pause() {
+    for paused_before in [false, true] {
+        let mut s = shell(&format!("private-learning-{paused_before}"));
+        s.engine().set_learning_paused(paused_before);
+        s.context_policy(false, true);
+        let mut d = Doc::default();
+        for key in b"DKSSUD" { d.key(&mut s, *key as u16, Mods::NONE, None); }
+        d.key(&mut s, vk::SPACE, Mods::NONE, None);
+        assert_eq!(d.text, "안녕 ");
+        d.key(&mut s, vk::F2, Mods::NONE, None);
+        assert_eq!(d.text, "dkssud ");
+        assert_eq!(s.engine().learned_count(), 0);
+        s.context_policy(false, false);
+        assert_eq!(s.engine().learning_paused(), paused_before);
+        assert!(s.engine().reconversion().is_none());
     }
 }
 

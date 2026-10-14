@@ -18,6 +18,16 @@ use crate::guids::{DISPLAY_ATTRIBUTE_INPUT, PRESERVED_RECONVERT};
 use crate::shell::{KeyEvent, Op, Outcome, Shell};
 use crate::system;
 
+struct CheckedKey {
+    context: ITfContext,
+    wparam: usize,
+    lparam: isize,
+    down: bool,
+    observed: u64,
+    access: edit::FieldAccess,
+    tray: bool,
+}
+
 const RECONVERSION_KEY: TF_PRESERVEDKEY = TF_PRESERVEDKEY {
     uVKey: crate::shell::vk::F2 as u32,
     uModifiers: 0,
@@ -75,6 +85,8 @@ struct State {
     /// Password/private scope or a failed field query. Never trace these contexts.
     password_field: bool,
     tray_running: bool,
+    checked_key: Option<CheckedKey>,
+    last_query_failure: Option<(ITfContext, windows::core::HRESULT)>,
     /// Our own composition sink, for StartComposition (released on Deactivate, which breaks the cycle).
     sink: Option<ITfCompositionSink>,
 }
@@ -151,39 +163,36 @@ impl TextService_Impl {
         self.to_object()
     }
 
-    /// Re-reads what decides pass-through for this context: the tray app (W-17) and a password field (C-CTX-01).
-    fn refresh_pass_through(&self, context: &ITfContext) {
-        // An application can move between ordinary and protected controls within the same ITfContext. Recheck every
-        // key-down, including the real callback: a cached context identity is not a security boundary.
+    /// A read-only probe. In particular, OnTestKeyDown must not flush/reset the engine or end a composition.
+    fn probe_access(&self, context: &ITfContext) -> edit::FieldAccess {
         let client = self.state.borrow().client;
-        let result = std::rc::Rc::new(Cell::new(true));
+        let result = std::rc::Rc::new(Cell::new(edit::FieldAccess::Unknown(E_FAIL)));
         let out = result.clone();
         let ctx = context.clone();
         let query = edit::request(context, client, TF_ES_SYNC | TF_ES_READ, move |ec| {
-            out.set(edit::is_password_field(ec, &ctx));
+            out.set(edit::field_access(ec, &ctx));
             Ok(())
         });
-        let mut st = self.state.borrow_mut();
-        st.password_field = query.is_err() || result.get();
-        st.tray_running = system::tray_running();
-        let pass = st.password_field || st.tray_running;
-        if let Some(shell) = st.shell.as_mut() {
-            shell.set_pass_through(pass);
-        }
-        let old_composition = if pass { st.composition.take() } else { None };
-        drop(st);
-        // Leave text already displayed by the host intact. Only release our underline/composition in its ORIGINAL
-        // context; never carry an old range or engine word across into a protected/new field.
-        if let Some(composition) = old_composition {
-            if let Ok(old_context) = unsafe { composition.GetRange().and_then(|r| r.GetContext()) } {
-                let ctx = old_context.clone();
-                let _ = edit::request(&old_context, client, TF_ES_ASYNCDONTCARE | TF_ES_READWRITE, move |ec| {
-                    let range = unsafe { composition.GetRange()? };
-                    let _ = edit::set_attribute(ec, &ctx, &range, 0);
-                    unsafe { composition.EndComposition(ec) }
-                });
+        let access = match query { Ok(()) => result.get(), Err(error) => edit::FieldAccess::Unknown(error.code()) };
+        if let edit::FieldAccess::Unknown(code) = access {
+            let mut st = self.state.borrow_mut();
+            if self.diagnostics.get() && st.last_query_failure.as_ref() != Some(&(context.clone(), code)) {
+                system::log(&format!("field query unavailable: {:?}; key passed without resetting composition", code));
+                st.last_query_failure = Some((context.clone(), code));
             }
         }
+        access
+    }
+
+    fn apply_context_policy(&self, access: edit::FieldAccess, tray: bool) {
+        let mut st = self.state.borrow_mut();
+        st.password_field = access.suppresses_trace();
+        st.tray_running = tray;
+        // A transient query failure is not evidence that focus moved. Pass the key without destroying engine state.
+        if matches!(access, edit::FieldAccess::Unknown(_)) { return; }
+        let finish = st.shell.as_mut().and_then(|shell| shell.context_policy(access.blocks_keys() || tray, access == edit::FieldAccess::Private));
+        drop(st);
+        if let Some(out) = finish { self.finish_original_composition(out); }
     }
 
     /// Applies the shell's operations to `context` in one synchronous edit session, then sends any Caps Lock press.
@@ -219,21 +228,33 @@ impl TextService_Impl {
             return Ok(false.into());
         };
         let e = key_event(wparam, lparam);
-        if down {
-            self.refresh_pass_through(context);
-        }
+        let checked = if test {
+            CheckedKey { context: context.clone(), wparam: wparam.0, lparam: lparam.0, down, observed: e.time,
+                access: self.probe_access(context), tray: system::tray_running() }
+        } else {
+            let paired = self.state.borrow_mut().checked_key.take().filter(|key|
+                key.context == *context && key.wparam == wparam.0 && key.lparam == lparam.0 && key.down == down
+                && e.time.saturating_sub(key.observed) <= 100);
+            paired.unwrap_or_else(|| CheckedKey { context: context.clone(), wparam: wparam.0, lparam: lparam.0, down,
+                observed: e.time, access: self.probe_access(context), tray: system::tray_running() })
+        };
+        let pass = checked.access.blocks_keys() || checked.tray;
+        self.state.borrow_mut().password_field = checked.access.suppresses_trace();
         let trace_key = down && (e.vk == crate::shell::vk::SPACE || e.vk == crate::shell::vk::F2);
         if trace_key {
             self.trace(if test { "test-key-before" } else { "key-before" });
         }
         if test {
             let mut st = self.state.borrow_mut();
+            st.checked_key = Some(checked);
             let Some(shell) = st.shell.as_mut() else {
                 return Ok(false.into());
             };
-            let wanted = if down { shell.test_key_down(e) } else { shell.test_key_up(e) };
+            let wanted = shell.test_key_in_context(e, down, pass);
             return Ok(wanted.into());
         }
+        self.apply_context_policy(checked.access, checked.tray);
+        if pass { return Ok(false.into()); }
         let (out, had_fresh_word) = {
             let mut st = self.state.borrow_mut();
             let Some(shell) = st.shell.as_mut() else {
@@ -287,16 +308,46 @@ impl TextService_Impl {
     /// Focus leaves the composition's context: commit the word there, asynchronously (it may not allow a sync session).
     fn commit_on_focus_change(&self) {
         self.trace("focus-before");
-        let (composition, out, client) = {
+        let out = {
             let mut st = self.state.borrow_mut();
-            let client = st.client;
+            st.checked_key = None;
             let out = match st.shell.as_mut() {
-                Some(shell) => shell.focus_lost(),
+                Some(shell) => {
+                    let out = shell.focus_lost();
+                    shell.engine().forget_reconversion();
+                    out
+                },
                 None => return,
             };
-            (st.composition.take(), out, client)
+            out
         };
         self.trace("focus-after-shell");
+        self.finish_original_composition(out);
+    }
+
+    fn context_event_affects_focus(&self, context: Ref<ITfContext>) -> bool {
+        let Some(context) = context.as_ref() else { return false };
+        let (composition, manager) = {
+            let st = self.state.borrow();
+            (st.composition.clone(), st.thread_mgr.clone())
+        };
+        unsafe {
+            if composition.and_then(|c| c.GetRange().ok()).and_then(|r| r.GetContext().ok()).as_ref() == Some(context) {
+                return true;
+            }
+            match (manager.and_then(|m| m.GetFocus().ok()), context.GetDocumentMgr().ok()) {
+                (Some(focused), Some(owner)) => focused == owner,
+                _ => false,
+            }
+        }
+    }
+
+    /// Flush the resolved word into its old range, never into the new field. Shared by focus and privacy transitions.
+    fn finish_original_composition(&self, out: Outcome) {
+        let (composition, client) = {
+            let mut st = self.state.borrow_mut();
+            (st.composition.take(), st.client)
+        };
         let Some(composition) = composition else { return };
         let Ok(range) = (unsafe { composition.GetRange() }) else {
             return;
@@ -428,9 +479,16 @@ impl TextService {
             system::log("flip skipped: nothing selected");
             return Ok(());
         }
-        let Some(text) = edit::selection_text(ec, &range, 4096)? else {
-            system::log("flip skipped: selection exceeds the safe conversion limit");
-            return Ok(());
+        let text = match edit::selection_text(ec, &range, 4096) {
+            Ok(Some(text)) => text,
+            Ok(None) => {
+                system::log("flip skipped: oversized or unsupported selection; original preserved");
+                return Ok(());
+            },
+            Err(error) => {
+                system::log(&format!("flip skipped: selection could not be read completely: {:?}", error.code()));
+                return Ok(());
+            },
         };
         let flipped = self.state.borrow().shell.as_ref().and_then(|s| s.flip(&text));
         if let Some(flipped) = flipped {
@@ -578,7 +636,11 @@ impl ITfKeyEventSink_Impl for TextService_Impl {
             }
             let Some(context) = pic.as_ref() else { return Ok(false.into()) };
             // A preserved command need not be preceded by OnTestKeyDown. Recheck password scope and tray coexistence.
-            self.refresh_pass_through(context);
+            let access = self.probe_access(context);
+            let tray = system::tray_running();
+            self.state.borrow_mut().checked_key = None;
+            self.apply_context_policy(access, tray);
+            if access.blocks_keys() || tray { return Ok(false.into()); }
             self.trace("preserved-before");
             let out = match self.state.borrow_mut().shell.as_mut() {
                 Some(shell) => shell.reconversion_command(),
@@ -628,7 +690,8 @@ impl ITfThreadMgrEventSink_Impl for TextService_Impl {
         Ok(())
     }
 
-    fn OnSetFocus(&self, _pdimfocus: Ref<ITfDocumentMgr>, _pdimprevfocus: Ref<ITfDocumentMgr>) -> Result<()> {
+    fn OnSetFocus(&self, pdimfocus: Ref<ITfDocumentMgr>, pdimprevfocus: Ref<ITfDocumentMgr>) -> Result<()> {
+        if pdimfocus.as_ref() == pdimprevfocus.as_ref() { return Ok(()); }
         self.commit_on_focus_change();
         let mut st = self.state.borrow_mut();
         st.tray_running = system::tray_running();
@@ -637,11 +700,13 @@ impl ITfThreadMgrEventSink_Impl for TextService_Impl {
         Ok(())
     }
 
-    fn OnPushContext(&self, _pic: Ref<ITfContext>) -> Result<()> {
+    fn OnPushContext(&self, pic: Ref<ITfContext>) -> Result<()> {
+        if self.context_event_affects_focus(pic) { self.commit_on_focus_change(); }
         Ok(())
     }
 
-    fn OnPopContext(&self, _pic: Ref<ITfContext>) -> Result<()> {
+    fn OnPopContext(&self, pic: Ref<ITfContext>) -> Result<()> {
+        if self.context_event_affects_focus(pic) { self.commit_on_focus_change(); }
         Ok(())
     }
 }
