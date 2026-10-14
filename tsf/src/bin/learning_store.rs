@@ -1,5 +1,5 @@
-//! Development stdio driver for the single-writer authority. No install, autostart, hooks or IPC listener.
-//! The parent explicitly selects the file and owns both stdio pipes. This is not authenticated production IPC.
+//! Development drivers for the single-writer authority. No install, autostart or TSF hooks.
+//! Explicit stdio or a fresh synthetic authenticated pipe; neither is a production endpoint.
 #[cfg(not(windows))]
 fn main() { eprintln!("This development driver requires Windows."); std::process::exit(2); }
 
@@ -76,6 +76,7 @@ mod driver {
     }
     pub(super) fn run() -> i32 {
         let args: Vec<_> = std::env::args_os().skip(1).collect();
+        if args.first().is_some_and(|mode| mode == "--development-pipe") { return pipe_driver(&args); }
         let [mode, flag, file] = args.as_slice() else { eprintln!("usage: hanautomata-learning-store --development-stdio --store <dedicated-file>"); return 2; };
         if mode != "--development-stdio" || flag != "--store" { eprintln!("invalid development arguments"); return 2; }
         // The previous owned process may have exited before Windows releases its file lock.
@@ -91,6 +92,23 @@ mod driver {
         match serve(&mut owner, &mut io::stdin().lock(), &mut io::stdout().lock()) {
             Ok(code) => code, Err(_) => { eprintln!("learning store I/O failed"); 2 },
         }
+    }
+
+    fn pipe_driver(args: &[std::ffi::OsString]) -> i32 {
+        use hanautomata_tsf::learning_pipe::{Endpoint, Listener};
+        let [_, store_flag, file, endpoint_flag, endpoint, count_flag, count] = args else { return 2; };
+        if store_flag != "--store" || endpoint_flag != "--endpoint" || count_flag != "--exchanges" { return 2; }
+        let Some(count) = count.to_str().and_then(|n| n.parse::<u32>().ok()).filter(|n| (1..=16).contains(n)) else { return 2; };
+        let Some(endpoint) = endpoint.to_str().and_then(|value| Endpoint::from_token(value).ok()) else { return 2; };
+        let Ok(mut listener) = Listener::bind(&endpoint) else { eprintln!("pipe listener refused"); return 2; };
+        let Ok(mut authority) = new_id().and_then(|id| Authority::open(Path::new(file), &id)) else { eprintln!("storage refused"); return 2; };
+        println!("ready"); if io::stdout().flush().is_err() { return 2; }
+        for _ in 0..count {
+            // Broken/rejected peers do not shut down the listener or mutate another peer's lease.
+            let _ = listener.serve_once(&mut authority, Duration::from_secs(5));
+            if authority.snapshot().is_err() { return 2; }
+        }
+        0
     }
 
     #[cfg(test)]

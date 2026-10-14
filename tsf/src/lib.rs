@@ -12,6 +12,10 @@
 pub mod shell;
 pub mod settings;
 
+// Development-only authenticated transport. Not loaded or started by the installed text service.
+#[cfg(all(windows, feature = "quality-probes"))]
+pub mod learning_pipe;
+
 #[cfg(windows)]
 mod display;
 #[cfg(windows)]

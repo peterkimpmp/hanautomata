@@ -178,10 +178,27 @@ python3 tsf/test-learning-store.py --exe (Join-Path $target 'release/hanautomata
 
 저장 파일에는 학습한 단어가 포함되므로 제품 연결 시 사용자 전용 디렉터리·고정 파일명과 인증을 적용해야 합니다. 디렉터리 항목이 4,096개를 넘으면 복구 스캔을 거부합니다. 전체 초기화는 이전 단어 fence 해시도 비우지만 마지막 요청의 재시도 지문은 남습니다. 이는 익명화나 안전한 소거가 아니며 민감 데이터 보호 정책은 제품 연결 전에 정해야 합니다. 오래된 정상 백업으로 되돌아가는 경우는 현재 owner marker만으로 감지하지 못합니다. 복구·이전 정책과 새 store ID 발급은 후속 과제입니다. 시험은 Python `-O`·`PYTHONOPTIMIZE`를 거부합니다. 상세 검증은 [결과 원장](../docs/WINDOWS-QUALITY-RESULTS.md#학습-저장-코어와-별도-프로세스-시험)을 참고하세요.
 
+### 실제 peer에 묶인 개발용 named pipe
+
+`learning_pipe`와 `--development-pipe`는 별도의 시험 모드입니다. 신뢰된 실행 주체가 지정한 정확한 서버 프로세스 객체·생성 시각·토큰을 확인한 다음 요청을 보냅니다. 서버는 파이프가 알려 준 실제 PID와 마지막 메시지의 토큰을 대조하여 동일 사용자·로그온·세션의 일반 데스크톱 프로세스만 받습니다. 요청에 들어 있는 SID/PID는 인증으로 사용하지 않습니다.
+
+서버가 관측한 사용자·로그온·세션·PID·생성 시각과 클라이언트의 서비스별 nonce로 lease ID를 만듭니다. 서버 재시작 뒤 같은 클라이언트의 요청은 정확히 재시도할 수 있고, 다른 프로세스나 nonce의 기존 lease 재사용은 거부합니다. 이 ID는 비밀 키가 아니며 같은 사용자 권한의 악성 프로그램 전체를 격리하는 보안 경계가 아닙니다.
+
+```powershell
+cargo test --manifest-path tsf/Cargo.toml --release --features quality-probes --lib --test learning_pipe_process --test learning_client_process
+cargo +stable-i686-pc-windows-gnu test --manifest-path tsf/Cargo.toml --release --target i686-pc-windows-gnu --features quality-probes --lib --test learning_pipe_process --test learning_client_process
+```
+
+시험은 자체 자식·임시 데이터·고유 파이프만 사용합니다. 명령 8 KiB·응답 2 MiB 제한과 overlapped I/O 마감 시각·취소 완료 확인을 적용합니다. 응답이 유실되면 저장은 이미 끝났을 수 있으므로 같은 요청을 재전송합니다. 저장 파일 쓰기 자체와 커널 취소 완료의 강제 시간 보장은 아니며 키 콜백에서 호출하면 안 됩니다. 정상 프로세스 종료도 요청 저장 성공의 증거가 아닙니다.
+
+Microsoft의 [파이프 권한](https://learn.microsoft.com/en-us/windows/win32/ipc/named-pipe-security-and-access-rights), [메시지 토큰 확인](https://learn.microsoft.com/en-us/windows/win32/api/namedpipeapi/nf-namedpipeapi-impersonatenamedpipeclient), [overlapped I/O](https://learn.microsoft.com/en-us/windows/win32/ipc/synchronous-and-overlapped-input-and-output), [취소 완료](https://learn.microsoft.com/en-us/windows/win32/api/ioapiset/nf-ioapiset-cancelioex), [토큰 복귀 실패 처리](https://learn.microsoft.com/en-us/windows/win32/api/securitybaseapi/nf-securitybaseapi-reverttoself)를 따른 개발 구현입니다. 토큰 복귀 실패는 개발 프로세스를 중단합니다. 서버를 TSF 호스트 안에서 실행하지 않습니다.
+
+현재 한 연결씩 처리하며 관리자·AppContainer·제한 토큰은 거부합니다. 제품 서버의 신뢰된 실행/발견, 연결 공정성·lease 정리, 학습/관리 권한 구분, 응답 버전 계약, TSF 큐·스냅샷 연결, 설치/종료·이전·백업 정책과 독립 보안 검토가 남습니다. 실제 앱 승인과 WQ-07은 미완료입니다.
+
 ## 아직 없는 것(P3에서)
 
 - 후보창의 실제 앱·접근성 승인(C-CMP-02), 설정 창의 실제 설치·Windows 메뉴 연결 및 화면 검증(W-23)
-- 학습 저장 코어의 TSF 연결, 인증된 브로커·대기열·교정 취소·기존 사전 이전·실제 앱 재시작 검증
+- 학습 저장 코어·인증 통신·대기열의 TSF 제품 연결, 교정 취소·기존 사전 이전·실제 앱 재시작 검증
 - ARM64 DLL과 코드 서명(D15)
 - 첫 실행 설정(C-OPS-07)과 후크판 학습 이전(W-17 이전 부분)
 
