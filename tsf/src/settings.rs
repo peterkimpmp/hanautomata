@@ -62,6 +62,8 @@ impl Settings {
                 || app.chars().any(|c| c.is_control() || "\\/:*?\"<>|".contains(c)) {
                 return Err("excluded apps must be executable file names");
             }
+            #[cfg(windows)]
+            normalized_name(app).ok_or("excluded app name cannot be normalized")?;
         }
         Ok(())
     }
@@ -93,18 +95,27 @@ impl Settings {
     }
 
     pub fn excludes(&self, process: &str) -> bool {
+        if self.excluded_apps.is_empty() { return false; }
         #[cfg(windows)]
         {
             use windows::Win32::Globalization::{CompareStringOrdinal, CSTR_EQUAL};
-            let process: Vec<u16> = process.encode_utf16().collect();
+            let Some(process) = normalized_name(process) else { return true };
             self.excluded_apps.iter().any(|app| {
-                let app: Vec<u16> = app.encode_utf16().collect();
-                unsafe { CompareStringOrdinal(&app, &process, true) == CSTR_EQUAL }
+                let Some(app) = normalized_name(app) else { return true };
+                let result = unsafe { CompareStringOrdinal(&app, &process, true) };
+                result.0 == 0 || result == CSTR_EQUAL
             })
         }
         // The portable engine tests do not emulate the Windows filesystem's Unicode case table.
         #[cfg(not(windows))]
         self.excluded_apps.iter().any(|app| app.eq_ignore_ascii_case(process))
+    }
+
+    pub fn excludes_process(&self, process: Option<&str>) -> bool {
+        match process.filter(|name| !name.is_empty()) {
+            Some(name) => self.excludes(name),
+            None => !self.excluded_apps.is_empty(),
+        }
     }
 
     /// Only call on a fresh shell, before key handling begins; setters may commit an existing composition.
@@ -130,6 +141,25 @@ impl Settings {
             hangul_key: self.hangul_key, right_alt: self.right_alt, pause_key: self.pause_key,
             correction_keys: self.correction_keys };
     }
+}
+
+/// Exclusions deliberately cover canonically equivalent names; accents and compatibility characters stay distinct.
+#[cfg(windows)]
+fn normalized_name(name: &str) -> Option<Vec<u16>> {
+    use windows::Win32::{Foundation::{GetLastError, ERROR_INSUFFICIENT_BUFFER},
+        Globalization::{NormalizeString, NormalizationC}};
+    let source: Vec<u16> = name.encode_utf16().collect();
+    let mut size = unsafe { NormalizeString(NormalizationC, &source, None) };
+    // Windows returns an estimate, and may return a larger negative estimate after conversion. Bound retries/allocation.
+    for _ in 0..10 {
+        if !(1..=32768).contains(&size) { return None; }
+        let mut buffer = vec![0u16; size as usize];
+        let count = unsafe { NormalizeString(NormalizationC, &source, Some(&mut buffer)) };
+        if count > 0 && count as usize <= buffer.len() { buffer.truncate(count as usize); return Some(buffer); }
+        if unsafe { GetLastError() } != ERROR_INSUFFICIENT_BUFFER { return None; }
+        size = count.checked_neg()?;
+    }
+    None
 }
 
 #[cfg(test)]
@@ -234,5 +264,27 @@ mod tests {
         let result = Settings::load(&path);
         std::fs::remove_file(marker).unwrap();
         assert!(result.is_err(), "a missing file during/after replacement must not reset app exclusions");
+    }
+
+    #[test]
+    fn an_unknown_process_cannot_bypass_a_configured_exclusion() {
+        let settings = Settings { excluded_apps: vec!["code.exe".into()], ..Settings::default() };
+        assert!(settings.excludes_process(None));
+        assert!(settings.excludes_process(Some("")));
+        assert!(!settings.excludes_process(Some("word.exe")));
+        assert!(!Settings::default().excludes_process(None));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn canonical_name_variants_are_excluded_without_compatibility_folding() {
+        let nfd = "\u{1112}\u{1161}\u{11ab}\u{1100}\u{1173}\u{11af} 도구.exe";
+        let mut settings = Settings { excluded_apps: vec!["한글 도구.exe".into(), "Äpp.exe".into()], ..Settings::default() };
+        assert!(settings.excludes(nfd));
+        assert!(settings.excludes("A\u{308}pp.EXE"));
+        assert!(!settings.excludes("App.exe"));
+        assert!(!settings.excludes("Ａpp.exe"));
+        settings.excluded_apps = vec![nfd.into()];
+        assert!(settings.excludes("한글 도구.EXE"));
     }
 }

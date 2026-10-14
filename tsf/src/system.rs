@@ -3,13 +3,14 @@
 
 use std::io::Write;
 use std::path::PathBuf;
-use windows::core::{HSTRING, PWSTR};
+use windows::core::{HSTRING, PCWSTR, PWSTR};
 use windows::Win32::Foundation::{CloseHandle, LocalFree, HANDLE, HLOCAL};
 use windows::Win32::Security::Authorization::ConvertSidToStringSidW;
 use windows::Win32::Security::{
     GetTokenInformation, TokenElevation, TokenIsAppContainer, TokenUser, TOKEN_ELEVATION, TOKEN_QUERY, TOKEN_USER,
 };
 use windows::Win32::System::LibraryLoader::GetModuleFileNameW;
+use windows::Win32::Storage::FileSystem::GetLongPathNameW;
 use windows::Win32::System::SystemInformation::GetTickCount64;
 use windows::Win32::System::Threading::{
     GetCurrentProcess, GetCurrentProcessId, GetCurrentThreadId, OpenMutexW, OpenProcessToken, SYNCHRONIZATION_SYNCHRONIZE,
@@ -156,10 +157,96 @@ pub fn tray_running() -> bool {
 }
 
 pub fn process_name() -> String {
-    let mut buf = [0u16; 520];
-    let n = unsafe { GetModuleFileNameW(None, &mut buf) } as usize;
-    let path = String::from_utf16_lossy(&buf[..n]);
-    path.rsplit('\\').next().unwrap_or("").to_string()
+    process_identity().unwrap_or_else(|| "<unknown>".into())
+}
+
+/// A truncated, unreadable or invalid identity must not silently bypass a configured app exclusion.
+pub fn process_identity() -> Option<String> {
+    static IDENTITY: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+    // The executable does not change during the process lifetime. In particular, never expand an 8.3 name per key.
+    IDENTITY.get_or_init(resolve_process_identity).clone()
+}
+
+fn resolve_process_identity() -> Option<String> {
+    let path = module_path_with(|buf| unsafe { GetModuleFileNameW(None, buf) })?;
+    identity_from_path(path, |short| {
+        let mut terminated = short.to_vec(); terminated.push(0);
+        module_path_with(|buf| unsafe { GetLongPathNameW(PCWSTR(terminated.as_ptr()), Some(buf)) })
+    })
+}
+
+fn identity_from_path(path: Vec<u16>, expand: impl FnOnce(&[u16]) -> Option<Vec<u16>>) -> Option<String> {
+    fn basename(path: &[u16]) -> Option<String> {
+        // NTFS may contain an unpaired surrogate in a directory. Only the executable basename is compared.
+        let name = path.rsplit(|unit| matches!(*unit, 0x5c | 0x2f)).next()?;
+        let name = String::from_utf16(name).ok()?;
+        if name.is_empty() || name.chars().any(char::is_control) { return None; }
+        Some(name)
+    }
+    let name = basename(&path)?;
+    // Module paths retain the format used at launch, including 8.3 names. Expand a possible short basename.
+    if name.contains('~') { basename(&expand(&path)?) } else { Some(name) }
+}
+
+fn module_path_with(mut read: impl FnMut(&mut [u16]) -> u32) -> Option<Vec<u16>> {
+    let mut size = 520;
+    loop {
+        let mut buffer = vec![0u16; size];
+        let count = read(&mut buffer) as usize;
+        if count == 0 { return None; }
+        if count < buffer.len() {
+            buffer.truncate(count);
+            return if buffer.contains(&0) { None } else { Some(buffer) };
+        }
+        if size == 32768 { return None; }
+        size = (size * 2).max(count.saturating_add(1)).min(32768);
+    }
+}
+
+#[cfg(test)]
+mod identity_tests {
+    use super::*;
+
+    #[test]
+    fn full_module_path_is_read_past_the_old_520_unit_limit() {
+        let expected: Vec<u16> = format!("C:\\{}\\code.exe", "long-directory\\".repeat(80)).encode_utf16().collect();
+        let actual = module_path_with(|buffer| {
+            let count = expected.len().min(buffer.len());
+            buffer[..count].copy_from_slice(&expected[..count]);
+            count as u32
+        }).unwrap();
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn unreadable_or_persistently_truncated_module_path_is_unknown() {
+        assert!(module_path_with(|_| 0).is_none());
+        assert!(module_path_with(|buffer| buffer.len() as u32).is_none());
+    }
+
+    #[test]
+    fn aliases_expand_and_invalid_identities_are_not_lossily_repaired() {
+        let wide = |text: &str| text.encode_utf16().collect::<Vec<_>>();
+        assert_eq!(identity_from_path(wide(r"C:\apps\HANGL~1.EXE"), |_| Some(wide(r"C:\apps\한글 도구.exe"))), Some("한글 도구.exe".into()));
+        assert!(identity_from_path(wide(r"C:\apps\HANGL~1.EXE"), |_| None).is_none());
+        assert!(identity_from_path(vec![0xd800], |_| None).is_none());
+        assert!(module_path_with(|buffer| { buffer[..3].copy_from_slice(&[65, 0, 66]); 3 }).is_none());
+        assert_eq!(identity_from_path(wide(r"C:\apps\code.exe"), |_| panic!("long name must not query filesystem")), Some("code.exe".into()));
+    }
+
+    #[test]
+    fn current_executable_has_a_complete_identity() {
+        let name = process_identity().expect("current executable identity");
+        assert!(name.ends_with(".exe") && !name.contains('\\'));
+    }
+
+    #[test]
+    fn invalid_utf16_in_a_parent_directory_does_not_erase_a_valid_basename() {
+        let mut path: Vec<u16> = r"C:\".encode_utf16().collect();
+        path.push(0xd800);
+        path.extend(r"\code.exe".encode_utf16());
+        assert_eq!(identity_from_path(path, |_| None), Some("code.exe".into()));
+    }
 }
 
 /// S0 record: one line per event, no typed text (C-OPS-02). Writes fail silently where the folder is not writable

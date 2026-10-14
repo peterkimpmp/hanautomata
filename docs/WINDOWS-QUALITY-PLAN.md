@@ -103,3 +103,14 @@ flowchart LR
 위 표의 설정 저장·적용 경로를 구현했다. `src/ImeSettings.cs`와 `tsf/src/settings.rs`가 같은 PascalCase Format 1 계약을 읽고, 전용 `Hanautomata.ImeOptions.exe` 또는 `Hanautomata.exe --ime-settings`는 입력 후크를 시작하지 않는다. TSF는 활성화 시 설정을 읽으며 키 콜백의 파일 I/O를 추가하지 않는다. 앱 제외는 컨텍스트 정책과 편집 명령 전달에서 함께 유지한다. 실패한 설정 읽기는 키 통과로 처리한다.
 
 이는 WQ-07 완료 판정이 아니다. 실제 설정 화면·DPI·재활성화 적용, 설치·Windows 메뉴 연결, 후보 UI 및 영속 학습 구현은 남아 있다. 사용자 설치를 기다리는 f839115 후보에는 이 변경이 없으며 기존 설치 묶음을 덮어쓰지 않았다. 새 소스의 검사와 리뷰는 [결과 원장](WINDOWS-QUALITY-RESULTS.md)에 별도로 기록한다.
+
+### AppContainer 설정 접근 검증의 경계 — 2026-10-15
+
+다음 검증은 경로와 접근 권한을 분리한다. [KNOWN_FOLDER_FLAG](https://learn.microsoft.com/en-us/windows/win32/api/shlobj_core/ne-shlobj_core-known_folder_flag)의 `KF_FLAG_NO_PACKAGE_REDIRECTION`은 패키지 밖의 경로를 얻는 옵션이며 해당 파일을 읽을 권한의 증거가 아니다. [Microsoft IME 요구사항](https://learn.microsoft.com/en-us/windows/apps/develop/input/input-method-editor-requirements)에 따르면 IME는 호스트의 AppContainer 제한을 그대로 받는다. 파일을 다른 위치에 둘 때에는 명시적인 접근 권한 설계가 필요하다.
+
+1. 일반 프로세스와 시험용 AppContainer에서 설정의 실제 경로·읽기 결과·내용 해시가 같은지 재현 가능한 검사를 만든다. 환경 변수 차이, 경로 조회 실패, 권한 거부, 없는 파일을 서로 구분한다.
+2. 사용자별 설정에 한정한 읽기·쓰기 계약을 정하고 실제 제한 토큰에서 확인한다. 사용자 프로필 전체의 ACL을 완화하거나 관리자 권한을 입력 처리의 전제로 삼지 않는다. 경로 해결만으로 문제를 닫지 않는다.
+3. 트레이 공존 mutex가 같은 사용자라도 AppContainer 안에서 같은 객체로 보이는지 별도로 확인한다. 두 입력 경로가 동시에 동작하지 않아야 한다.
+4. 격리 프로세스 검사를 통과해도 실제 시작 검색·관리자 앱의 설정 적용과 입력 시험을 별도로 수행한다. 실제 앱 승인은 간접 시험으로 대체하지 않는다.
+
+이는 다음 작업의 검증 범위를 구체화한 것으로, 새로운 저장 경로나 ACL 배포를 승인·적용한 기록이 아니다.

@@ -88,8 +88,15 @@ namespace Hanautomata
             if (!new[] { "conservative", "balanced", "aggressive" }.Contains(Sensitivity)) throw new FormatException("감도를 확인해 주세요.");
             if (ExcludedApps == null || ExcludedApps.Length > 128) throw new FormatException("제외 앱은 128개까지 지정할 수 있습니다.");
             foreach (string app in ExcludedApps)
-                if (app == null || app.Length <= 4 || Utf8.GetByteCount(app) > 1020 || app.Count(c => !char.IsLowSurrogate(c)) > 255 || app.Trim() != app || !app.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) || app.Any(c => char.IsControl(c) || "\\/:*?\"<>|".IndexOf(c) >= 0))
-                    throw new FormatException("제외 앱에는 경로 없이 실행 파일 이름만 적어 주세요. 예: code.exe");
+            {
+                try
+                {
+                    if (app == null || app.Length <= 4 || Utf8.GetByteCount(app) > 1020 || app.Count(c => !char.IsLowSurrogate(c)) > 255 || app.Trim() != app || !app.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) || app.Any(c => char.IsControl(c) || "\\/:*?\"<>|".IndexOf(c) >= 0))
+                        throw new FormatException("제외 앱에는 경로 없이 실행 파일 이름만 적어 주세요. 예: code.exe");
+                    app.Normalize(System.Text.NormalizationForm.FormC);
+                }
+                catch (ArgumentException) { throw new FormatException("제외 앱 이름의 유니코드 표기를 확인해 주세요."); }
+            }
         }
         internal byte[] Serialize()
         {
@@ -104,6 +111,12 @@ namespace Hanautomata
         internal ImeSettings Value;
         internal string Fingerprint;
         internal string Error;
+        internal string BackupPath;
+    }
+
+    internal sealed class ImeSettingsConflictException : IOException
+    {
+        internal ImeSettingsConflictException() : base("다른 창에서 설정을 변경했습니다. 다시 읽기 후 변경해 주세요.") { }
     }
 
     internal static class ImeSettingsStore
@@ -142,15 +155,29 @@ namespace Hanautomata
             try
             {
                 byte[] bytes = Read(path); snapshot.Fingerprint = Fingerprint(bytes);
-                if (bytes == null && (File.Exists(path + ".lock") || File.Exists(path + ".previous"))) throw new FormatException("설정 파일 복구가 필요합니다.");
+                if (bytes == null && (MarkerExists(path + ".lock") || MarkerExists(path + ".previous")))
+                    throw new FormatException("설정 파일이 사라졌습니다. 보관 파일을 선택해 복원하거나 기본값을 저장해 주세요. 복구 전에는 입력기가 키를 통과시킵니다.");
                 snapshot.Value = bytes == null ? new ImeSettings() : ImeSettings.Parse(bytes);
             }
             catch (Exception e)
             {
                 if (!(e is IOException || e is UnauthorizedAccessException || e is FormatException || e is XmlException || e is ArgumentException || e is InvalidOperationException || e is System.Runtime.Serialization.SerializationException)) throw;
-                snapshot.Error = "설정 파일을 읽지 못했습니다. 기존 파일은 변경하지 않았습니다.";
+                if (e is IOException || e is UnauthorizedAccessException) snapshot.Fingerprint = null;
+                snapshot.Error = "설정 파일을 읽지 못했습니다. 파일은 변경하지 않았습니다. " + e.Message;
             }
             return snapshot;
+        }
+        static bool MarkerExists(string path)
+        {
+            try { File.GetAttributes(path); return true; }
+            catch (FileNotFoundException) { return false; }
+            catch (DirectoryNotFoundException) { return false; }
+        }
+        internal static ImeSettings ReadRecovery(string path)
+        {
+            byte[] bytes = Read(path);
+            if (bytes == null) throw new FileNotFoundException("복원할 설정 파일을 찾지 못했습니다.", path);
+            return ImeSettings.Parse(bytes);
         }
         static FileStream Lock(string path)
         {
@@ -160,7 +187,7 @@ namespace Hanautomata
                 catch (IOException) { if (attempt >= 10) throw; Thread.Sleep(25); }
             }
         }
-        internal static ImeSettingsSnapshot Save(string path, ImeSettings value, string expected)
+        internal static ImeSettingsSnapshot Save(string path, ImeSettings value, string expected, bool restoring = false)
         {
             if (expected == null) throw new IOException("현재 파일을 확인할 수 없어 저장하지 않았습니다.");
             byte[] bytes = value.Serialize(); path = Path.GetFullPath(path);
@@ -168,18 +195,26 @@ namespace Hanautomata
             using (var guard = Lock(path + ".lock"))
             {
                 byte[] current = Read(path);
-                if (Fingerprint(current) != expected) throw new IOException("다른 창에서 설정을 변경했습니다. 다시 읽기 후 변경해 주세요.");
+                if (Fingerprint(current) != expected) throw new ImeSettingsConflictException();
                 string temp = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+                string backup = current == null ? null : restoring ? path + ".before-restore." + Guid.NewGuid().ToString("N") + ".json" : path + ".previous";
                 try
                 {
                     using (var stream = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None)) { stream.Write(bytes, 0, bytes.Length); stream.Flush(true); }
                     if (current == null) File.Move(temp, path);
-                    else File.Replace(temp, path, path + ".previous");
+                    // Recovery must not overwrite a selected .previous file. Keep the pre-restore live file separately.
+                    else File.Replace(temp, path, backup);
+                }
+                catch (IOException e)
+                {
+                    if (backup != null && !File.Exists(path) && File.Exists(backup))
+                        throw new IOException("현재 설정 파일을 확인할 수 없습니다. 보관된 원본: " + backup + "\n파일에서 복원으로 선택해 주세요.", e);
+                    throw;
                 }
                 // ReplaceFile can leave the original only at the backup path on error 1177. Keep staged bytes
                 // if the live file disappeared; the .lock marker makes readers fail closed until explicit repair.
                 finally { if (File.Exists(path) && File.Exists(temp)) File.Delete(temp); }
-                return new ImeSettingsSnapshot { Value = ImeSettings.Parse(bytes), Fingerprint = Fingerprint(bytes) };
+                return new ImeSettingsSnapshot { Value = ImeSettings.Parse(bytes), Fingerprint = Fingerprint(bytes), BackupPath = backup };
             }
         }
     }

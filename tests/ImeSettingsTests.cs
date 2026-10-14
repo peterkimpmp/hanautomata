@@ -114,6 +114,64 @@ internal static class ImeSettingsTests
                 ImeSettingsStore.Save(path, new ImeSettings(), loaded.Fingerprint);
                 Check(ImeSettings.Parse(File.ReadAllBytes(path + ".previous")).ExcludedApps[0] == "code.exe", "repair erased recovered original");
             });
+            Test("restore prior options and exclusions from the preserved backup", delegate {
+                string path = Path.Combine(dir, "restore-previous.json");
+                ImeSettingsStore.Save(path, new ImeSettings { InputMode = "Korean", ExcludedApps = new[] { "code.exe" } }, "missing");
+                File.Move(path, path + ".previous");
+                byte[] before = File.ReadAllBytes(path + ".previous");
+                var target = ImeSettingsStore.Load(path);
+                var recovered = ImeSettingsStore.ReadRecovery(path + ".previous");
+                Check(!File.Exists(path), "preview must not restore before Save");
+                var restored = ImeSettingsStore.Save(path, recovered, target.Fingerprint, true);
+                Check(restored.Value.InputMode == "Korean" && restored.Value.ExcludedApps[0] == "code.exe", "restore lost options");
+                Check(File.ReadAllBytes(path + ".previous").SequenceEqual(before), "backup source was changed");
+            });
+            Test("restore staged settings without deleting the selected recovery file", delegate {
+                string path = Path.Combine(dir, "restore-stage.json"), staged = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+                byte[] bytes = new ImeSettings { InputMode = "English", RightAlt = false }.Serialize();
+                File.WriteAllBytes(staged, bytes); File.WriteAllText(path + ".lock", "");
+                var target = ImeSettingsStore.Load(path);
+                var recovered = ImeSettingsStore.ReadRecovery(staged);
+                var restored = ImeSettingsStore.Save(path, recovered, target.Fingerprint, true);
+                Check(restored.Value.InputMode == "English" && !restored.Value.RightAlt, "staged options lost");
+                Check(File.ReadAllBytes(staged).SequenceEqual(bytes), "staged source lost");
+            });
+            Test("recovery preview cannot overwrite a newer live configuration", delegate {
+                string path = Path.Combine(dir, "restore-race.json"), backup = path + ".previous";
+                var target = ImeSettingsStore.Save(path, new ImeSettings(), "missing");
+                File.WriteAllBytes(backup, new ImeSettings { InputMode = "Korean" }.Serialize());
+                var recovered = ImeSettingsStore.ReadRecovery(backup);
+                ImeSettingsStore.Save(path, new ImeSettings { InputMode = "English" }, target.Fingerprint);
+                Reject(delegate { ImeSettingsStore.Save(path, recovered, target.Fingerprint, true); });
+                Check(ImeSettingsStore.Load(path).Value.InputMode == "English", "restore clobbered newer settings");
+                // The original .previous may already have been rotated by the other writer. Keep the preview value
+                // and retry only after the user explicitly accepts a fresh snapshot; the later live value is backed up.
+                byte[] newer = File.ReadAllBytes(path);
+                var confirmed = ImeSettingsStore.Load(path);
+                var retried = ImeSettingsStore.Save(path, recovered, confirmed.Fingerprint, true);
+                Check(retried.Value.InputMode == "Korean", "retained preview could not be restored after explicit retry");
+                Check(retried.BackupPath != null && File.ReadAllBytes(retried.BackupPath).SequenceEqual(newer), "retry lost the other writer's configuration");
+            });
+            Test("restoring over a live file preserves the chosen backup and the live version", delegate {
+                string path = Path.Combine(dir, "restore-existing.json"), backup = path + ".previous";
+                var target = ImeSettingsStore.Save(path, new ImeSettings { InputMode = "English" }, "missing");
+                byte[] live = File.ReadAllBytes(path), source = new ImeSettings { InputMode = "Korean" }.Serialize();
+                File.WriteAllBytes(backup, source);
+                var restored = ImeSettingsStore.Save(path, ImeSettingsStore.ReadRecovery(backup), target.Fingerprint, true);
+                Check(ImeSettingsStore.Load(path).Value.InputMode == "Korean", "recovery not applied");
+                Check(File.ReadAllBytes(backup).SequenceEqual(source), "chosen backup overwritten");
+                string[] preserved = Directory.GetFiles(dir, "restore-existing.json.before-restore.*.json");
+                Check(preserved.Length == 1 && File.ReadAllBytes(preserved[0]).SequenceEqual(live), "pre-restore live settings lost");
+                Check(restored.BackupPath == preserved[0], "backup location not returned for the user");
+            });
+            Test("corrupt and oversized recovery files do not change live settings", delegate {
+                string path = Path.Combine(dir, "restore-invalid.json"), candidate = path + ".previous";
+                ImeSettingsStore.Save(path, new ImeSettings(), "missing"); byte[] before = File.ReadAllBytes(path);
+                File.WriteAllText(candidate, "{broken"); Reject(delegate { ImeSettingsStore.ReadRecovery(candidate); });
+                File.WriteAllBytes(candidate, new byte[65537]); Reject(delegate { ImeSettingsStore.ReadRecovery(candidate); });
+                Reject(delegate { ImeSettingsStore.ReadRecovery(path + ".absent"); });
+                Check(File.ReadAllBytes(path).SequenceEqual(before), "invalid recovery modified live file");
+            });
         }
         finally
         {

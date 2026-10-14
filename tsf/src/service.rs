@@ -788,7 +788,7 @@ impl ITfTextInputProcessorEx_Impl for TextService_Impl {
                 (crate::settings::Settings::default(), true) }
         };
         options.apply_new_session(&mut shell);
-        let excluded = unavailable || options.excludes(&system::process_name());
+        let excluded = unavailable || options.excludes_process(system::process_identity().as_deref());
         let tray = system::tray_running();
         shell.pass_through = tray || excluded;
         {

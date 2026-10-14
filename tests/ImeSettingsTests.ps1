@@ -14,5 +14,6 @@ if ($BuildPreview) {
     $preview = Join-Path $OutputDirectory 'Hanautomata.ImeOptions.Preview.exe'
     & $compiler /nologo /utf8output /target:winexe /main:ImeOptionsPreview "/out:$preview" "/win32manifest:$root/app.manifest" /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Web.Extensions.dll /reference:System.Runtime.Serialization.dll /reference:System.Xml.Linq.dll (Join-Path $root 'src/ImeSettings.cs') (Join-Path $root 'src/ImeOptions.cs') (Join-Path $PSScriptRoot 'ImeOptionsPreview.cs')
     if ($LASTEXITCODE -ne 0) { throw 'IME options preview compilation failed.' }
+    Copy-Item -LiteralPath (Join-Path $root 'app.config') -Destination ($preview + '.config')
     Write-Output $preview
 }
