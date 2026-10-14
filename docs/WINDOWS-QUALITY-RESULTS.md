@@ -257,3 +257,5 @@ AppContainer와 패키지 앱에서 `%LOCALAPPDATA%`가 같은 사용자의 설�
 마지막 소스 검토(`identity-recovery-final-review.json`, exit 0, 약 132초)는 남은 Medium/High 및 데이터 손실·CAS 우회·잘못된 대상 쓰기 결함을 발견하지 않았다. 검토자가 제시한 Low 줄바꿈 문제는 Windows 줄바꿈으로 통일해 수정하고 C# 검사·빌드를 다시 통과했다. 일반 기본값 저장의 `.previous` 1세대 교체 정책, 복원 백업 자동 삭제 부재와 실제 UI 검증 필요성은 유지한다. 세 차례 검토 모두 다른 공급자의 도구 없는 단일 턴 소스 검토이며, 독립 런타임 검증이라고 부르지 않는다.
 
 시험 UI에는 제품과 같은 manifest에 더해 같은 .NET Framework 4.8 runtime config를 복사하도록 빌드 스크립트를 보완했다. 재빌드와 config SHA256 일치를 확인했다(`restore-preview-parity.log` 및 실행 출력). 최종 바이너리 해시는 `identity-recovery-final-hashes.json`이다. 사용자에게 격리된 시험 화면을 직접 열어 달라고 요청했으며 실제 화면 확인은 아직 대기다.
+
+개발 커밋 `0c0196d6fb5c1dfef09127bf85613a15756bb03a`를 `codex/windows-quality`에 푸시했다. [CI 38592303028](https://github.com/peterkimpmp/hanautomata/actions/runs/38592303028)의 `windows-build`와 `cross-platform-tests`가 모두 성공했다. 실행 결과는 `identity-recovery-ci.json`, 소스·바이너리 연결은 `identity-recovery-build-record.json`에 보존했다. CI 성공은 실제 UI·설치·6종 앱 승인을 대체하지 않는다.
