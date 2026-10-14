@@ -45,6 +45,7 @@ struct PendingFinish {
     queued: Cell<bool>,
     done: Cell<bool>,
     failures: Cell<u8>,
+    learning: RefCell<Option<(Arc<Engine>, Vec<hanautomata_core::LearningBatch>)>>,
 }
 
 /// Deactivation may be refused a final write lock. In all cases, queued callbacks must stop editing on return.
@@ -83,14 +84,22 @@ impl PendingFinish {
                     return Err(error);
                 }
                 *self.expected.borrow_mut() = text;
+                self.confirm_learning();
             }
         } else {
             // Host typing/AutoCorrect wins. Never move the caret back to this stale range.
             self.replacement.borrow_mut().take();
+            self.learning.borrow_mut().take();
             system::log("composition finalization: host change preserved");
         }
         if let Ok(context) = unsafe { range.GetContext() } { let _ = edit::set_attribute(ec, &context, &range, 0); }
         Ok(())
+    }
+
+    fn confirm_learning(&self) {
+        if let Some((engine, batches)) = self.learning.borrow_mut().take() {
+            for batch in batches { engine.confirm_learning(&batch); }
+        }
     }
 }
 
@@ -425,6 +434,7 @@ impl TextService_Impl {
             *output.borrow_mut() = Some(out.clone());
             this.trace("key-after-shell");
             this.run_ops(ec, &ctx, out.ops.iter().filter(|op| !matches!(op, Op::ToggleCapsLock)).cloned().collect(), &written_key)?;
+            this.confirm_learning(&out);
             if let Some(Some(data)) = &out.preview {
                 let (tm, composition) = {
                     let st = this.state.borrow();
@@ -592,6 +602,7 @@ impl TextService {
     /// Flush into the original range. Same-context key handling uses its existing synchronous lock; focus callbacks
     /// queue a guarded edit. Failed requests retain ownership and are retried before the next edit or focus callback.
     fn capture_finish(&self, out: Outcome) {
+        let learning = self.state.borrow().shell.as_ref().map(|shell| (shell.engine().clone(), out.learning));
         let captured = {
             let mut st = self.state.borrow_mut();
             st.composition.take().map(|composition| {
@@ -603,7 +614,8 @@ impl TextService {
             let replacement = out.ops.into_iter().find_map(|op| if let Op::Commit(text) = op { Some(text) } else { None });
             let context = unsafe { composition.GetRange().and_then(|range| range.GetContext()).ok() };
             self.state.borrow_mut().pending_finishes.push(Rc::new(PendingFinish { composition, context, expected: RefCell::new(expected),
-                replacement: RefCell::new(replacement), queued: Cell::new(false), done: Cell::new(false), failures: Cell::new(0) }));
+                replacement: RefCell::new(replacement), queued: Cell::new(false), done: Cell::new(false), failures: Cell::new(0),
+                learning: RefCell::new(learning) }));
         }
     }
 
@@ -648,6 +660,13 @@ impl TextService {
 }
 
 impl TextService {
+    /// In-memory confirmation only. A broker client must consume Engine's confirmed deltas later; never save this
+    /// service's whole dictionary over another application's newer state.
+    fn confirm_learning(&self, out: &Outcome) {
+        let engine = self.state.borrow().shell.as_ref().map(|shell| shell.engine().clone());
+        if let Some(engine) = engine { for batch in &out.learning { engine.confirm_learning(batch); } }
+    }
+
     /// Runs inside the edit session: the document operations of one key, in order.
     fn run_ops(&self, ec: u32, context: &ITfContext, ops: Vec<Op>, materialized: &Cell<bool>) -> Result<()> {
         // The final document operation represents this key; earlier operations only finish previous text. Count
@@ -665,8 +684,9 @@ impl TextService {
                             Some(shell) => shell.reconverted(),
                             None => Outcome::default(),
                         };
-                        let rest: Vec<Op> = after.ops;
+                        let rest: Vec<Op> = after.ops.clone();
                         self.run_ops(ec, context, rest, &Cell::new(false))?;
+                        self.confirm_learning(&after);
                     } else {
                         if let Some(shell) = self.state.borrow().shell.as_ref() { shell.engine().forget_reconversion(); }
                         system::log("reconversion skipped: text before the caret changed");
@@ -1058,14 +1078,16 @@ impl ITfCompositionSink_Impl for TextService_Impl {
         let unchanged = range.as_ref().is_some_and(|range| {
             edit::selection_text(ecwrite, range, expected.encode_utf16().count()).ok().flatten().as_deref() == Some(&expected)
         });
-        let text = self.state.borrow_mut().shell.as_mut().and_then(|shell| {
+        let out = self.state.borrow_mut().shell.as_mut().and_then(|shell| {
             if unchanged { shell.composition_terminated() }
             else { shell.reset(system::caps_lock_on()); shell.engine().forget_reconversion(); None }
         });
         self.trace("terminated-after");
-        if let (Some(text), Some(range)) = (text, range) {
+        if let (Some(out), Some(range)) = (out, range) {
+            let Some(text) = out.ops.iter().find_map(|op| if let Op::Commit(text) = op { Some(text) } else { None }) else { return Ok(()) };
             unsafe {
                 range.SetText(ecwrite, 0, &edit::utf16(&text))?;
+                self.confirm_learning(&out);
                 if let Ok(context) = range.GetContext() {
                     let _ = edit::set_attribute(ecwrite, &context, &range, 0);
                 }

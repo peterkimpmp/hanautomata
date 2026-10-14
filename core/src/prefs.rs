@@ -3,10 +3,34 @@
 use crate::unicode::{string, utf16};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 pub const CAPACITY: usize = 1024;
 const UNDO_DEPTH: usize = 20;
+const MAX_PENDING_CHOICES: usize = 8;
+
+/// A normalized explicit choice, not surrounding document text. Debug output never includes its contents.
+#[derive(Clone, PartialEq, Eq)]
+pub struct LearningChoice {
+    pub raw: String, pub keys: String, pub korean: bool, pub context: String,
+}
+impl std::fmt::Debug for LearningChoice {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { f.write_str("LearningChoice { redacted }") }
+}
+
+/// An in-memory, single-use confirmation ticket for a document edit. Clones share consumption, so a repeated
+/// asynchronous callback cannot train twice. A reset/delete/privacy change invalidates outstanding tickets.
+#[derive(Clone)]
+pub struct LearningBatch {
+    owner: Arc<()>, epoch: u64, choices: Arc<Mutex<Option<Vec<LearningChoice>>>>,
+}
+impl std::fmt::Debug for LearningBatch {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { f.write_str("LearningBatch { redacted }") }
+}
+impl PartialEq for LearningBatch {
+    fn eq(&self, other: &Self) -> bool { Arc::ptr_eq(&self.choices, &other.choices) }
+}
+impl Eq for LearningBatch {}
 const EDGES: &[u16] = &[
     b'.' as u16,
     b',' as u16,
@@ -61,12 +85,17 @@ struct Inner {
     /// Off while learning is paused (C-LEX-09) or a secure field has focus (C-CTX-01): choices still apply, nothing new
     /// is recorded.
     recording: bool,
+    deferred: bool,
+    pending: Vec<LearningChoice>,
+    pending_overflow: bool,
+    epoch: u64,
 }
 
 /// Bounded personal dictionary of confirmed Korean/English choices with exponentially discounted evidence and one-step undo
 /// per confirmation (global and contextual entries change together).
 pub struct WordPreferences {
     inner: Mutex<Inner>,
+    confirmation_owner: Arc<()>,
 }
 
 impl Default for WordPreferences {
@@ -130,7 +159,12 @@ impl WordPreferences {
                 version: 0,
                 enabled: true,
                 recording: true,
+                deferred: false,
+                pending: Vec::new(),
+                pending_overflow: false,
+                epoch: 0,
             }),
+            confirmation_owner: Arc::new(()),
         }
     }
 
@@ -154,6 +188,7 @@ impl WordPreferences {
     pub fn set_enabled(&self, value: bool) {
         let mut inner = self.lock();
         if inner.enabled != value {
+            inner.invalidate_confirmations();
             inner.enabled = value;
             inner.version = inner.version.wrapping_add(1);
         }
@@ -164,7 +199,37 @@ impl WordPreferences {
     }
     /// Pausing keeps applying remembered choices but records no new ones (C-LEX-09).
     pub fn set_recording(&self, value: bool) {
-        self.lock().recording = value;
+        let mut inner = self.lock();
+        if inner.recording != value { inner.invalidate_confirmations(); }
+        inner.recording = value;
+    }
+
+    /// TSF opts in; existing platform callers retain immediate learning. This performs no I/O.
+    pub fn defer_learning(&self, enabled: bool) {
+        let mut inner = self.lock();
+        if inner.deferred != enabled { inner.invalidate_confirmations(); }
+        inner.deferred = enabled;
+    }
+
+    /// Transfer choices to the document operation that caused them. Overflow rejects the entire batch.
+    pub fn take_learning(&self) -> Option<LearningBatch> {
+        let mut inner = self.lock();
+        let choices = std::mem::take(&mut inner.pending);
+        if std::mem::take(&mut inner.pending_overflow) || choices.is_empty() { return None; }
+        Some(LearningBatch { owner: self.confirmation_owner.clone(), epoch: inner.epoch,
+            choices: Arc::new(Mutex::new(Some(choices))) })
+    }
+
+    /// Call only after the associated document edit succeeds. Returns the actual confirmed deltas for an off-key
+    /// persistence client; it never writes a file. Stale/private/foreign/replayed tickets produce no deltas.
+    pub fn confirm_learning(&self, batch: &LearningBatch) -> Vec<LearningChoice> {
+        if !Arc::ptr_eq(&batch.owner, &self.confirmation_owner) { return Vec::new(); }
+        let mut inner = self.lock();
+        let choices = batch.choices.lock().unwrap_or_else(|p| p.into_inner()).take();
+        if batch.epoch != inner.epoch || inner.epoch == u64::MAX || !inner.deferred || !inner.enabled || !inner.recording { return Vec::new(); }
+        let choices = choices.unwrap_or_default();
+        for choice in &choices { inner.remember(choice); }
+        choices
     }
 
     /// Global lookup only (no context).
@@ -219,19 +284,21 @@ impl WordPreferences {
             return false;
         }
         let mut inner = self.lock();
-        if !inner.enabled || !inner.recording {
+        if !inner.enabled || !inner.recording || inner.epoch == u64::MAX {
             return false;
         }
-        let mut record = Vec::new();
-        inner.update(&body, &key_body, korean, "", &mut record);
-        if !context.is_empty() {
-            inner.update(&body, &key_body, korean, context, &mut record);
+        let choice = LearningChoice { raw: body, keys: key_body, korean, context: context.into() };
+        if inner.deferred {
+            if inner.pending_overflow { return false; }
+            if inner.pending.len() == MAX_PENDING_CHOICES {
+                inner.pending.clear(); inner.pending_overflow = true; return false;
+            }
+            inner.pending.push(choice);
+            // Session uses this serial to report that a choice was proposed. The lookup data is still unchanged.
+            inner.version = inner.version.wrapping_add(1);
+        } else {
+            inner.remember(&choice);
         }
-        inner.undo.push(record);
-        if inner.undo.len() > UNDO_DEPTH {
-            inner.undo.remove(0);
-        }
-        inner.version = inner.version.wrapping_add(1);
         true
     }
 
@@ -242,6 +309,7 @@ impl WordPreferences {
             return 0;
         };
         let mut inner = self.lock();
+        inner.invalidate_confirmations();
         let before = inner.words.len();
         inner.words.retain(|_, word| !(word.raw == body && word.keys == key_body));
         let removed = before - inner.words.len();
@@ -254,6 +322,7 @@ impl WordPreferences {
 
     pub fn undo_last(&self) -> bool {
         let mut inner = self.lock();
+        inner.invalidate_confirmations();
         let Some(record) = inner.undo.pop() else { return false };
         for change in record.into_iter().rev() {
             match change.previous {
@@ -274,6 +343,7 @@ impl WordPreferences {
 
     pub fn clear(&self) {
         let mut inner = self.lock();
+        inner.invalidate_confirmations();
         inner.words.clear();
         inner.undo.clear();
         inner.version = inner.version.wrapping_add(1);
@@ -291,6 +361,7 @@ impl WordPreferences {
     /// the C# engine). Format 1 entries (no weights) migrate as one explicit observation.
     pub fn restore(&self, entries: &[LearnedWord]) {
         let mut inner = self.lock();
+        inner.invalidate_confirmations();
         inner.words.clear();
         inner.undo.clear();
         inner.sequence = 0;
@@ -324,6 +395,22 @@ impl WordPreferences {
 }
 
 impl Inner {
+    fn invalidate_confirmations(&mut self) {
+        self.pending.clear(); self.pending_overflow = false;
+        // Exhaustion is unreachable in normal use; stop accepting rather than reusing a generation.
+        if let Some(epoch) = self.epoch.checked_add(1) { self.epoch = epoch; }
+        else { self.enabled = false; self.recording = false; }
+    }
+
+    fn remember(&mut self, choice: &LearningChoice) {
+        let mut record = Vec::new();
+        self.update(&choice.raw, &choice.keys, choice.korean, "", &mut record);
+        if !choice.context.is_empty() { self.update(&choice.raw, &choice.keys, choice.korean, &choice.context, &mut record); }
+        self.undo.push(record);
+        if self.undo.len() > UNDO_DEPTH { self.undo.remove(0); }
+        self.version = self.version.wrapping_add(1);
+    }
+
     fn update(&mut self, raw: &str, keys: &str, korean: bool, context: &str, changes: &mut Vec<Change>) {
         let key = format!("{raw}\t{keys}\t{context}");
         let previous = self.words.get(&key).cloned();

@@ -31,7 +31,7 @@ pub use exceptions::{parse_list, Exceptions};
 pub use focus::can_capture;
 pub use hangul::Layout;
 pub use hanja::hanja;
-pub use prefs::{context_key, LearnedWord, Lookup, WordPreferences, CAPACITY};
+pub use prefs::{context_key, LearnedWord, LearningBatch, LearningChoice, Lookup, WordPreferences, CAPACITY};
 pub use scorer::{
     preset_thresholds, LanguageScorer, LanguageVerdict, CONTINUITY_PRIOR, DEFAULT_ENGLISH_THRESHOLD, DEFAULT_KOREAN_THRESHOLD,
     LEXICON_BONUS,

@@ -554,6 +554,106 @@ fn reconversion_round_trip_preserves_the_prefix_without_language_property_suppor
 }
 
 #[test]
+fn refused_explicit_choice_commit_must_not_train_the_dictionary() {
+    let (service, host, context) = fixture();
+    seed(&service, &host, &context);
+    assert!(paired_key(&service, &context, crate::shell::vk::F2 as u8, edit::FieldAccess::Ordinary).as_bool());
+    let engine = service.state.borrow().shell.as_ref().unwrap().engine().clone();
+    assert_eq!(engine.learned_count(), 0);
+    host.fail_set.set(true);
+    assert!(!paired_key(&service, &context, b' ', edit::FieldAccess::Ordinary).as_bool());
+    assert_eq!(engine.learned_count(), 0, "a refused document commit is not a confirmed learning choice");
+}
+
+fn explicit_choice_fixture() -> (ComObject<TextService>, Rc<Host>, ITfContext, Arc<Engine>) {
+    let (service, host, context) = fixture();
+    seed(&service, &host, &context);
+    assert!(paired_key(&service, &context, crate::shell::vk::F2 as u8, edit::FieldAccess::Ordinary).as_bool());
+    let engine = service.state.borrow().shell.as_ref().unwrap().engine().clone();
+    assert_eq!(engine.learned_count(), 0);
+    (service, host, context, engine)
+}
+
+#[test]
+fn successful_explicit_commit_and_f2_reconversion_confirm_one_choice_each() {
+    let (service, host, context, engine) = explicit_choice_fixture();
+    assert!(paired_key(&service, &context, b' ', edit::FieldAccess::Ordinary).as_bool());
+    assert_eq!(&*host.text.borrow(), "dkssud ");
+    assert_eq!(engine.learned_count(), 1);
+    assert!(engine.can_undo_learning());
+    host.caret_selection.set(true);
+    assert!(paired_key(&service, &context, crate::shell::vk::F2 as u8, edit::FieldAccess::Ordinary).as_bool());
+    assert_eq!(&*host.text.borrow(), "안녕 ");
+    assert!(engine.undo_learning());
+    assert_eq!(engine.learned_count(), 1, "reconversion was a second confirmed choice");
+    assert!(engine.undo_learning());
+    assert_eq!(engine.learned_count(), 0);
+}
+
+#[test]
+fn delayed_finalization_trains_only_after_the_original_range_accepts_the_choice() {
+    let (service, host, _, engine) = explicit_choice_fixture();
+    host.defer.set(true);
+    unsafe { service.to_interface::<ITfKeyEventSink>().OnSetFocus(false).unwrap(); }
+    assert_eq!(engine.learned_count(), 0);
+    let pending = std::mem::take(&mut *host.pending.borrow_mut());
+    assert_eq!(pending.len(), 1);
+    unsafe { pending[0].DoEditSession(1).unwrap(); pending[0].DoEditSession(1).unwrap(); }
+    assert_eq!(engine.learned_count(), 1);
+    assert!(engine.undo_learning());
+    assert_eq!(engine.learned_count(), 0, "a replayed callback must not add a second observation");
+}
+
+#[test]
+fn host_changes_or_learning_pause_cancel_delayed_learning() {
+    for host_changed in [true, false] {
+        let (service, host, _, engine) = explicit_choice_fixture();
+        host.defer.set(true);
+        unsafe { service.to_interface::<ITfKeyEventSink>().OnSetFocus(false).unwrap(); }
+        if host_changed { host.text.borrow_mut().push_str(" host edit"); }
+        else { engine.set_learning_paused(true); engine.set_learning_paused(false); }
+        for pending in std::mem::take(&mut *host.pending.borrow_mut()) { unsafe { pending.DoEditSession(1).unwrap(); } }
+        assert_eq!(engine.learned_count(), 0);
+    }
+}
+
+#[test]
+fn terminated_composition_confirms_only_a_successful_final_write() {
+    for rejected in [false, true] {
+        let (service, host, _, engine) = explicit_choice_fixture();
+        let composition = service.state.borrow().composition.clone().unwrap();
+        host.fail_set.set(rejected);
+        let result = unsafe { service.to_interface::<ITfCompositionSink>().OnCompositionTerminated(1, &composition) };
+        assert_eq!(result.is_err(), rejected, "a failed host write remains an API failure");
+        assert_eq!(engine.learned_count(), if rejected { 0 } else { 1 });
+    }
+}
+
+#[test]
+fn post_write_failure_preserves_text_but_does_not_confirm_incomplete_learning() {
+    for failure in 0..2 {
+        let (service, host, context, engine) = explicit_choice_fixture();
+        if failure == 0 { host.fail_caret.set(true); } else { host.fail_end.set(true); }
+        assert!(paired_key(&service, &context, b' ', edit::FieldAccess::Ordinary).as_bool());
+        assert_eq!(&*host.text.borrow(), "dkssud ", "the accepted text is never replayed");
+        assert_eq!(engine.learned_count(), 0, "a partial operation conservatively omits this learning choice");
+    }
+}
+
+#[test]
+fn failed_finalization_retry_does_not_train_before_a_write_or_train_twice_after_it() {
+    let (service, host, _, engine) = explicit_choice_fixture();
+    host.fail_set.set(true);
+    let sink = service.to_interface::<ITfKeyEventSink>();
+    unsafe { sink.OnSetFocus(false).unwrap(); }
+    assert_eq!(engine.learned_count(), 0);
+    unsafe { sink.OnSetFocus(false).unwrap(); sink.OnSetFocus(false).unwrap(); }
+    assert_eq!(engine.learned_count(), 1);
+    assert!(engine.undo_learning());
+    assert_eq!(engine.learned_count(), 0);
+}
+
+#[test]
 fn reconversion_never_overwrites_host_changed_text_at_the_caret() {
     let (service, host, context) = fixture();
     seed(&service, &host, &context);

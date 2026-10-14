@@ -187,6 +187,13 @@ fn single(text: &str) -> Option<char> {
 }
 
 impl Engine {
+    // Rust-only TSF interface: the Swift/UniFFI ABI and its existing persistence lifecycle are unchanged.
+    pub fn defer_learning(&self) { self.preferences.defer_learning(true); }
+    pub fn take_learning(&self) -> Option<hanautomata_core::LearningBatch> { self.preferences.take_learning() }
+    pub fn confirm_learning(&self, batch: &hanautomata_core::LearningBatch) -> Vec<hanautomata_core::LearningChoice> {
+        self.preferences.confirm_learning(batch)
+    }
+
     fn run(&self, action: impl FnOnce(&mut Session) -> Response) -> KeyResult {
         let mut session = guard(&self.session);
         // The literal word before this key: on a fault it is committed as typed and the key itself passes, so the

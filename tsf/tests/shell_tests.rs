@@ -447,7 +447,7 @@ fn focus_loss_and_terminated_compositions_commit_the_word() {
     assert_eq!(d.shown(), "한글");
     assert!(d.composition.is_empty());
     d.type_str(&mut s, "dkssud");
-    assert_eq!(s.composition_terminated().as_deref(), Some("안녕"));
+    assert_eq!(s.composition_terminated().unwrap().ops, vec![Op::Commit("안녕".into())]);
     assert!(!s.is_composing());
 }
 

@@ -140,8 +140,9 @@ pub struct Outcome {
     /// Consume the key; otherwise the application receives it after the operations.
     pub eaten: bool,
     pub ops: Vec<Op>,
-    /// The personal dictionary changed.
+    /// An explicit choice was proposed; learning tickets below still require a successful document edit.
     pub learned: bool,
+    pub learning: Vec<hanautomata_core::LearningBatch>,
     /// The key already changed a control state (pause/mode/gesture), independently of document writes.
     pub control_handled: bool,
     /// None leaves the preview unchanged (e.g. a modifier); Some(None) clears it.
@@ -309,6 +310,7 @@ pub struct Shell {
 
 impl Shell {
     pub fn new(engine: Arc<Engine>) -> Shell {
+        engine.defer_learning();
         Shell {
             engine,
             settings: Settings::default(),
@@ -351,6 +353,7 @@ impl Shell {
         self.caps_down_at = None;
         self.ralt_down = false;
         self.engine.cancel();
+        self.engine.take_learning();
     }
 
     fn inactive(&self) -> bool {
@@ -487,6 +490,7 @@ impl Shell {
                         eaten: true,
                         ops: vec![Op::FlipSelection],
                         learned: false,
+                        learning: Vec::new(),
                         control_handled: true,
                         preview: Some(None),
                     };
@@ -500,6 +504,7 @@ impl Shell {
                             new: swap.new,
                         }],
                         learned: false,
+                        learning: Vec::new(),
                         control_handled: false,
                         preview: Some(None),
                     },
@@ -613,13 +618,15 @@ impl Shell {
     }
 
     /// The application or TSF ended the composition (a click, a menu): the text the composition should hold now.
-    pub fn composition_terminated(&mut self) -> Option<String> {
+    pub fn composition_terminated(&mut self) -> Option<Outcome> {
         if !self.is_composing() {
             return None;
         }
         self.shown = false;
         let r = self.engine.commit_pending();
-        (!r.commit.is_empty()).then_some(r.commit)
+        let mut out = Outcome::pass();
+        self.apply(r, &mut out);
+        (!out.ops.is_empty()).then_some(out)
     }
 
     pub fn set_mode(&mut self, mode: InputMode) -> Outcome {
@@ -671,5 +678,8 @@ impl Shell {
             self.shown = false;
         }
         out.learned |= r.learned;
+        if let Some(batch) = self.engine.take_learning() {
+            if !r.failed { out.learning.push(batch); }
+        }
     }
 }
