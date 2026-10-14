@@ -595,3 +595,27 @@ flowchart LR
 후속 [첫 CI 실행](https://github.com/peterkimpmp/hanautomata/actions/runs/38640195849)은 Windows 96 DPI에서 안내문 높이 검사 2건이 실패했다. 같은 소스를 DPI 비인식 hidden 시험 프로세스로 실행해 재현했다(`options-content-dpi96-before.log`). 시험이 자식 폭을 220px로 줄이면 부모의 스크롤바 배치가 모든 자식 폭을 562px로 되돌렸다. 실제 높이 30px를 요청 폭 220px의 기대 높이 60px와 비교한 **시험 조건 오류**이며, 이 결과만으로 제품 안내문 잘림을 주장하지 않는다.
 
 전체 탭 배치 검사 뒤, 개별 글자 높이 시험 동안만 부모 배치를 보류하고 실제 자식 폭이 요청 폭과 같은지도 함께 확인하도록 고쳤다. 제품 코드는 추가 변경하지 않았다. 시험 스크립트는 기존 DPI 인식 실행과 96 DPI 비인식 실행을 모두 수행한다. `options-content-ci-green.log`에서 설정 저장 28개, **192·96 DPI의 배치 각 40개 통과**를 확인했다. 같은 40개를 서로 다른 배율에서 반복한 결과이므로 80개의 고유 검사로 합산하지 않는다. 96 DPI 시험 프로세스의 수치 검사는 100% 화면 육안 검수나 모니터 간 이동 승인을 대신하지 않는다.
+
+## 최신 후보의 시스템 적용과 일반 사용자 준비 — 2026-10-15
+
+`5971010`의 최종 [CI 두 작업](https://github.com/peterkimpmp/hanautomata/actions/runs/38640629068)이 통과했다. 개발 ZIP을 `build/tsf/wq-5971010-20261015`에 동결했다. ZIP SHA256은 `F198A4D06223860E22841328EF2BB69074659CF1EA14A7B0071D7FBC8D2ECA1C`이며 여섯 payload를 개별 검증했다. 적용 래퍼는 updater·payload 도우미·바이너리 해시 목록을 고정 해시로 확인한다. PowerShell 7/5.1의 읽기 전용 사전 점검과, 도우미 없음·updater 변경·payload 도우미 변경·manifest 변경의 거부 검사 4개가 통과했다. 이 검사는 실제 등록 실패·롤백 성공을 대신하지 않는다.
+
+사용자가 화면의 관리자 PowerShell에서 동결 묶음을 적용했다. 설치 영수증의 판정은 `updated-user-preparation-required`이며 설치된 DLL·setup·설정 편집기·실행 설정 여섯 파일은 동결 해시와 일치한다. 이전 `d2-word-correction-20261013`의 경로와 복구 도구는 영수증에 보존됐다. 자동 앱 종료·재부팅·기본 입력기 변경은 수행하지 않았다.
+
+원래 사용자의 비관리자 세션임을 확인하고 새 revision의 `enable-user`를 실행했다. 실행 전 `tsf-settings.json`은 없었고 준비 후 기본 설정 파일이 생성됐다. 기존 파일 보존을 별도로 시험한 저장소 회귀와, 이번 PC의 새 파일 생성 결과를 구분한다. 사용자 프로필 활성화·언어 목록 포함, x64/x86의 `selftest-registered`가 성공했다. 등록 API 성공을 실제 앱 조합·확정·재변환 승인으로 계산하지 않는다.
+
+| 근거 (`build/windows-quality/`) | 확인 범위 |
+|---|---|
+| `wq-5971010-preflight-ps7.json`, `wq-5971010-preflight-ps51.json` | 적용 전 새 경로·이전 DLL·복구 도구·해시 검사 |
+| `wq-5971010-wrapper-guards.json` | 변형된 별도 시험 복사본 4개 거부. 시스템 적용 요청 없음 |
+| `wq-5971010-installed-before-user.json` | 사용자 적용 영수증, 설치 파일 6개, 일반 사용자·설정 생성 전 상태 |
+| `wq-5971010-enable-user.log`, `wq-5971010-user-prepared.json` | 실제 사용자 준비·활성화, 생성된 설정 해시 |
+| `wq-5971010-selftest-registered.log`, `wq-5971010-x86-selftest-registered.log`, `wq-5971010-status.log` | 두 비트수 COM 생성과 사용자 등록 상태 |
+| `wq-5971010-word-before-restart.json` | 기존 Word 5개가 모두 이전 revision DLL을 적재한 상태 |
+| `wq-5971010-word-after-restart.json` | 새 Word PID 28784에 최신 DLL 적재, 트레이 프로세스 없음. 이전 숨은 PID 9732는 남아 있음 |
+| `wq-5971010-word-window.json`, `wq-5971010-word-before-physical.jpg` | 시험 창·PID 대응과 빈 문서·커서 화면. 물리 키 입력 전 상태이며 결과 화면이 아님 |
+| `wq-5971010-live-checkpoint.json` | 설치·일반 사용자 준비·시험 창의 증거 파일과 SHA256 연결. 물리 키 결과는 응답 대기 |
+
+사용자는 문서 저장 후 Word 종료·재실행, 트레이 종료, 한오토마타 선택을 완료했다고 응답했다. 새 `문서1 - Word` 창의 핸들 1838498을 PID 28784와 대조했고 최신 DLL 적재를 확인했다. 이전 PID 9732는 창 핸들 0이며 시험 대상에 포함하지 않는다. 새 Word 창을 앞으로 가져온 뒤 빈 문서와 입력 커서를 관측했다. 물리 키 `dkssud`→Space→F2 결과를 사용자에게 요청했고 응답을 기다린다. 자동 고침 ON은 사용자 준비 응답의 범위이며 옵션 대화상자를 직접 검수한 근거는 아직 없다. **앱 승인 0/6**을 유지한다.
+
+같은 턴의 설정 저장·재열기 시험은 Sky의 `accessibility window-opened handler did not become ready` 오류로 새 검수 창을 열지 못했다. 재조회에서도 이전 시험 창만 확인돼 다른 실행면으로 열거나 이전 파일을 최신 검증에 사용하지 않았다. 앞선 정상 표시 승인은 유지하며 저장·재열기는 별도 미검증이다. 재사용 범위는 `local-reusable`다.
