@@ -782,7 +782,8 @@ impl ITfTextInputProcessorEx_Impl for TextService_Impl {
         shell.reset(system::caps_lock_on());
         // Read once at activation. Never perform configuration I/O on the key callback path. Invalid/unreadable
         // configuration passes keys rather than silently turning on options the user might have disabled.
-        let (options, unavailable) = match crate::settings::Settings::load(&system::data_dir().join("tsf-settings.json")) {
+        let (options, unavailable) = match system::settings_dir()
+            .and_then(|directory| crate::settings::Settings::load(&directory.join("tsf-settings.json"))) {
             Ok(options) => (options, false),
             Err(_) => { system::log("settings unavailable; passing keys until configuration is repaired");
                 (crate::settings::Settings::default(), true) }

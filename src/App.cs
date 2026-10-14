@@ -405,7 +405,7 @@ namespace Hanautomata
                 return 1;
             }
             bool created;
-            using (var mutex = new Mutex(true, "Local\\Hanautomata.Instance." + sid, out created))
+            using (var mutex = ImeSharedAccess.CreateTrayMutex("Local\\Hanautomata.Instance." + sid, out created))
             {
                 if (!created) { StartupLog.Write("already-running", mode, null); if (!background) MessageBox.Show("Hanautomata가 이미 실행 중입니다. 작업 표시줄의 한 아이콘을 확인하세요.", "Hanautomata"); return 0; }
                 using (var stop = new EventWaitHandle(false, EventResetMode.ManualReset, stopName))

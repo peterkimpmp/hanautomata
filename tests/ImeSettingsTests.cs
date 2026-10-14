@@ -3,6 +3,8 @@ using System.IO;
 using System.Linq;
 using System.Diagnostics;
 using System.Collections.Generic;
+using System.Security.AccessControl;
+using System.Security.Principal;
 using Hanautomata;
 
 internal static class ImeSettingsTests
@@ -15,8 +17,17 @@ internal static class ImeSettingsTests
         catch (Exception e) { failed++; Console.WriteLine("FAIL " + name + ": " + e.Message); }
     }
     static void Reject(Action run) { bool rejected = false; try { run(); } catch (Exception) { rejected = true; } Check(rejected, "invalid input accepted"); }
+    static bool HasPackageRead(string path)
+    {
+        var rules = File.GetAccessControl(path, AccessControlSections.Access).GetAccessRules(true, true, typeof(SecurityIdentifier)).Cast<FileSystemAccessRule>();
+        var app = rules.Where(r => r.IdentityReference.Value == "S-1-15-2-1" && r.AccessControlType == AccessControlType.Allow).ToArray();
+        FileSystemRights rights = app.Aggregate((FileSystemRights)0, (all, rule) => all | rule.FileSystemRights);
+        return (rights & (FileSystemRights.Read | FileSystemRights.Synchronize)) == (FileSystemRights.Read | FileSystemRights.Synchronize)
+            && (rights & (FileSystemRights.Write | FileSystemRights.Delete | FileSystemRights.ChangePermissions | FileSystemRights.TakeOwnership)) == 0;
+    }
     static int Main(string[] args)
     {
+        if (args.Length == 4 && args[0] == "--shared-resources") return SharedResources(args[1], args[2], args[3]);
         if (args.Length == 4 && args[0] == "--writer")
         {
             try { ImeSettingsStore.Save(args[1], new ImeSettings { InputMode = args[3] }, args[2]); return 0; }
@@ -27,6 +38,110 @@ internal static class ImeSettingsTests
         Directory.CreateDirectory(dir);
         try
         {
+            Test("new settings and atomic replacement keep package read without write", delegate {
+                string path = Path.Combine(dir, "shared.json");
+                var first = ImeSettingsStore.Save(path, new ImeSettings(), "missing");
+                Check(HasPackageRead(path), "new settings are not read-only for packages");
+                var second = ImeSettingsStore.Save(path, new ImeSettings { InputMode = "Korean" }, first.Fingerprint);
+                Check(HasPackageRead(path) && second.Warning == null, "replacement lost package access");
+            });
+            Test("repair publishes package-readable settings without opening the corrupt backup", delegate {
+                string path = Path.Combine(dir, "shared-repair.json");
+                File.WriteAllText(path, "{private broken contents");
+                string originalAcl = File.GetAccessControl(path).GetSecurityDescriptorSddlForm(AccessControlSections.Access);
+                var target = ImeSettingsStore.Load(path);
+                ImeSettingsStore.Save(path, new ImeSettings(), target.Fingerprint);
+                Check(HasPackageRead(path), "repair did not publish readable settings");
+                Check(File.GetAccessControl(path + ".previous").GetSecurityDescriptorSddlForm(AccessControlSections.Access) == originalAcl, "repair broadened backup permissions");
+            });
+            Test("post-publication access failure returns saved fingerprint and permits retry", delegate {
+                string path = Path.Combine(dir, "shared-warning.json"); int calls = 0;
+                var saved = ImeSettingsStore.Save(path, new ImeSettings { InputMode = "Korean" }, "missing", false, delegate(string file) {
+                    calls++; if (calls == 2) throw new UnauthorizedAccessException("injected publication denial");
+                    ImeSharedAccess.GrantSettingsRead(file);
+                });
+                Check(calls == 2 && saved.Warning != null && saved.Value.InputMode == "Korean", "saved-but-unpublished status lost");
+                Check(ImeSettingsStore.Load(path).Fingerprint == saved.Fingerprint, "reported an obsolete fingerprint after save");
+                var retried = ImeSettingsStore.Save(path, saved.Value, saved.Fingerprint);
+                Check(retried.Warning == null && HasPackageRead(path), "access retry failed");
+            });
+            Test("access preparation failure leaves the previous bytes untouched", delegate {
+                string path = Path.Combine(dir, "shared-preparation.json");
+                var first = ImeSettingsStore.Save(path, new ImeSettings(), "missing"); byte[] before = File.ReadAllBytes(path);
+                Reject(delegate { ImeSettingsStore.Save(path, new ImeSettings { InputMode = "Korean" }, first.Fingerprint, false,
+                    delegate(string file) { throw new UnauthorizedAccessException("injected staging denial"); }); });
+                Check(File.ReadAllBytes(path).SequenceEqual(before), "failed preparation committed changes");
+            });
+            Test("access warning retry preserves normal and restore backups", delegate {
+                foreach (bool restoring in new[] { false, true })
+                {
+                    string path = Path.Combine(dir, "retry-backup-" + restoring + ".json");
+                    var first = ImeSettingsStore.Save(path, new ImeSettings { InputMode = "English" }, "missing");
+                    byte[] original = File.ReadAllBytes(path);
+                    File.WriteAllBytes(path + ".previous", new ImeSettings { InputMode = "Auto" }.Serialize());
+                    int calls = 0;
+                    var saved = ImeSettingsStore.Save(path, new ImeSettings { InputMode = "Korean" }, first.Fingerprint, restoring,
+                        delegate(string file) { if (++calls == 2) throw new UnauthorizedAccessException("injected publication denial"); ImeSharedAccess.GrantSettingsRead(file); });
+                    Check(saved.Warning != null && File.ReadAllBytes(saved.BackupPath).SequenceEqual(original), "setup did not preserve original");
+                    byte[] previous = File.ReadAllBytes(path + ".previous"), live = File.ReadAllBytes(path);
+                    int retryCalls = 0;
+                    var retried = ImeSettingsStore.Save(path, saved.Value, saved.Fingerprint, false,
+                        delegate(string file) { retryCalls++; Check(file == path, "retry created a replacement file"); ImeSharedAccess.GrantSettingsRead(file); });
+                    Check(retried.Warning == null && retryCalls == 1, "retry did not repair access only");
+                    Check(File.ReadAllBytes(path + ".previous").SequenceEqual(previous), "retry rotated the recovery source");
+                    Check(File.ReadAllBytes(saved.BackupPath).SequenceEqual(original) && File.ReadAllBytes(path).SequenceEqual(live), "retry changed saved or backup bytes");
+                    Reject(delegate { ImeSettingsStore.Save(path, saved.Value, first.Fingerprint); });
+                }
+            });
+            Test("failed first save cleans only its new marker and stage under the lock", delegate {
+                string path = Path.Combine(dir, "first-failed.json"); bool competingRejected = false;
+                Reject(delegate { ImeSettingsStore.Save(path, new ImeSettings(), "missing", false, delegate(string file) {
+                    try { using (var competing = new FileStream(path + ".lock", FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite | FileShare.Delete)) { } }
+                    catch (IOException) { competingRejected = true; }
+                    throw new UnauthorizedAccessException("injected first preparation denial");
+                }); });
+                Check(competingRejected, "first writer did not exclude a competing writer");
+                var loaded = ImeSettingsStore.Load(path);
+                Check(loaded.Error == null && loaded.Fingerprint == "missing" && loaded.Value != null, "failed first save became a repair state");
+                Check(Directory.GetFiles(dir, "first-failed.json*").Length == 0, "failed first save left owned artifacts");
+                var saved = ImeSettingsStore.Save(path, new ImeSettings { InputMode = "Korean" }, "missing");
+                File.Delete(path);
+                Check(ImeSettingsStore.Load(path).Error != null, "successful first save lost its history marker");
+            });
+            Test("failed first repair preserves an existing history marker", delegate {
+                string path = Path.Combine(dir, "first-repair-failed.json");
+                File.WriteAllText(path + ".lock", "existing history");
+                Reject(delegate { ImeSettingsStore.Save(path, new ImeSettings(), "missing", false,
+                    delegate(string file) { throw new UnauthorizedAccessException("injected repair preparation denial"); }); });
+                Check(File.ReadAllText(path + ".lock") == "existing history" && ImeSettingsStore.Load(path).Error != null, "failed repair erased history");
+                Check(Directory.GetFiles(dir, "first-repair-failed.json*.tmp").Length == 0, "failed repair left its new stage");
+            });
+            Test("a busy stage cleanup cannot leave a false first-save history marker", delegate {
+                string path = Path.Combine(dir, "busy-first-stage.json"); FileStream held = null;
+                try
+                {
+                    Reject(delegate { ImeSettingsStore.Save(path, new ImeSettings(), "missing", false, delegate(string file) {
+                        held = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                        throw new UnauthorizedAccessException("injected staging denial with temporary scanner handle");
+                    }); });
+                    Check(held != null && ImeSettingsStore.Load(path).Error == null, "stage cleanup failure left a false history marker");
+                }
+                finally { if (held != null) held.Dispose(); }
+            });
+            Test("tray marker gives packages synchronize without modify ownership", delegate {
+                bool created;
+                using (var mutex = ImeSharedAccess.CreateTrayMutex("Local\\Hanautomata.QualityProbe.settings-" + Guid.NewGuid().ToString("N"), out created))
+                {
+                    try {
+                        Check(created, "unique test mutex already existed");
+                        var rules = mutex.GetAccessControl().GetAccessRules(true, true, typeof(SecurityIdentifier)).Cast<MutexAccessRule>();
+                        var rights = rules.Where(r => r.IdentityReference.Value == "S-1-15-2-1" && r.AccessControlType == AccessControlType.Allow)
+                            .Aggregate((MutexRights)0, (all, rule) => all | rule.MutexRights);
+                        Check(rights == MutexRights.Synchronize, "packages do not have exactly synchronize access");
+                    }
+                    finally { if (created) mutex.ReleaseMutex(); }
+                }
+            });
             Test("partial defaults and missing file are read only", delegate {
                 Check(ImeSettings.Parse(ImeSettings.Utf8.GetBytes("{}")).ShiftSpace, "default lost");
                 var path = Path.Combine(dir, "missing.json");
@@ -69,6 +184,17 @@ internal static class ImeSettingsTests
                 ImeSettingsStore.Save(path, new ImeSettings(), loaded.Fingerprint);
                 Check(File.ReadAllBytes(path + ".previous").SequenceEqual(broken), "corrupt original lost");
             });
+            Test("repairing a corrupt live file preserves the last good backup", delegate {
+                string path = Path.Combine(dir, "repair-with-history.json");
+                var first = ImeSettingsStore.Save(path, new ImeSettings { InputMode = "Korean", ExcludedApps = new[] { "code.exe" } }, "missing");
+                byte[] good = File.ReadAllBytes(path);
+                ImeSettingsStore.Save(path, new ImeSettings { InputMode = "English" }, first.Fingerprint);
+                byte[] broken = ImeSettings.Utf8.GetBytes("{broken live bytes"); File.WriteAllBytes(path, broken);
+                var target = ImeSettingsStore.Load(path);
+                var repaired = ImeSettingsStore.Save(path, new ImeSettings(), target.Fingerprint);
+                Check(File.ReadAllBytes(path + ".previous").SequenceEqual(good), "repair destroyed the last good backup");
+                Check(repaired.BackupPath != null && repaired.BackupPath != path + ".previous" && File.ReadAllBytes(repaired.BackupPath).SequenceEqual(broken), "repair lost the corrupt original");
+            });
             Test("an unavailable lock does not replace settings", delegate {
                 string path = Path.Combine(dir, "locked.json");
                 var first = ImeSettingsStore.Save(path, new ImeSettings(), "missing");
@@ -83,7 +209,7 @@ internal static class ImeSettingsTests
                 using (var hold = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
                     Reject(delegate { ImeSettingsStore.Save(path, new ImeSettings { InputMode = "English" }, first.Fingerprint); });
                 Check(File.ReadAllBytes(path).SequenceEqual(bytes), "failed replacement damaged original");
-                Check(Directory.GetFiles(dir, "*.tmp").Length == 0, "temporary file not cleaned");
+                Check(Directory.GetFiles(dir, "no-delete-sharing.json*.tmp").Length == 0, "temporary file not cleaned");
             });
             Test("malformed settings never crash loading or create defaults", delegate {
                 string path = Path.Combine(dir, "invalid-types.json");
@@ -181,5 +307,51 @@ internal static class ImeSettingsTests
         }
         Console.WriteLine("Settings tests: " + passed + " passed, " + failed + " failed");
         return failed == 0 ? 0 : 1;
+    }
+    // Invoked only by the native probe with its create_new synthetic file and unique mutex. Never launches a hook/UI.
+    static int SharedResources(string path, string mutexName, string ready)
+    {
+        var cleanup = new List<string>(); bool created = false; int result = 0;
+        try
+        {
+            string name = Path.GetFileName(path);
+            string directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Hanautomata");
+            if (!name.StartsWith("quality-probe-", StringComparison.Ordinal) || !name.EndsWith(".json", StringComparison.Ordinal)
+                || name.Contains("..") || name.Any(c => !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '-' || c == '.'))
+                || !Path.GetFullPath(path).Equals(Path.Combine(directory, name), StringComparison.OrdinalIgnoreCase)
+                || !mutexName.StartsWith("Local\\Hanautomata.QualityProbe.", StringComparison.Ordinal)) throw new IOException("unexpected synthetic resource path");
+            if (!File.Exists(path) || File.Exists(path + ".lock") || File.Exists(path + ".previous") || File.Exists(ready))
+                throw new IOException("unexpected existing probe artifacts");
+            using (var mutex = ImeSharedAccess.CreateTrayMutex(mutexName, out created))
+            {
+                if (!created) throw new IOException("probe mutex was not new");
+                try
+                {
+                    var before = ImeSettingsStore.Load(path);
+                    if (before.Value == null || before.Value.InputMode != "Korean" || !before.Value.ExcludedApps.SequenceEqual(new[] { "probe-only.exe" }))
+                        throw new IOException("unexpected baseline settings");
+                    cleanup.Add(path + ".lock"); cleanup.Add(path + ".previous");
+                    var first = ImeSettingsStore.Save(path, before.Value, before.Fingerprint);
+                    if (first.Warning != null || !HasPackageRead(path)) throw new IOException(first.Warning ?? "save access check failed");
+                    var second = ImeSettingsStore.Save(path, new ImeSettings { InputMode = "English" }, first.Fingerprint);
+                    if (second.Warning != null || !HasPackageRead(path)) throw new IOException(second.Warning ?? "replacement access check failed");
+                    var restored = ImeSettingsStore.Save(path, ImeSettingsStore.ReadRecovery(path + ".previous"), second.Fingerprint, true);
+                    if (restored.BackupPath != null) cleanup.Add(restored.BackupPath);
+                    if (restored.Warning != null || !HasPackageRead(path)) throw new IOException(restored.Warning ?? "restore access check failed");
+                    using (var signal = new FileStream(ready, FileMode.CreateNew, FileAccess.Write, FileShare.Read))
+                    { byte[] bytes = System.Text.Encoding.ASCII.GetBytes("ready"); signal.Write(bytes, 0, bytes.Length); signal.Flush(true); }
+                    Console.In.ReadLine(); // EOF when the owning native parent closes stdin also releases the mutex.
+                }
+                finally { if (created) mutex.ReleaseMutex(); }
+            }
+        }
+        catch (Exception e) { Console.Error.WriteLine(e.Message); result = 2; }
+        finally
+        {
+            foreach (string artifact in cleanup)
+                try { if (File.Exists(artifact)) File.Delete(artifact); }
+                catch (Exception e) { Console.Error.WriteLine("owned probe cleanup failed: " + e.Message); result = 2; }
+        }
+        return result;
     }
 }

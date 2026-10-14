@@ -18,6 +18,8 @@ mod probe {
     use hanautomata_tsf::{settings::Settings, system};
     use std::os::windows::{fs::OpenOptionsExt, io::AsRawHandle};
     use serde_json::{json, Value};
+    use sha2::{Digest, Sha256};
+    use std::{process::{Child, Command, Stdio}, os::windows::process::CommandExt, time::{Duration, Instant}};
     use windows::{core::{HSTRING, PWSTR}, Win32::{
         Foundation::{CloseHandle, LocalFree, GetLastError, SetLastError, ERROR_ALREADY_EXISTS, ERROR_SUCCESS, HANDLE, HLOCAL, WAIT_OBJECT_0},
         Security::{Authorization::{ConvertSidToStringSidW, BuildTrusteeWithSidW, GetSecurityInfo, SetSecurityInfo,
@@ -139,9 +141,10 @@ mod probe {
         // Open only: no create/truncate/write. A successful shared-read trial must still deny this in the child.
         let write_open = fs::OpenOptions::new().write(true).open(&path);
         json!({"path": path, "open_error": raw.as_ref().err().map(|e| e.raw_os_error()),
+            "sha256": raw.as_ref().ok().map(|bytes| format!("{:x}", Sha256::digest(bytes))),
             "write_open_succeeded": write_open.is_ok(), "write_open_error": write_open.err().and_then(|e| e.raw_os_error()),
             "bytes_match": raw.as_ref().map(|b| b.as_slice() == FIXTURE).unwrap_or(false),
-            "settings_match": loaded.as_ref().map(|s| s.input_mode == "Korean" && s.excluded_apps == ["probe-only.exe"]).unwrap_or(false),
+            "settings_match": loaded.as_ref().map(|s| *s == Settings::parse(FIXTURE).expect("constant fixture is valid")).unwrap_or(false),
             "loader_error": loaded.err()})
     }
     fn mutex_probe(name: &str, rights: SYNCHRONIZATION_ACCESS_RIGHTS) -> Value {
@@ -164,11 +167,17 @@ mod probe {
             "elevated": token_flag(TokenElevation)?,
             "env_local_app_data": std::env::var_os("LOCALAPPDATA").map(|v| v.to_string_lossy().into_owned()),
             "legacy": read_fixture(&system::data_dir(), fixture),
+            "product_settings": match system::settings_dir() {
+                Ok(base) => read_fixture(&base, fixture), Err(error) => json!({"path_error": error}),
+            },
             "known_default": folder_probe(KF_FLAG_DEFAULT | KF_FLAG_DONT_VERIFY, fixture),
             "known_unredirected": folder_probe(KF_FLAG_NO_PACKAGE_REDIRECTION | KF_FLAG_DONT_VERIFY, fixture),
             "controlled_mutex": mutex_probe(mutex, SYNCHRONIZATION_SYNCHRONIZE),
             "controlled_mutex_modify": mutex_probe(mutex, MUTEX_MODIFY_STATE),
-            "production_tray_detected": system::tray_running()}))
+            "controlled_marker_blocks_input": system::tray_marker_blocks_input(mutex),
+            "missing_controlled_mutex": mutex_probe(&format!("{mutex}.absent"), SYNCHRONIZATION_SYNCHRONIZE),
+            "missing_marker_blocks_input": system::tray_marker_blocks_input(&format!("{mutex}.absent")),
+            "production_tray_blocks_input": system::tray_running()}))
     }
     fn write_new(path: &Path, bytes: &[u8]) -> Result<()> {
         let mut file = fs::OpenOptions::new().write(true).create_new(true).open(path)?;
@@ -186,6 +195,36 @@ mod probe {
         if !successful { ("probe_failed", 2) }
         else if shared_read { if boundary { ("shared_read_pass", 0) } else { ("shared_read_failed", 1) } }
         else if legacy { ("compatible", 0) } else { ("incompatible", 1) }
+    }
+    fn wait_managed_ready(process: &mut Child, ready: &Path) -> Result<()> {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            if let Some(code) = process.try_wait()? { return Err(format!("managed writer exited before ready: {code}").into()); }
+            match read_bounded(ready, 128) {
+                Ok(bytes) if bytes == b"ready" => return Ok(()),
+                Ok(_) => {}, // It may still be flushing the newly created ready file.
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {},
+                Err(e) => return Err(e.into()),
+            }
+            if Instant::now() >= deadline { return Err("managed writer readiness deadline".into()); }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+    fn stop_managed(process: &mut Child, terminal: &mut bool) -> Result<()> {
+        drop(process.stdin.take());
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            if let Some(code) = process.try_wait()? {
+                *terminal = true;
+                if code.success() { return Ok(()); }
+                return Err(format!("managed writer/cleanup failed: {code}").into());
+            }
+            if Instant::now() >= deadline {
+                process.kill()?; process.wait()?; *terminal = true;
+                return Err("managed writer had to be terminated; resource cleanup unverified".into());
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
     }
     fn child(exe: &Path, output: &Path, fixture: &str, mutex: &str, sid: PSID, terminal: &mut bool) -> Result<u32> {
         let attributes = Attributes::new()?;
@@ -215,7 +254,7 @@ mod probe {
         let mut code = 0; unsafe { GetExitCodeProcess(process.0, &mut code)?; }
         Ok(code)
     }
-    fn parent(output: &Path, shared_read: bool) -> Result<i32> {
+    fn parent(output: &Path, shared_read: bool, managed_writer: Option<&Path>) -> Result<i32> {
         if output.exists() { return Err("refusing to overwrite an existing probe report".into()); }
         if is_app_container()? || token_flag(TokenElevation)? { return Err("launch the parent from a non-elevated ordinary user process".into()); }
         let token = format!("{}-{}", std::process::id(), SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos());
@@ -226,6 +265,7 @@ mod probe {
         let fixture = base.join("Hanautomata").join(&fixture_name);
         let mut report = json!({"phase": "pending", "parent_pid": std::process::id(), "profile_name": name, "fixture": fixture,
             "shared_read_experiment": shared_read,
+            "managed_writer": managed_writer,
             "container_kind": "non-packaged AppContainer; zero capabilities; not LPAC; inherited environment",
             "scope": "synthetic fixture/mutex only; optional read/synchronize ACE on these newly created resources; no live settings or ACL changes; real packaged hosts need separate verification"});
         let mut report_file = fs::OpenOptions::new().write(true).create_new(true).open(output)?;
@@ -236,7 +276,9 @@ mod probe {
         let mut fixture_created = false;
         let mut directory_created = false;
         let mut child_terminal = true;
-        let outcome = (|| -> Result<()> {
+        let mut managed_child = None;
+        let mut managed_terminal = true;
+        let mut outcome = (|| -> Result<()> {
             let directory = fixture.parent().ok_or("missing fixture folder")?;
             match fs::create_dir(directory) {
                 Ok(()) => directory_created = true,
@@ -252,18 +294,21 @@ mod probe {
             let mut fixture_file = fixture_options.open(&fixture)?;
             fixture_created = true;
             fixture_file.write_all(FIXTURE)?; fixture_file.sync_all()?;
-            unsafe { SetLastError(ERROR_SUCCESS); }
-            let raw_mutex = unsafe { CreateMutexW(None, false, &HSTRING::from(&mutex_name))? };
-            let already_exists = unsafe { GetLastError() } == ERROR_ALREADY_EXISTS;
-            let mutex = Handle(raw_mutex);
-            if already_exists { return Err("refusing to modify or reuse an existing probe mutex".into()); }
-            report["parent"] = snapshot(&fixture_name, &mutex_name)?;
-            if report["parent"]["legacy"]["settings_match"] != true || report["parent"]["controlled_mutex"]["opened"] != true {
-                return Err("ordinary-process baseline failed; no compatibility verdict".into());
-            }
+            let mutex = if managed_writer.is_none() {
+                unsafe { SetLastError(ERROR_SUCCESS); }
+                let raw_mutex = unsafe { CreateMutexW(None, false, &HSTRING::from(&mutex_name))? };
+                let already_exists = unsafe { GetLastError() } == ERROR_ALREADY_EXISTS;
+                let mutex = Handle(raw_mutex);
+                if already_exists { return Err("refusing to modify or reuse an existing probe mutex".into()); }
+                report["parent"] = snapshot(&fixture_name, &mutex_name)?;
+                if report["parent"]["legacy"]["settings_match"] != true || report["parent"]["controlled_mutex"]["opened"] != true {
+                    return Err("ordinary-process baseline failed; no compatibility verdict".into());
+                }
+                Some(mutex)
+            } else { None };
             if shared_read {
                 grant_synthetic_read(HANDLE(fixture_file.as_raw_handle()), SE_FILE_OBJECT, FILE_GENERIC_READ.0)?;
-                grant_synthetic_read(mutex.0, SE_KERNEL_OBJECT, SYNCHRONIZATION_SYNCHRONIZE.0)?;
+                grant_synthetic_read(mutex.as_ref().ok_or("missing synthetic mutex")?.0, SE_KERNEL_OBJECT, SYNCHRONIZATION_SYNCHRONIZE.0)?;
                 report["synthetic_read_aces_applied"] = json!(true);
             }
             drop(fixture_file);
@@ -276,6 +321,21 @@ mod probe {
             verify_profile_folder(&folder, &base, &name)?;
             profile_dir = Some(folder.clone()); report["profile_folder"] = json!(folder);
             update_report(&mut report_file, &report)?;
+            if let Some(writer) = managed_writer {
+                let ready = folder.join("managed-ready.txt");
+                let error_log = folder.join("managed-writer.log");
+                let stderr = fs::OpenOptions::new().write(true).create_new(true).open(&error_log)?;
+                managed_child = Some(Command::new(writer.canonicalize()?).arg("--shared-resources").arg(&fixture)
+                    .arg(&mutex_name).arg(&ready).stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::from(stderr))
+                    .creation_flags(CREATE_NO_WINDOW.0).spawn()?);
+                managed_terminal = false;
+                wait_managed_ready(managed_child.as_mut().unwrap(), &ready)?;
+                report["managed_stages"] = json!(["save", "replace", "restore"]);
+                report["parent"] = snapshot(&fixture_name, &mutex_name)?;
+                if report["parent"]["product_settings"]["settings_match"] != true || report["parent"]["controlled_mutex"]["opened"] != true {
+                    return Err("managed writer baseline failed".into());
+                }
+            }
             let exe = folder.join("hanautomata-config-probe.exe");
             if exe.exists() { return Err("unexpected existing executable in newly created profile".into()); }
             let mut source = fs::File::open(std::env::current_exe()?)?;
@@ -291,8 +351,20 @@ mod probe {
             if exit != 0 || report["child"]["app_container"] != true { return Err("child was not confirmed as an AppContainer".into()); }
             Ok(())
         })();
+        let mut managed_ok = true;
+        if let Some(process) = managed_child.as_mut() {
+            let result = stop_managed(process, &mut managed_terminal);
+            managed_ok = result.is_ok();
+            report["managed_cleanup_error"] = json!(result.as_ref().err().map(|e| e.to_string()));
+            if outcome.is_ok() { outcome = result; }
+            if let Some(folder) = profile_dir.as_ref() {
+                report["managed_log"] = json!(read_bounded(&folder.join("managed-writer.log"), 8192)
+                    .ok().map(|bytes| String::from_utf8_lossy(&bytes).into_owned()));
+            }
+        }
         report["probe_error"] = json!(outcome.as_ref().err().map(|e| e.to_string()));
         report["child_terminal"] = json!(child_terminal);
+        report["managed_terminal"] = json!(managed_terminal);
         let mut cleanup_ok = true;
         if profile_sid.is_some() {
             cleanup_ok = false;
@@ -302,7 +374,7 @@ mod probe {
                 let scope = profile_dir.as_ref().ok_or("profile folder not established".into())
                     .and_then(|_| verify_profile_folder(&root, &base, &name));
                 report["cleanup_scope_error"] = json!(scope.as_ref().err().map(|e| e.to_string()));
-                if scope.is_err() || !child_terminal { break; }
+                if scope.is_err() || !child_terminal || !managed_terminal { break; }
                 let result = unsafe { DeleteAppContainerProfile(&HSTRING::from(&name)) };
                 report["cleanup_attempts"] = json!(attempt);
                 report["cleanup_profile_error"] = json!(result.as_ref().err().map(|e| e.to_string()));
@@ -322,6 +394,7 @@ mod probe {
             if !cleanup_ok { report["manual_cleanup"] = json!({"profile_name": name, "profile_root": root,
                 "instruction": "Confirm the owned probe child has exited and the root still resolves to this exact profile; then use DeleteAppContainerProfile for this name only. No broad directory deletion."}); }
         }
+        cleanup_ok &= managed_ok;
         if fixture_created {
             let result = fs::remove_file(&fixture); // exact create_new file from this run; never recursive cleanup
             report["cleanup_fixture"] = json!(match result { Ok(()) => "removed".to_string(), Err(e) => { cleanup_ok = false; e.to_string() } });
@@ -333,17 +406,24 @@ mod probe {
         }
         let compatible = outcome.is_ok() && report["parent"]["legacy"]["settings_match"] == true
             && report["child"]["legacy"]["settings_match"] == true && report["child"]["controlled_mutex"]["opened"] == true;
-        report["current_implementation_compatible"] = if shared_read { Value::Null } else { json!(compatible) };
+        report["legacy_implementation_compatible"] = if shared_read || managed_writer.is_some() { Value::Null } else { json!(compatible) };
         let boundary = outcome.is_ok()
-            && report["child"]["known_unredirected"]["file"]["settings_match"] == true
-            && report["child"]["known_unredirected"]["file"]["write_open_error"] == 5
+            && report["child"]["product_settings"]["settings_match"] == true
+            && report["child"]["product_settings"]["sha256"] == report["parent"]["product_settings"]["sha256"]
+            && report["child"]["product_settings"]["write_open_error"] == 5
             && report["child"]["controlled_mutex"]["opened"] == true
-            && report["child"]["controlled_mutex_modify"]["hresult"] == "0x80070005";
-        if shared_read {
+            && report["child"]["controlled_mutex_modify"]["hresult"] == "0x80070005"
+            && report["child"]["controlled_marker_blocks_input"] == true
+            && report["child"]["missing_controlled_mutex"]["hresult"] == "0x80070002"
+            && report["child"]["missing_marker_blocks_input"] == false;
+        if shared_read || managed_writer.is_some() {
             report["shared_read_boundary_pass"] = json!(boundary);
         }
         report["cleanup_ok"] = json!(cleanup_ok);
-        let (verdict, code) = evaluation(shared_read, outcome.is_ok() && cleanup_ok, compatible, boundary);
+        let (mut verdict, code) = evaluation(shared_read || managed_writer.is_some(), outcome.is_ok() && cleanup_ok, compatible, boundary);
+        if managed_writer.is_some() {
+            verdict = match code { 0 => "product_resources_pass", 1 => "product_resources_failed", _ => "probe_failed" };
+        }
         report["phase"] = json!("finished");
         report["verdict"] = json!(verdict);
         report["exit_code"] = json!(code);
@@ -354,14 +434,15 @@ mod probe {
     pub fn run() -> Result<i32> {
         let args: Vec<String> = std::env::args().skip(1).collect();
         match args.as_slice() {
-            [flag, output] if flag == "--output" => parent(Path::new(output), false),
-            [flag, output, mode] if flag == "--output" && mode == "--shared-read" => parent(Path::new(output), true),
+            [flag, output] if flag == "--output" => parent(Path::new(output), false, None),
+            [flag, output, mode] if flag == "--output" && mode == "--shared-read" => parent(Path::new(output), true, None),
+            [flag, output, mode, writer] if flag == "--output" && mode == "--managed-writer" => parent(Path::new(output), false, Some(Path::new(writer))),
             [flag, output, fixture, mutex] if flag == "--child" => {
                 if !is_app_container()? { return Err("worker mode requires a real AppContainer token".into()); }
                 write_new(Path::new(output), &serde_json::to_vec_pretty(&snapshot(fixture, mutex)?)?)?;
                 Ok(0)
             },
-            _ => Err("usage: hanautomata-config-probe --output <new-report.json> [--shared-read]".into()),
+            _ => Err("usage: hanautomata-config-probe --output <new-report.json> [--shared-read | --managed-writer <test-helper.exe>]".into()),
         }
     }
 

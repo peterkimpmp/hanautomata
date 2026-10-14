@@ -49,11 +49,14 @@ namespace Hanautomata
 
         internal ImeOptionsWindow(string settingsPath)
         {
+            // Build the complete 96-DPI layout before WinForms scales it once.
+            // Early layout otherwise consumes the scale factor before ClientSize and children exist.
+            SuspendLayout();
             path = Path.GetFullPath(settingsPath);
             Text = "한오토마타 입력기 설정";
+            Font = new Font("Malgun Gothic", 9F); StartPosition = FormStartPosition.CenterScreen;
             AutoScaleDimensions = new SizeF(96, 96); AutoScaleMode = AutoScaleMode.Dpi;
             ClientSize = new Size(660, 610); MinimumSize = new Size(560, 500);
-            Font = new Font("Malgun Gothic", 9F); StartPosition = FormStartPosition.CenterScreen;
             var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(18), ColumnCount = 1, RowCount = 5 };
             layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             layout.SizeChanged += delegate { status.Height = status.Font.Height * 5 + 12; };
@@ -95,6 +98,7 @@ namespace Hanautomata
             Controls.Add(layout); CancelButton = close;
             FormClosing += delegate(object sender, FormClosingEventArgs e) { if (!MayDiscard()) e.Cancel = true; };
             LoadSettings();
+            ResumeLayout(true);
         }
         FlowLayoutPanel Page(string title)
         {
@@ -103,7 +107,17 @@ namespace Hanautomata
             panel.SizeChanged += delegate { foreach (Control child in panel.Controls) child.Width = Math.Max(220, panel.ClientSize.Width - 24); };
             tab.Controls.Add(panel); tabs.TabPages.Add(tab); return panel;
         }
-        void Note(FlowLayoutPanel page, string text) { page.Controls.Add(new Label { Text = text, AutoSize = false, Height = 50, Margin = new Padding(3, 6, 3, 6) }); }
+        void Note(FlowLayoutPanel page, string text)
+        {
+            var note = new Label { Text = text, AutoSize = false, Margin = new Padding(3, 6, 3, 6) };
+            EventHandler fit = delegate {
+                int needed = TextRenderer.MeasureText(note.Text, note.Font, new Size(Math.Max(1, note.ClientSize.Width), int.MaxValue),
+                    TextFormatFlags.WordBreak | TextFormatFlags.TextBoxControl).Height;
+                if (note.Height != needed) note.Height = needed;
+            };
+            note.SizeChanged += fit; note.FontChanged += fit;
+            page.Controls.Add(note); fit(note, EventArgs.Empty);
+        }
         void Combo(FlowLayoutPanel page, string property, string label, params Choice[] choices)
         {
             var row = new TableLayoutPanel { ColumnCount = 2, Height = 35, Margin = new Padding(3, 3, 3, 6) };
@@ -180,9 +194,9 @@ namespace Hanautomata
                     var latest = ImeSettingsStore.Load(path);
                     snapshot = ImeSettingsStore.Save(path, value, latest.Fingerprint, true);
                 }
-                bool wasRestoring = restoring; dirty = false; restoring = false; save.Enabled = false;
-                SetStatus("저장했습니다. 입력기를 다시 선택해 주세요. 반영되지 않으면 앱을 다시 열어 주세요.");
-                if (wasRestoring && snapshot.BackupPath != null) SetStatus(status.Text + "\n복원 전 파일: " + snapshot.BackupPath);
+                dirty = false; restoring = false; save.Enabled = snapshot.Warning != null;
+                SetStatus(snapshot.Warning ?? "저장했습니다. 입력기를 다시 선택해 주세요. 반영되지 않으면 앱을 다시 열어 주세요.");
+                if (snapshot.BackupPath != null) SetStatus(status.Text + "\n이전 파일: " + snapshot.BackupPath);
             }
             catch (ImeSettingsConflictException e) { SetStatus(restoring ? "설정 파일의 상태가 다시 바뀌었습니다. 복원 미리보기를 유지했으니 다시 저장을 눌러 주세요." : "저장하지 못했습니다. " + e.Message); }
             catch (Exception e) { SetStatus("저장하지 못했습니다. " + e.Message); }

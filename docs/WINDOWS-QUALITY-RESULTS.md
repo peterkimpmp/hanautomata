@@ -3,7 +3,7 @@ title: 개발 회귀를 보강했으며 Windows 전체 동작 승인은 남아 �
 layout: a4
 purpose: technical
 status: in-progress
-date: 2026-10-14
+date: 2026-10-15
 baseline: 36794fece157e16617249dbaad580b6e8b6bf982
 disposition: local-reusable
 ---
@@ -12,7 +12,7 @@ disposition: local-reusable
 
 - C# 단위 단언 26,391개가 현재 기준 소스에서 통과했다.
 - 트레이 통합 시험은 TSF 동시 처리 제거 후 106/106이다.
-- TSF 113개 검사와 양쪽 빌드를 통과했으며 실제 앱 검증이 남아 있다.
+- TSF 131개 검사와 양쪽 빌드를 통과했으며 실제 앱 검증이 남아 있다.
 - Word 언어 속성 후보의 실제 효과와 6종 앱 승인은 미검증이다.
 
 ## 판정과 검증 경로
@@ -306,3 +306,35 @@ cargo build --release --manifest-path tsf/Cargo.toml --features quality-probes -
 다음 구현은 환경 변수와 분리된 TSF 설정 경로, 설정의 원자적 저장·복원 후 읽기 ACE 유지, 새 트레이 mutex의 제한된 읽기 권한이다. 특히 [ReplaceFileW](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-replacefilew)는 교체 대상의 DACL을 보존하므로 임시 파일에만 ACE를 붙이는 것으로 기존 파일 갱신을 보장할 수 없다. [SetEntriesInAclW](https://learn.microsoft.com/en-us/windows/win32/api/aclapi/nf-aclapi-setentriesinaclw)와 [IME 요구사항](https://learn.microsoft.com/en-us/windows/apps/develop/input/input-method-editor-requirements)의 명시적 파일 접근 계약을 따르며 사용자 프로필 전체를 개방하지 않는다. 실제 앱 승인 0/6과 전체 인수 게이트 미완료를 유지한다.
 
 진단 소스·기록 커밋은 `e53a765bb9b4a991560d5d61d66dec6a7af4024b`다. 같은 최종 바이너리의 기본 모드에서도 실패와 정리를 다시 확인했다(`appcontainer-baseline-final-20261015.json`, `appcontainer-baseline-final-check.json`). 소스·바이너리·실행 기록 연결은 `appcontainer-build-record.json`이다. 해당 커밋의 [CI 38598858626](https://github.com/peterkimpmp/hanautomata/actions/runs/38598858626)는 두 작업 모두 성공했다(`appcontainer-ci.json`). 이 CI는 기존 C# 빌드·검사 범위이며 새 Rust 진단의 4개 검사와 실제 AppContainer 실행은 위 로컬 근거다. 설치 후보와 제품 런타임은 이번 변경에 포함하지 않았다.
+
+## 사용자 설정 공유와 트레이 공존 보강 — 2026-10-15
+
+제품 소스에 설정 경로와 제한된 읽기 권한을 구현했다. TSF는 패키지 경로 리디렉션을 피한 사용자 LocalAppData 경로를 사용하며 환경 변수로 되돌아가지 않는다. C# 저장소는 새 임시 설정과 게시된 설정 파일에 ALL APPLICATION PACKAGES의 Read·Synchronize만 추가한다. 교체 시 이전 DACL이 유지되는 경우도 게시 후 보강한다. 새 트레이 mutex는 패키지에 Synchronize만 허용하며 소유권 변경 권한은 주지 않는다. TSF는 mutex 조회가 명확한 `FILE_NOT_FOUND`일 때만 트레이 부재로 처리한다. 권한 거부·기타 오류·사용자 SID 조회 실패에서는 키를 통과시켜 중복 입력을 피한다.
+
+독립 소스 검토에서 발견한 세 경로는 실패 회귀 후 수정했다. 게시 후 ACL 경고로 같은 설정을 다시 저장해도 백업을 다시 돌리지 않는다. 실패한 첫 저장은 자신이 만든 잠금 표시만 정리하고 기존 복구 이력은 보존한다. 손상된 현재 파일을 고칠 때 정상 `.previous`가 이미 있으면 손상 파일은 고유 `.before-repair`로 보관한다. 임시 파일 정리 오류가 나도 새 잠금 표시의 정리 경로는 실행한다.
+
+| 검증 | 직접 증거 (`build/windows-quality/`) | 판정 범위 |
+|---|---|---|
+| 설정 회귀 | `shared-access-review-regression-before.log`, `repair-history-cleanup-before.log`, `shared-access-final-settings-26.log` | 결함 재현 후 **26 통과**, 손상·동시 쓰기·복원·권한 오류 포함 |
+| 트레이 오류 정책 | `tray-access-regression-before.log`, `shared-access-final-full-build.log` | 권한 거부 회귀 실패 후 **Rust 131개(52+62+17)**, x64/x86 release·DLL selftest 통과 |
+| 진단 자체 검사 | `shared-access-final-probe-tests.log`, `shared-access-final-probe-build.log` | **4개 통과**, 진단 release 빌드 성공 |
+| 실제 제한 토큰 | `shared-access-managed-final-20261015.json` | 생산 코드의 C# 저장·교체·복원 뒤 AppContainer 자식이 동일 SHA256·전체 옵션을 읽음. 파일 쓰기와 mutex Modify 거부 |
+| 이전 private mutex | `shared-access-private-marker-20261015.json` | 권한 거부에서 TSF 차단, 없는 mutex에서 허용. 기존 진단의 전체 `incompatible`는 예상 결과이며 통과로 바꾸지 않음 |
+| 시험 자원 정리 | `shared-access-final-record-20261015.json` | 세 실행의 자체 보고와 별개로 fixture·보조 파일·프로필 폴더·정확한 프로필 매핑의 부재 확인 |
+| 독립 소스 검토 | `shared-access-final-review.json` | 다른 엔진의 소스 검토에서 Medium/High 잔여 없음. 검토자는 시험을 실행하지 않았으며 출시 승인 아님 |
+
+`product_resources_pass`는 이 PC의 **비패키지·capability 없는 일반 AppContainer**와 합성 설정·시험 mutex에 한정한다. LPAC·실제 패키지 호스트·실제 트레이 인스턴스·이전 버전 설정 마이그레이션은 미검증이다. 제한 자식의 읽기는 복원까지 끝난 최종 파일에 대한 검사이며 저장 각 단계의 호스트 입력을 시험한 것이 아니다. 정상 설정에서 파생된 백업이 읽기 ACE를 유지할 수 있으므로 모든 백업이 비공개라고 주장하지 않는다. 학습 데이터 공유·과거 백업 ACL 정책은 별도로 결정·검증해야 한다.
+
+낮은 심각도의 잔여 항목은 잠금 삭제 대기 중 일시적 저장 실패, 정리 오류의 원인 표시, 비정형 게시 후 예외, 64KiB 초과 파일의 UI 복구, ACL 경고 후 닫기 안내다. 데이터 보존을 우선하는 현재 동작과 실제 사용자 복구 편의성을 구분한다. 설정 공유 변경은 미설치 개발 소스이며 동결된 `wq-reviewed-20261014` 관리자 후보를 덮어쓰지 않았다.
+
+## 설정 화면 직접 확인과 배율 회귀 — 2026-10-15
+
+사용자가 연 시험 전용 미리보기에서 입력·단축키·학습/제외 앱 탭을 확인했다. 시작 모드를 한글로 변경하고 저장·다시 읽기를 실행했으며 화면과 시험 JSON에 값이 유지됐다. 실제 입력기 설정과 학습·제외 앱 값은 바꾸지 않았다. 최초 창은 지나치게 작았고, 최대화해도 두 줄 안내문이 잘렸다. 이 화면 관측은 기존 버전에 대한 실패 증거다.
+
+창을 표시하지 않는 배치 회귀에서 현재 환경 DPI 192에서 ClientSize가 660×610에 머무르고 안내문 높이 50보다 필요한 높이가 커지는 **5개 실패**를 재현했다(`options-layout-before.log`). 전체 96-DPI 배치를 구성할 때까지 레이아웃을 보류하고 마지막에 한 번 배율을 적용하도록 수정했다. 안내문 높이는 현재 글꼴과 줄바꿈 너비로 계산한다. [WinForms 자동 배율 규칙](https://learn.microsoft.com/dotnet/desktop/winforms/forms/autoscale)의 레이아웃 재개 시점과 맞췄다.
+
+수정 후 동일 환경에서 ClientSize 1320×1220과 두 너비의 안내문 높이 조건 **5개 통과**, 설정 저장소 **26개 통과**, 앱·옵션 EXE 재빌드를 확인했다(`options-layout-after.log`, `options-layout-products.log`). 테스트는 창을 표시하거나 사용자 설정에 쓰지 않는다. 새 미리보기는 `build/windows-quality/options-layout-fixed/Hanautomata.ImeOptions.Preview.exe`이고 이전 실행 중인 미리보기는 덮어쓰지 않았다.
+
+같은 새 EXE의 패키징·해시·설치 사전 확인은 `ReleaseTests.ps1 -SourceDirectory build/windows-quality/options-layout-products`에서 **21개 통과**했다(`options-layout-release.log`). 실제 설치·로그인 시험으로 합산하지 않는다. 최종 UI 소스·빌드 연결은 `options-layout-build-record-20261015.json`에 별도로 보관한다.
+
+이후 Windows 화면 도구가 `failed to activate captured window` 및 복구 시 `Could not capture the given monitor (0x80070057)`로 실패했다. 수정본의 시각 검수는 사용자에게 새 시험 창 열기를 요청한 상태다. 배치 회귀는 **실제 화면의 DPI 100/150/200% 통과 증거가 아니다**. 위 독립 소스 검토 이후의 UI 배치 변경도 검토 범위와 구별한다. 실제 앱 승인은 계속 **0/6**, WQ-07과 전체 목표는 진행 중이다.

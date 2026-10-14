@@ -31,6 +31,21 @@ pub fn data_dir() -> PathBuf {
     base.join("Hanautomata")
 }
 
+/// User settings are shared with the desktop editor. An AppContainer's LOCALAPPDATA is redirected.
+/// This only resolves the location; the editor must publish read access. Never fall back to defaults at another path.
+pub fn settings_dir() -> Result<PathBuf, &'static str> {
+    use std::os::windows::ffi::OsStringExt;
+    use windows::Win32::{System::Com::CoTaskMemFree, UI::Shell::{SHGetKnownFolderPath, FOLDERID_LocalAppData,
+        KF_FLAG_DONT_VERIFY, KF_FLAG_NO_PACKAGE_REDIRECTION}};
+    let raw = unsafe { SHGetKnownFolderPath(&FOLDERID_LocalAppData, KF_FLAG_NO_PACKAGE_REDIRECTION | KF_FLAG_DONT_VERIFY, None) }
+        .map_err(|_| "user settings directory unavailable")?;
+    if raw.0.is_null() { return Err("empty user settings directory"); }
+    let path = PathBuf::from(std::ffi::OsString::from_wide(unsafe { raw.as_wide() }));
+    unsafe { CoTaskMemFree(Some(raw.0.cast())); }
+    if !path.is_absolute() { return Err("user settings directory is not absolute"); }
+    Ok(path.join("Hanautomata"))
+}
+
 pub fn home_dir() -> String {
     std::env::var("USERPROFILE").unwrap_or_default()
 }
@@ -140,11 +155,15 @@ fn user_sid() -> Option<String> {
     }
 }
 
-/// The tray app (hook build) is running for this user: then it judges and the input method passes keys (W-17). It holds
-/// `Local\Hanautomata.Instance.<SID>` while it runs (src/App.cs).
+/// Pass keys when the tray marker exists or its state cannot be established (W-17).
+/// An older tray's private DACL may deny AppContainers; that is not evidence that the hook is absent.
 pub fn tray_running() -> bool {
-    let Some(sid) = user_sid() else { return false };
-    let name = HSTRING::from(format!("Local\\Hanautomata.Instance.{sid}"));
+    let Some(sid) = user_sid() else { return true };
+    tray_marker_blocks_input(&format!("Local\\Hanautomata.Instance.{sid}"))
+}
+
+pub fn tray_marker_blocks_input(name: &str) -> bool {
+    let name = HSTRING::from(name);
     match unsafe { OpenMutexW(SYNCHRONIZATION_SYNCHRONIZE, false, &name) } {
         Ok(handle) => {
             unsafe {
@@ -152,8 +171,12 @@ pub fn tray_running() -> bool {
             }
             true
         }
-        Err(_) => false,
+        Err(error) => tray_probe_error_blocks_input(error.code()),
     }
+}
+
+fn tray_probe_error_blocks_input(error: windows::core::HRESULT) -> bool {
+    error != windows::core::HRESULT::from_win32(2) // ERROR_FILE_NOT_FOUND is the only confirmed absence.
 }
 
 pub fn process_name() -> String {
@@ -206,6 +229,15 @@ fn module_path_with(mut read: impl FnMut(&mut [u16]) -> u32) -> Option<Vec<u16>>
 #[cfg(test)]
 mod identity_tests {
     use super::*;
+
+    #[test]
+    fn inaccessible_tray_markers_are_not_mistaken_for_absent_trays() {
+        use windows::core::HRESULT;
+        assert!(!tray_probe_error_blocks_input(HRESULT::from_win32(2)), "confirmed absent marker must allow TSF");
+        for error in [5, 6, 8, 123] {
+            assert!(tray_probe_error_blocks_input(HRESULT::from_win32(error)), "unknown marker state must prevent double input: {error}");
+        }
+    }
 
     #[test]
     fn full_module_path_is_read_past_the_old_520_unit_limit() {

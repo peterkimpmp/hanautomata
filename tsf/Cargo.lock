@@ -112,6 +112,7 @@ dependencies = [
  "hanautomata-ffi",
  "serde",
  "serde_json",
+ "sha2",
  "windows",
  "windows-core",
  "windows-result",

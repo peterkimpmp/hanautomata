@@ -112,6 +112,7 @@ namespace Hanautomata
         internal string Fingerprint;
         internal string Error;
         internal string BackupPath;
+        internal string Warning;
     }
 
     internal sealed class ImeSettingsConflictException : IOException
@@ -179,31 +180,79 @@ namespace Hanautomata
             if (bytes == null) throw new FileNotFoundException("복원할 설정 파일을 찾지 못했습니다.", path);
             return ImeSettings.Parse(bytes);
         }
-        static FileStream Lock(string path)
+        static bool IsMalformed(byte[] bytes)
         {
+            try { ImeSettings.Parse(bytes); return false; }
+            catch (Exception e)
+            {
+                if (!(e is FormatException || e is XmlException || e is ArgumentException || e is InvalidOperationException || e is System.Runtime.Serialization.SerializationException)) throw;
+                return true;
+            }
+        }
+        static FileStream Lock(string path, out bool created)
+        {
+            created = false;
             for (int attempt = 0; ; attempt++)
             {
-                try { return new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None); }
+                try
+                {
+                    // Still excludes other readers/writers. Share.Delete lets a failed first writer delete
+                    // its own new marker as the final operation while retaining the guard.
+                    try { var guard = new FileStream(path, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.Delete); created = true; return guard; }
+                    catch (IOException e)
+                    {
+                        int code = e.HResult & 0xffff;
+                        if (code != 80 && code != 183) throw;
+                        return new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.Delete);
+                    }
+                }
                 catch (IOException) { if (attempt >= 10) throw; Thread.Sleep(25); }
             }
         }
-        internal static ImeSettingsSnapshot Save(string path, ImeSettings value, string expected, bool restoring = false)
+        static ImeSettingsSnapshot Published(string path, byte[] bytes, string backup, Action<string> grantRead)
+        {
+            var saved = new ImeSettingsSnapshot { Value = ImeSettings.Parse(bytes), Fingerprint = Fingerprint(bytes), BackupPath = backup };
+            // ReplaceFile preserves the old target DACL. Grant only on validated live bytes, never a corrupt backup.
+            try { grantRead(path); }
+            catch (Exception e)
+            {
+                if (!(e is IOException || e is UnauthorizedAccessException || e is System.Security.SecurityException)) throw;
+                saved.Warning = "설정 파일은 저장했지만 일부 Windows 앱의 읽기 권한 설정을 완료하지 못했습니다. 다시 저장해 주세요. " + e.Message;
+            }
+            return saved;
+        }
+        internal static ImeSettingsSnapshot Save(string path, ImeSettings value, string expected, bool restoring = false, Action<string> grantRead = null)
         {
             if (expected == null) throw new IOException("현재 파일을 확인할 수 없어 저장하지 않았습니다.");
+            if (grantRead == null) grantRead = ImeSharedAccess.GrantSettingsRead;
             byte[] bytes = value.Serialize(); path = Path.GetFullPath(path);
             Directory.CreateDirectory(Path.GetDirectoryName(path));
-            using (var guard = Lock(path + ".lock"))
+            bool created;
+            using (var guard = Lock(path + ".lock", out created))
             {
                 byte[] current = Read(path);
-                if (Fingerprint(current) != expected) throw new ImeSettingsConflictException();
-                string temp = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
-                string backup = current == null ? null : restoring ? path + ".before-restore." + Guid.NewGuid().ToString("N") + ".json" : path + ".previous";
+                string temp = null; bool published = false;
+                string backup = null;
                 try
                 {
+                    if (Fingerprint(current) != expected) throw new ImeSettingsConflictException();
+                    // A retry after a publication warning must not rotate .previous or the restore source.
+                    if (current != null && current.SequenceEqual(bytes)) return Published(path, bytes, null, grantRead);
+                    if (current != null)
+                    {
+                        bool repairWithHistory = !restoring && MarkerExists(path + ".previous") && IsMalformed(current);
+                        backup = restoring || repairWithHistory
+                            ? path + (restoring ? ".before-restore." : ".before-repair.") + Guid.NewGuid().ToString("N") + ".json"
+                            : path + ".previous";
+                    }
+                    temp = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
                     using (var stream = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None)) { stream.Write(bytes, 0, bytes.Length); stream.Flush(true); }
+                    grantRead(temp);
                     if (current == null) File.Move(temp, path);
                     // Recovery must not overwrite a selected .previous file. Keep the pre-restore live file separately.
                     else File.Replace(temp, path, backup);
+                    published = true;
+                    return Published(path, bytes, backup, grantRead);
                 }
                 catch (IOException e)
                 {
@@ -211,10 +260,18 @@ namespace Hanautomata
                         throw new IOException("현재 설정 파일을 확인할 수 없습니다. 보관된 원본: " + backup + "\n파일에서 복원으로 선택해 주세요.", e);
                     throw;
                 }
-                // ReplaceFile can leave the original only at the backup path on error 1177. Keep staged bytes
-                // if the live file disappeared; the .lock marker makes readers fail closed until explicit repair.
-                finally { if (File.Exists(path) && File.Exists(temp)) File.Delete(temp); }
-                return new ImeSettingsSnapshot { Value = ImeSettings.Parse(bytes), Fingerprint = Fingerprint(bytes), BackupPath = backup };
+                finally
+                {
+                    // Only a partial replacement of an existing file can need the staged bytes for recovery.
+                    try { if (temp != null && (current == null || File.Exists(path)) && File.Exists(temp)) File.Delete(temp); }
+                    finally
+                    {
+                        // No configuration work follows deletion, even on filesystems that unlink immediately.
+                        // Keep every preexisting marker and any evidence of a previous live file.
+                        if (created && current == null && !published && !MarkerExists(path) && !MarkerExists(path + ".previous"))
+                            File.Delete(path + ".lock");
+                    }
+                }
             }
         }
     }
