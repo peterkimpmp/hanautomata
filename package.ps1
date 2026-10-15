@@ -17,8 +17,10 @@ $zip = Join-Path $packageRoot "Hanautomata-$version-win.zip"
 $sourceCommit = $null
 $sourceDirty = $null
 if (Get-Command git -ErrorAction SilentlyContinue) {
-    $gitRoot = & git -C $PSScriptRoot rev-parse --show-toplevel 2>$null
-    if ($LASTEXITCODE -eq 0 -and [IO.Path]::GetFullPath($gitRoot) -eq [IO.Path]::GetFullPath($PSScriptRoot)) {
+    # Compare git's relative prefix, not paths: under a non-ASCII user folder the console code page garbles
+    # --show-toplevel and the comparison failed, dropping the commit from the manifest (Windows 365, 2026-10-16).
+    $prefix = & git -C $PSScriptRoot rev-parse --show-prefix 2>$null
+    if ($LASTEXITCODE -eq 0 -and [string]::IsNullOrEmpty($prefix)) {
         $sourceCommit = & git -C $PSScriptRoot rev-parse HEAD
         $sourceDirty = [bool](& git -C $PSScriptRoot status --porcelain --untracked-files=no)
     }

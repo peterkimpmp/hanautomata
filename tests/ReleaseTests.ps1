@@ -37,6 +37,10 @@ try {
     Assert-Release ((Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash -eq $sum[0]) 'published ZIP checksum'
     $manifest = Get-Content -LiteralPath (Join-Path $testRoot 'release-manifest.json') -Raw | ConvertFrom-Json
     Assert-Release ((Get-FileHash -LiteralPath (Join-Path $portable 'Hanautomata.exe') -Algorithm SHA256).Hash -eq $manifest.executable_sha256) 'packaging preserves the tested executable'
+    if (Get-Command git -ErrorAction SilentlyContinue) {
+        $head = & git -C $repo rev-parse HEAD 2>$null
+        if ($LASTEXITCODE -eq 0) { Assert-Release ($manifest.source_commit -eq $head) 'release manifest records the source commit' }
+    }
     $config = Join-Path $portable 'Hanautomata.exe.config'
     Remove-Item -LiteralPath $config
     $rejected = $false
