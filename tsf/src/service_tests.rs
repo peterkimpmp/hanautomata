@@ -442,6 +442,25 @@ fn navigation_probe_disarms_a_right_alt_tap() {
     assert_eq!(service.state.borrow().shell.as_ref().unwrap().mode(), mode);
 }
 
+#[test]
+fn navigation_probe_beside_the_tray_only_requests_cleanup() {
+    struct TrayPresent;
+    impl Drop for TrayPresent { fn drop(&mut self) { system::test_tray::set(Some(false)); } }
+    system::test_tray::set(Some(true));
+    let _tray = TrayPresent;
+    let (service, host, context) = fixture();
+    host.scope_valid.set(true);
+    host.caret_selection.set(true);
+    seed(&service, &host, &context);
+    let writes = host.writes.get();
+    let sink = service.to_interface::<ITfKeyEventSink>();
+    assert!(unsafe { sink.OnTestKeyDown(&context, WPARAM(crate::shell::vk::END as usize), LPARAM(0)).unwrap().as_bool() },
+        "beside the tray app the probe claims the key only to end the stale composition");
+    assert_eq!(host.ended.get(), 0, "the hook owns this key; the text service must not finalize it as its own input");
+    assert_eq!(host.writes.get(), writes);
+    assert_eq!(&*host.text.borrow(), "안녕");
+}
+
 /// Manual component measurement: production COM callbacks and an in-process mock document.
 /// This does not send Windows input, time painting, or stand in for any real application's acceptance.
 #[test]
@@ -454,7 +473,7 @@ fn measure_com_callback_navigation_replay() {
         unsafe { GetProcessHandleCount(GetCurrentProcess(), &mut count).unwrap(); }
         count
     }
-    assert!(!system::tray_running(), "this measurement must not bypass the tray coexistence guard");
+    assert!(!system::tray_running_live(), "this measurement must not bypass the tray coexistence guard");
     let (service, host, context) = fixture();
     service.state.borrow_mut().sink = Some(TestCompositionSink.into());
     host.scope_valid.set(true);

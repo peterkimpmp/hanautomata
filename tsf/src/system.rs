@@ -229,8 +229,25 @@ fn user_sid() -> Option<String> {
 /// Pass keys when the tray marker exists or its state cannot be established (W-17).
 /// An older tray's private DACL may deny AppContainers; that is not evidence that the hook is absent.
 pub fn tray_running() -> bool {
+    #[cfg(test)]
+    if let Some(present) = test_tray::get() { return present; }
+    tray_running_live()
+}
+
+/// The marker as Windows reports it now, ignoring any unit-test model of the tray.
+pub fn tray_running_live() -> bool {
     let Some(sid) = user_sid() else { return true };
     tray_marker_blocks_input(&format!("Local\\Hanautomata.Instance.{sid}"))
+}
+
+/// Unit tests model the tray per thread and default to absent, so a tray app running on the build machine cannot
+/// change their outcome (it did: four navigation tests failed beside a live tray, 2026-10-16).
+#[cfg(test)]
+pub mod test_tray {
+    use std::cell::Cell;
+    thread_local! { static PRESENT: Cell<Option<bool>> = const { Cell::new(Some(false)) }; }
+    pub fn get() -> Option<bool> { PRESENT.with(Cell::get) }
+    pub fn set(present: Option<bool>) { PRESENT.with(|cell| cell.set(present)); }
 }
 
 pub fn tray_marker_blocks_input(name: &str) -> bool {
