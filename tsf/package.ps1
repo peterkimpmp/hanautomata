@@ -18,6 +18,9 @@ try {
     foreach ($name in @('install-machine.ps1','update-machine.ps1','payload.ps1','README.md')) {
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination (Join-Path $stage $name)
     }
+    foreach ($name in @('LICENSE','NOTICE.md','THIRD-PARTY-NOTICES.md','PRIVACY.md')) {
+        Copy-Item -LiteralPath (Join-Path $root $name) -Destination (Join-Path $stage $name)
+    }
     [ordered]@{ version = $version; source_commit = $commit } | ConvertTo-Json |
         Set-Content -LiteralPath (Join-Path $stage 'release-manifest.json') -Encoding UTF8
     Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip -Force

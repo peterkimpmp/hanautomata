@@ -57,8 +57,8 @@ try {
     $unpacked = Join-Path $testRoot 'unpacked'
     Expand-Archive -LiteralPath $zip -DestinationPath $unpacked
     $null = Assert-HanautomataPayload $unpacked
-    Assert-Payload ((Get-ChildItem -LiteralPath $unpacked -File -Recurse).Count -eq 12) 'package has missing or unexpected files'
-    foreach ($name in @('install-machine.ps1','update-machine.ps1','payload.ps1','README.md','release-manifest.json')) {
+    Assert-Payload ((Get-ChildItem -LiteralPath $unpacked -File -Recurse).Count -eq 16) 'package has missing or unexpected files'
+    foreach ($name in @('install-machine.ps1','update-machine.ps1','payload.ps1','README.md','release-manifest.json','LICENSE','NOTICE.md','THIRD-PARTY-NOTICES.md','PRIVACY.md')) {
         Assert-Payload (Test-Path -LiteralPath (Join-Path $unpacked $name)) ('portable dependency missing: ' + $name)
     }
     $manifest = Get-Content -LiteralPath (Join-Path $unpacked 'release-manifest.json') -Raw | ConvertFrom-Json

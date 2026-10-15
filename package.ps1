@@ -30,7 +30,7 @@ try {
     foreach ($file in @('Hanautomata.exe', 'Hanautomata.exe.config')) {
         Copy-Item -LiteralPath (Join-Path $SourceDirectory $file) -Destination (Join-Path $bundle $file)
     }
-    foreach ($file in @('README.md', 'CHANGELOG.md', 'LICENSE', 'NOTICE.md', 'SECURITY.md', 'install.ps1')) {
+    foreach ($file in @('README.md', 'CHANGELOG.md', 'LICENSE', 'NOTICE.md', 'THIRD-PARTY-NOTICES.md', 'PRIVACY.md', 'SECURITY.md', 'install.ps1', 'uninstall.ps1')) {
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot $file) -Destination (Join-Path $bundle $file)
     }
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'docs') -Destination (Join-Path $bundle 'docs') -Recurse

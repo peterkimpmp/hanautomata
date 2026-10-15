@@ -29,6 +29,9 @@ try {
     $portable = Join-Path $unpacked "Hanautomata-$version"
     & (Join-Path $portable 'install.ps1') -ValidateOnly | Out-Null
     Assert-Release $true 'portable installer resolves its executable without -SourceDirectory'
+    foreach ($name in @('uninstall.ps1', 'LICENSE', 'NOTICE.md', 'THIRD-PARTY-NOTICES.md', 'PRIVACY.md')) {
+        Assert-Release (Test-Path -LiteralPath (Join-Path $portable $name)) ('bundle file missing: ' + $name)
+    }
     foreach ($line in Get-Content -LiteralPath (Join-Path $portable 'SHA256SUMS.txt')) {
         $parts = $line -split '  ',2
         Assert-Release ((Get-FileHash -LiteralPath (Join-Path $portable $parts[1]) -Algorithm SHA256).Hash -eq $parts[0]) ('bundle checksum: ' + $parts[1])

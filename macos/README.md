@@ -32,6 +32,8 @@ cd macos
 
 ## 서명·배포 (M-14 · 결정 D15)
 
+- 2026-10-16: Developer ID 구매를 사용자가 검토하고 있다. 0.5.0 사전 공개본은 ad-hoc 서명이다.
+- zip에는 `Hanautomata.app`과 함께 LICENSE·NOTICE.md·THIRD-PARTY-NOTICES.md·PRIVACY.md가 들어 있다. 번들 안에 넣으면 서명 봉인이 깨지므로 번들 밖에 둔다.
 - 기본은 ad-hoc 서명이다. 직접 빌드해 설치하면 그대로 쓴다. 내려받은 zip은 Gatekeeper가 막을 수 있다. 이때는 `xattr -dr com.apple.quarantine ~/Library/Input\ Methods/Hanautomata.app`로 풀어야 한다.
 - Developer ID가 생기면 다음 두 변수를 두고 `./package.sh`를 실행한다. 그러면 hardened runtime으로 서명하고, 공증한 뒤 티켓을 붙인다.
   - `HANAUTOMATA_SIGN_ID="Developer ID Application: …"`

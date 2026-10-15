@@ -2,7 +2,7 @@
 
 ## 0.5.0 — 2026-10-16
 
-Windows 트레이 앱 · Windows 입력기(TSF, 관리자 1회 설치 시험판) · macOS 입력기(InputMethodKit) 세 구성을 같은 Rust 판별 엔진과 한 판 번호로 묶은 릴리스입니다. 구성별 검증 범위는 [docs/WINDOWS-QUALITY-RESULTS.md](docs/WINDOWS-QUALITY-RESULTS.md)와 [macos/COMPATIBILITY.md](macos/COMPATIBILITY.md)가 정본입니다.
+Windows 트레이 앱 · Windows 입력기(TSF, 관리자 1회 설치 시험판) · macOS 입력기(InputMethodKit) 세 구성을 같은 Rust 판별 엔진과 한 판 번호로 묶은 릴리스입니다. 구성별 검증 범위는 [docs/WINDOWS-QUALITY-RESULTS.md](docs/WINDOWS-QUALITY-RESULTS.md)와 [macos/COMPATIBILITY.md](macos/COMPATIBILITY.md)가 정본입니다. GitHub에는 사전 공개(Pre-release)로 냈습니다. 정식 판은 Windows 입력기의 6앱 6/6 통과와 코드 서명 뒤입니다.
 
 ### 제품화 (2026-10-16)
 - **PRIVACY.md.** 입력 도구가 무엇을 저장하고 무엇을 하지 않는지(평문 키 로그 없음 · 입력 경로 네트워크 없음 · 보호 칸 비학습)를 코드·검증 기록 기준으로 밝힙니다.
@@ -13,6 +13,8 @@ Windows 트레이 앱 · Windows 입력기(TSF, 관리자 1회 설치 시험판)
 - **기능 비교표(docs/FEATURES.md).** 세 구성의 입력·교정·학습·보호·설치 기능과 공통 기본값을 대조합니다.
 - **TSF 단위 시험 격리.** 빌드 PC에 트레이 앱이 켜져 있으면 이동 키 시험 4개가 실패했습니다(시험이 실제 세션 표식을 읽음). 단위 시험은 트레이를 스레드별 모형(기본 없음)으로 두고, 트레이 옆 동작은 별도 시험으로 고정했습니다. 제품 동작은 바뀌지 않았습니다.
 - **릴리스 매니페스트 출처.** 한글 사용자 폴더에서 `source_commit`이 비던 문제를 고쳤습니다.
+- **제3자 고지(THIRD-PARTY-NOTICES.md).** 입력기 DLL과 macOS 앱에 들어가는 Rust 크레이트 77개, Rust 표준 라이브러리, MinGW-w64 런타임의 라이선스 본문을 담습니다. `core/tools/third_party_notices.py`가 Cargo.lock에서 만듭니다. NOTICE.md의 "외부 라이브러리 코드 없음"은 트레이 앱에만 맞는 문장이라 구성별로 고쳤습니다.
+- **패키지 구성.** 세 zip 모두 LICENSE·NOTICE.md·THIRD-PARTY-NOTICES.md·PRIVACY.md를 담습니다. README가 안내하던 `uninstall.ps1`이 트레이 zip에 빠져 있어 넣었습니다. 트레이·입력기 패키지 시험이 이 파일들을 확인합니다.
 
 ### Windows 입력기(TSF) 품질 사이클 — 후보 1~20 (2026-10-13~15)
 요약입니다. 회차별 증거·한계는 [검증 원장](docs/WINDOWS-QUALITY-RESULTS.md)에 있습니다.

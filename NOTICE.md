@@ -1,6 +1,6 @@
 # NOTICE — 데이터 출처와 라이선스
 
-코드(`src/`, `tests/`, 스크립트)는 [MIT](LICENSE)입니다. 아래 데이터 파일은 출처별로 조건이 다릅니다.
+이 저장소의 코드(`src/`·`core/`·`ffi/`·`tsf/`·`macos/`·`tests/`·스크립트)는 [MIT](LICENSE)입니다. 실행 파일에 들어가는 제3자 코드는 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)에 있습니다. 아래 데이터 파일은 출처별로 조건이 다릅니다.
 
 | 파일 | 내용 | 출처 | 조건 |
 |---|---|---|---|
@@ -15,5 +15,5 @@
 
 - 표 생성 절차: `tests/lm/README.md`(`build_lm.py` → `make_fixtures.py` · 단어 목록은 `wordlist_from_stream.py`). 덤프에서 평문을 뽑는 `wikitext2txt.py`는 같은 폴더에 있습니다.
 - 세벌식 390·최종 자판 표(`core/src/hangul.rs`)는 공개된 자판 배열을 옮긴 것입니다. 옮긴 뒤 libhangul(LGPL-2.1)의 자판 표와 대조해 확인했고, libhangul 코드는 포함하지 않습니다.
-- 앱 실행 파일에는 외부 라이브러리 코드를 포함하거나 링크하지 않습니다. 설계 참고 자료와 그 라이선스는 [docs/REFERENCES.md](docs/REFERENCES.md)에 있습니다.
+- Windows 트레이 앱(C#)의 실행 파일은 외부 라이브러리 코드를 포함하거나 링크하지 않습니다. Windows 입력기(TSF)와 macOS 입력기는 Rust 크레이트와 Rust 표준 라이브러리를 포함하고, Windows 입력기는 MinGW-w64 런타임도 포함합니다. 목록과 라이선스 본문은 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)에 있습니다. 설계 참고 자료와 그 라이선스는 [docs/REFERENCES.md](docs/REFERENCES.md)에 있습니다.
 - 개발 전용 의존성(앱 런타임 아님): .NET SDK 9(MIT) · NuGet `Microsoft.NETFramework.ReferenceAssemblies`(MIT).

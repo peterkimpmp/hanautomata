@@ -1,23 +1,33 @@
 #!/bin/sh
-# Release package (M-14): a universal bundle (Apple Silicon + Intel) zipped as build/dist/Hanautomata-<version>-macos.zip,
-# its SHA-256, and the Homebrew cask filled in with both (build/dist/hanautomata.rb from Packaging/hanautomata.rb.in).
-# With HANAUTOMATA_SIGN_ID (Developer ID) and HANAUTOMATA_NOTARY_PROFILE (a `notarytool store-credentials` profile) the
-# zip is notarized and the ticket stapled (decision D15). Nothing is uploaded or published here.
+# Release package (M-14): a universal bundle (Apple Silicon + Intel) zipped as build/dist/Hanautomata-<version>-macos.zip
+# beside LICENSE, NOTICE.md, THIRD-PARTY-NOTICES.md and PRIVACY.md, its SHA-256, and the Homebrew cask filled in with both
+# (build/dist/hanautomata.rb from Packaging/hanautomata.rb.in). With HANAUTOMATA_SIGN_ID (Developer ID) and
+# HANAUTOMATA_NOTARY_PROFILE (a `notarytool store-credentials` profile) the zip is notarized and the ticket stapled
+# (decision D15). Nothing is uploaded or published here.
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
+root=$(cd "$here/.." && pwd)
 "$here/build.sh" --universal
 app="$here/build/Hanautomata.app"
 version=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$here/Info.plist")
 dist="$here/build/dist"
 zip="$dist/Hanautomata-$version-macos.zip"
 mkdir -p "$dist"
-rm -f "$zip"
-ditto -c -k --norsrc --noextattr --keepParent "$app" "$zip"
+pack() {
+    # The notices sit beside the bundle: a file added inside it would break the signature seal.
+    stage="$dist/stage"
+    rm -rf "$stage" "$zip"
+    mkdir "$stage"
+    ditto "$app" "$stage/Hanautomata.app"
+    cp "$root/LICENSE" "$root/NOTICE.md" "$root/THIRD-PARTY-NOTICES.md" "$root/PRIVACY.md" "$stage/"
+    ditto -c -k --norsrc --noextattr "$stage" "$zip"
+    rm -rf "$stage"
+}
+pack
 if [ -n "${HANAUTOMATA_SIGN_ID:-}" ] && [ -n "${HANAUTOMATA_NOTARY_PROFILE:-}" ]; then
     xcrun notarytool submit "$zip" --keychain-profile "$HANAUTOMATA_NOTARY_PROFILE" --wait
     xcrun stapler staple "$app"
-    rm -f "$zip"
-    ditto -c -k --norsrc --noextattr --keepParent "$app" "$zip"
+    pack
     signed="Developer ID, notarized"
 elif [ -n "${HANAUTOMATA_SIGN_ID:-}" ]; then
     signed="Developer ID, not notarized"
