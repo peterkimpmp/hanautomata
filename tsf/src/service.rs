@@ -348,7 +348,7 @@ impl TextService_Impl {
         self.to_object()
     }
 
-    /// A read-only probe. In particular, OnTestKeyDown must not flush/reset the engine or end a composition.
+    /// Read-only field classification. Protected/unknown-field test probes never edit a document.
     fn probe_access(&self, context: &ITfContext) -> edit::FieldAccess {
         let client = self.state.borrow().client;
         let result = std::rc::Rc::new(Cell::new(edit::FieldProbe::failed(edit::FieldQueryStage::CallbackNotRun, E_FAIL)));
@@ -428,13 +428,34 @@ impl TextService_Impl {
                 return Ok(false.into());
             };
             let wanted = shell.test_key_in_context(e, down, pass);
+            let navigation = down && matches!(e.vk, crate::shell::vk::PRIOR..=crate::shell::vk::DOWN);
+            let pending = st.pending_finishes.iter().any(|f| !f.done.get() && f.context.as_ref() == Some(context));
             // Request a real callback to end the old composition before passing an unknown/protected key.
-            // No document or engine mutation takes place in the test probe.
+            // Protected/unknown-field test probes never edit the document or engine.
             let cleanup = pass && down && !crate::shell::is_modifier(e.vk)
-                && (st.composition.is_some() || st.pending_finishes.iter().any(|f| !f.done.get() && f.context.as_ref() == Some(context)));
-            let wanted = wanted || cleanup;
+                && (st.composition.is_some() || pending);
+            let wanted = wanted || cleanup || (!pass && navigation && pending);
+            let finalize_navigation = wanted && !pass && navigation && (st.composition.is_some() || pending);
+            drop(st);
+            if finalize_navigation {
+                // Some hosts route movement from TestKeyDown's answer, even when OnKeyDown later declines.
+                // Like Microsoft's SampleIME, finalize a pass-through composition before declining here.
+                // Eligibility above also updates modifier bookkeeping. An invalidated edit must keep its
+                // claim: allowing host movement with a still-live composition could snap the next key back.
+                // Navigation and shortcut outcomes are pass-through by the core contract; no key is injected.
+                let _ = self.key_in_session(context, checked.access, checked.tray, move |shell| shell.key_down(e))?;
+                let st = self.state.borrow();
+                let finished = st.composition.is_none() && !st.pending_finishes.iter()
+                    .any(|f| !f.done.get() && f.context.as_ref() == Some(context));
+                drop(st);
+                if finished {
+                    checked.eligible = Some(false); // Do not process an optional paired OnKeyDown twice.
+                    self.state.borrow_mut().checked_key = Some(checked);
+                    return Ok(false.into());
+                }
+            }
             checked.eligible = Some(wanted);
-            st.checked_key = Some(checked);
+            self.state.borrow_mut().checked_key = Some(checked);
             return Ok(wanted.into());
         }
         let wanted = checked.eligible.unwrap_or_else(|| {

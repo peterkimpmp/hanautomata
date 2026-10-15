@@ -360,7 +360,7 @@ impl Shell {
         self.pass_through
     }
 
-    /// Only real key/focus handling calls this, never an OnTestKey probe. The caller must apply the returned commit
+    /// Only write-session/focus handling calls this; field classification alone must not. The caller must apply the returned commit
     /// to the ORIGINAL composition range, before starting a word in another field.
     pub fn context_policy(&mut self, pass: bool, private: bool) -> Option<Outcome> {
         let boundary = (pass && !self.pass_through) || private != self.private_learning_before.is_some();

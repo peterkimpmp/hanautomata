@@ -1161,3 +1161,75 @@ Word의 첫 End 현상을 조사하면서 서비스가 이미 보이는 조합�
 검토 후 CLI의 두 사용자 명령 연결과 종료 코드 1 전달을 소스로 확인했다. 예전 오류 문자열을 전제로 하는 호출자는 조사 범위에서 없었으며, 설치 안내에는 조회 실패 시 변경하지 않는 동작을 추가했다. 모델 라우터의 reviewer 단계는 degraded였으므로 모델·effort override 없이 기존 반대 공급자 CLI 설정을 사용했고 결과를 독립 소스 검토로만 분류했다.
 
 Windows 세션은 계속 **Disc**이며 이번 턴의 실제 사용자 활성화·비활성화, 설치 갱신, Word 입력은 수행하지 않았다. 기존 트레이와 설치를 유지한다. 후보 19는 후보 18의 이동 키 변경을 포함하며 실제 Word 인수는 계속 열려 있다. 다음 시험은 최신 후보의 DLL 적재 확인부터 이어간다. **앱 전체 승인 0/6·목표 진행 중**이며 이번 턴은 알려진 권한 판단 결함의 수정·회귀·빌드라는 진척이다.
+
+## 후보 19 재연결 Word 시험 — 2026-10-15
+
+사용자가 Windows 화면을 다시 연결한 뒤 세션 Active와 화면 캡처 성공을 확인했다. 기존 트레이를 지원 명령으로 종료하고, 소유 임시 사용자 COM 클래스로 후보 19를 새 Word **PID 16568**에 적재했다. `word-user-activation-module.json`에서 x64 DLL SHA256 `6FFBDBC8358E7E0CFDC6DFD7FE389E4905C5795DF7A5477BAEB3901E3975C47B`를 확인했다. 시스템 설치는 `wq-5971010-20261015` 그대로다.
+
+| 개별 합성 키 시험 | 관측 |
+|---|---|
+| `dkssud` → Space → F2 → F2 | Space 전 `안녕`, 확정 뒤 `dkssud ↔ 안녕` 왕복 성공 |
+| Home → `1` → 첫 End → `2` | `12안녕`이 되어 첫 End 이동 실패. 두 번째 End 이후 `3`은 문장 끝에 삽입됨 |
+| 미확정 `3` → Enter → `4` | 새 문단에 `4`, Enter 전달 성공 |
+| 미확정 `4` → Tab → `5` | `4\t5`, Tab 전달 성공 |
+| 미확정 `5` → Left → `6` | `4\t56`, 첫 Left 이동 실패 |
+
+후보 18의 중복 쓰기 제거만으로는 이동 키 문제가 해결되지 않았다. 입력 방식은 Sky의 개별 합성 키이며 물리 키보드 결과로 세지 않는다. Word 옵션은 변경하지 않았지만 이번 실행에서는 자동 고침 옵션 창을 다시 확인하지 않았으므로 앞선 ON 화면의 근거와 구분한다. Microsoft IME의 활성 한글 조합 대조는 미완료다. 도구가 `Hangul` 키를 지원하지 않았고 `Alt_R`는 Word 리본 메뉴를 열었으므로 그 시도를 한영 전환 성공으로 처리하지 않았다.
+
+`word-user-activation-16568-keys.json`은 키별 UIA 결과를 보존한다. 저장한 `word-user-activation-16568.docx`의 XML은 `12안녕 3`과 `r4\t56 ` 두 문단이다. SHA256 `B8C42CE6953210C419E2CC13D2651DD6F58645EAF89F6479AEB9B920F1711913`. XML 기록은 성공했고 콘솔 출력에서만 Python cp1252 인코딩 오류가 발생했다. 문서를 저장·종료했으며 `user-com-user-activation-20261015.json`은 restored다. 다른 메모장 문서는 유지했다.
+
+다음 후보는 [Microsoft SampleIME의 OnTestKeyDown](https://github.com/microsoft/Windows-classic-samples/blob/main/Samples/IME/cpp/SampleIME/KeyEventSink.cpp)처럼 앱으로 전달할 이동 키의 조합을 편집 세션으로 끝낸 뒤 test callback에서 false를 반환하는 경로를 검토한다. 이는 공식 예제와의 순서 대조이며 실제 Word 효과는 별도로 시험한다. 무조건적인 키 재주입이나 사용자 입력 추적은 추가하지 않는다.
+
+### 현행 설정 검수본의 실제 UI — 같은 재연결 세션
+
+`tests/ImeSettingsTests.ps1 -OutputDirectory build/windows-quality/options-live-current-20261015 -BuildPreview`로 현행 소스의 검수본을 만들었다. 저장소 검사는 통과했고 배치 검사도 native/dpi96에서 통과했다(`options-live-current-build.log`). 같은 검사를 다른 배율에서 반복한 수를 고유 검사 수로 합산하지 않는다. 예전 `learning-ui-preview` 실행은 참고 관찰이며 아래 인수는 현행 소스로 다시 수행했다.
+
+실제 화면의 입력·단축키·학습/제외 앱·기억한 선택 탭을 열었다. 목록 새로고침은 가상 2개(`dkssud`, `hello`)를 표시했다. `dkssud` 선택 삭제 후 `hello`만 남았고 전체 초기화 후 빈 목록과 선택 삭제 비활성화를 확인했다. 시험 설정의 음절 전체 삭제를 켜고 저장한 뒤 창을 닫아 다시 열었을 때 체크 상태가 유지됐으며, 실행 파일 옆 `preview-settings.json`의 `DeleteSyllable:true`와 일치했다.
+
+`options-live-current-receipt.json`과 `options-live-{shortcuts,exclusions,forget,reset,reopened}.jpg`에 보존했다. 검수본 학습은 전부 메모리 fixture이고 설정도 검수 디렉터리만 사용한다. 실제 학습 파일 삭제나 설치된 입력기의 옵션 변경은 하지 않았다. 이 결과는 현재 화면 배율의 탭/버튼/기본 조작 근거이며 설치된 Properties 호출, 제품 학습 저장·다른 앱 반영, 100/150/200% 각각의 화면 검수를 대신하지 않는다.
+
+## 후보 20 Word 첫 이동 키 수정과 재시험 — 2026-10-15
+
+후보 19에서는 OnTestKeyDown이 이동 키를 받겠다고 응답하고 OnKeyDown에서 확정 후 전달했다. 후보 20은 [Microsoft SampleIME](https://github.com/microsoft/Windows-classic-samples/blob/main/Samples/IME/cpp/SampleIME/KeyEventSink.cpp)의 조합 종료 순서를 참고해, 일반/비공개 편집 가능 필드의 이동 키를 시험 콜백에서 기존 편집 세션으로 확정한 뒤 전달한다. 보호·조회 불명 필드의 시험 콜백은 문서와 엔진을 변경하지 않는다. 실제 조합뿐 아니라 현재 문맥의 미완료 종료도 없어야 전달하며, 쓰기 거부·재진입으로 종료되지 못했으면 기존 키 수신을 유지한다. 오른쪽 Alt 탭 상태도 먼저 갱신한다. 이동 키를 합성 재주입하지 않는다.
+
+| 근거 (`build/windows-quality/`) | 결과와 범위 |
+|---|---|
+| `navigation-probe-red.log` | 기존 구현의 이동 키 시험 콜백 계약 실패 재현 |
+| `navigation-probe-review-red.log` | 검토에서 발견한 재진입 후 조합 생존·오른쪽 Alt 상태 누락 2건 실패 재현 |
+| `navigation-probe-sealed-x64.log`, `navigation-probe-sealed-x86.log` | 최종 기본 TSF lib **각각 189개 통과·6개 명시적 제외**. 보호/조회 실패, 비공개 학습, 쓰기 거부·대기 중 종료, 재진입, 중복 콜백 포함 |
+| `navigation-probe-sealed-payload.log` | 최종 x64/x86 제품 빌드·DLL selftest exit 0 |
+| `navigation-probe-review.json`, `navigation-probe-review-followup.json` | 반대 공급자의 도구 없는 소스 검토 2회. 재현한 지적을 수정했고 마지막 미완료 종료 보강은 회귀로 검증. 그 이후 독립 검토를 다시 받았다고 주장하지 않음 |
+| `navigation-probe-final-freeze.json` | 후보 **20종**, 여섯 파일 해시, 시스템 갱신 **5회**. x64 DLL `BC748170DEB12B04C9FC6102FAC1AF67AE71E4E3B972C5B2BF801189BF696CC6` |
+
+첫 비공개 검사 실패는 일반 상태에서 문자를 만든 뒤 비공개 상태로 옮기면서 쓰기 횟수 기대값을 잘못 둔 fixture였다. 비공개 상태를 먼저 정하고 입력하도록 교정했다. 검토의 소비 키 분기 우려는 core의 Navigation/Shortcut이 항상 전달 결과를 반환함을 확인하고 불필요한 분기를 제거했다. 기본 기능 lib 수에 다른 기능 조합·core·C#의 이전 검사 수를 더해 새 전체 통과 수로 계산하지 않는다.
+
+Word **PID 19984**가 새 DLL을 적재한 것을 확인하고 개별 Sky 합성 키로 시험했다. 한/영 자동 고침과 입력 시 바꾸기는 옵션 화면에서 ON을 재확인했고 변경하지 않았다.
+
+| 입력/관측 | 후보 20 결과 |
+|---|---|
+| `dkssud` → Space → Home → `1` → 첫 End → `2` | `1안녕 2`: 첫 End가 끝으로 이동. 후보 19의 `12안녕`과 구분 |
+| 미확정 `2` → 첫 Left → `3` | `1안녕 32`: 첫 Left 정상 |
+| Ctrl+End → `4`, Home → `5`, Shift+Right | `51안녕 324`, 다음 문자 `1` 선택. 첫 이동·선택 보존 |
+| `값` → Backspace → `갑` → `k` → `가바` → Tab | 조합 분리·삭제와 Tab 확정 보존 |
+| `가바\t` 선택 → Shift+F2, Undo/Redo, 재선택 역변환 | `가바\t ↔ rkqk\t`, 탭과 문서 앞부분 보존 |
+| 새 문단 `dkssud` → Space → F2 → F2 | `안녕 ↔ dkssud ↔ 안녕` |
+
+`word-navigation-probe-{module.json,19984-keys.json,19984-autocorrect.jpg,19984-document.json}`에 기록했다. 저장·종료한 `word-navigation-probe-19984.docx`의 XML은 `51안녕 324`, `가바\t`, `안녕 `이며 SHA256은 `685223B995A20AE3C44A828110B9A34E9BAD92C3B0731DB6A108CE1487EC7D1C`다. UIA 갱신 지연은 화면을 추가 확인해 입력 누락과 구분했다.
+
+추가 Word **PID 8968**도 같은 후보 DLL을 적재했다. `123` → Home → `4` → Delete는 `423`, `5` → Ctrl+S는 `4523`과 저장 창을 확인했다. 이 창의 자동 고침 옵션은 다시 열지 않았으므로 PID 19984의 ON 화면 근거와 구분한다. 저장 대화상자 왕복 후 첫 Shift+Space가 화면의 기존 `rk`를 바꾸지 않은 관측도 보존했다. 입력기를 다시 선택한 뒤 새 `rk` → Shift+Space는 `가`로 바뀌었다. 이 상태의 F12는 `가`를 확정하며 정지했고, 정지 중 `rk` → Esc는 그대로였다. F12 복귀 후 새 `rk` → Esc는 새 조합만 제거해 기존 `가rk`를 보존했다. 이 결과를 모든 모드·문맥 전환의 무결점 승인으로 확대하지 않는다.
+
+`word-navigation-extra-8968-keys.json`, `...-final.jpg`, `...-document.json`, `word-navigation-extra-module.json`에 근거를 보존했다. 로컬에 저장·종료한 DOCX의 XML은 `4523`, `가`, `가rk`이고 SHA256은 `00174EC6C232600CE6E1AB8D72D2C146FCD7C2FC96B2D41462A391D774B58A86`다. 모두 도구의 합성 키이며 물리 키 입력 시험으로 표현하지 않는다.
+
+### 메모장 전환과 남은 인수 경계
+
+새 메모장 창을 열어도 기존 PID 12584와 시스템 DLL을 공유했다. 기존 빈 창은 0자임을 확인하고, 문서 탭이 있는 창의 시작 설정이 이미 **이전 세션 계속하기**로 선택된 것을 관찰했다. 정상 종료 후 PID **18536**으로 다시 열어 기존 탭들이 복원된 것을 확인했다(`notepad-before-restart.jpg`, `notepad-after-session-restore.jpg`, `notepad-session-restore-setting.jpg`). 강제 종료·문서 폐기는 하지 않았다. 새 빈 창도 만들었지만 새 프로세스가 실제로 적재한 DLL은 여전히 **시스템 설치본 `wq-5971010-20261015`**였으므로 후보 20 입력 시험은 수행하지 않았다. `notepad-navigation-probe-preflight.json`이 해당 경계의 근거다. 사용자 임시 클래스가 이 패키지 앱에도 적용됐다고 추정하지 않는다.
+
+| 남은 범위 | 이번 실행 결과와 이유 |
+|---|---|
+| 메모장·관리자 메모장·시작 검색 | 새 메모장도 구 설치본 적재. 최신 시스템 DLL 설치/권한과 실제 대상 화면 증거가 필요하며 현재 결과로 승인 불가 |
+| Chrome·Edge | 허용된 브라우저 실행면 Aside의 안내·탭 목록을 확인했으나 자체 브라우저만 제공. 별도 Chrome·Edge의 네이티브 TSF 입력을 검증하지 못함 |
+| Word 전체 시나리오 | 위 기능은 통과/관측. 긴 문장·빠른 반복·모든 모드·보호 필드·후보/제품 학습·초점 경쟁 등은 남음 |
+| 설치·복구·제거·실제 로그인 | 관리자 설치/인증·로그오프가 필요한 실제 경로는 실행하지 않음. 보이지 않는 UAC를 반복하지 않음 |
+| 전체 DPI·성능·장기 사용 | 현 배율의 설정 검수본과 저장 유지 확인. 100/150/200% 각각, 10,000키·p95·30분 연속 시험은 미완료 |
+
+`user-com-navigation-probe-20261015.json`은 **restored**다. Microsoft IME를 활성화하고 기존 트레이 **PID 9012**를 복원했다. 시스템 설치·기본 입력기·시작 항목은 변경하지 않았고 재부팅/로그오프도 하지 않았다. 메모장의 기존 탭과 빈 창을 유지했다. **후보 20종·시스템 갱신 5회·전체 앱 승인 0/6**이며, 이번에는 Word 결함 수정과 실제 재시험 진척이 있다. 남은 인수 증거 때문에 목표 완료·95점·공개 출시를 선언하지 않는다.

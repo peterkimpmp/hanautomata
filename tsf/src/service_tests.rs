@@ -35,6 +35,7 @@ struct Host {
     autocorrect_space: Cell<bool>,
     refuse_end_shift: Cell<bool>,
     deny_read: Cell<bool>,
+    deny_write: Cell<bool>,
     fail_text_read: Cell<bool>,
     fail_read_after_caret_query: Cell<bool>,
     write_requests: Cell<u32>,
@@ -45,6 +46,7 @@ struct Host {
     pending: RefCell<Vec<ITfEditSession>>,
     before_set: RefCell<Option<Box<dyn FnOnce()>>>,
     before_selection: RefCell<Option<Box<dyn FnOnce()>>>,
+    before_write: RefCell<Option<Box<dyn FnOnce()>>>,
 }
 
 #[implement(ITfContext, ITfCompartmentMgr, ITfContextComposition, ITfInsertAtSelection)]
@@ -72,7 +74,11 @@ impl ITfInsertAtSelection_Impl for Context_Impl {
 }
 impl ITfContext_Impl for Context_Impl {
     fn RequestEditSession(&self, _: u32, session: Ref<ITfEditSession>, flags: TF_CONTEXT_EDIT_CONTEXT_FLAGS) -> Result<HRESULT> {
-        if flags.0 & TF_ES_READWRITE.0 == TF_ES_READWRITE.0 { self.0.write_requests.set(self.0.write_requests.get() + 1); }
+        if flags.0 & TF_ES_READWRITE.0 == TF_ES_READWRITE.0 {
+            self.0.write_requests.set(self.0.write_requests.get() + 1);
+            if self.0.deny_write.get() { return Ok(TF_E_SYNCHRONOUS); }
+            if let Some(callback) = self.0.before_write.borrow_mut().take() { callback(); }
+        }
         else if self.0.deny_read.get() { return Ok(TF_E_SYNCHRONOUS); }
         if self.0.deny.get() { return Ok(TF_E_SYNCHRONOUS); }
         if self.0.defer.get() && flags.0 & TF_ES_SYNC.0 == 0 {
@@ -335,6 +341,105 @@ fn paired_key(service: &ComObject<TextService>, context: &ITfContext, key: u8, a
     service.state.borrow_mut().checked_key = Some(CheckedKey { context: context.clone(), wparam: key as usize,
         lparam: 0, down: true, observed: system::now_ms(), access, tray: false, eligible: None });
     unsafe { service.to_interface::<ITfKeyEventSink>().OnKeyDown(context, WPARAM(key as usize), LPARAM(0)).unwrap() }
+}
+
+#[test]
+fn host_navigation_is_finalized_before_the_test_callback_passes_it_on() {
+    use crate::shell::vk;
+    for key in [vk::END, vk::HOME, vk::LEFT, vk::RIGHT, vk::UP, vk::DOWN, vk::PRIOR, vk::NEXT] {
+        let (service, host, context) = fixture();
+        host.scope_valid.set(true);
+        host.caret_selection.set(true);
+        seed(&service, &host, &context);
+        let writes = host.writes.get();
+        let sink = service.to_interface::<ITfKeyEventSink>();
+        // Model a host that dispatches its navigation command only when TestKeyDown says false.
+        // It is not sufficient to claim the key here and return false only from OnKeyDown.
+        for _ in 0..2 {
+            assert!(!unsafe { sink.OnTestKeyDown(&context, WPARAM(key as usize), LPARAM(0)).unwrap().as_bool() });
+            assert_eq!(host.ended.get(), 1);
+            assert_eq!(&*host.text.borrow(), "안녕");
+            assert_eq!(host.writes.get(), writes);
+        }
+        assert!(!unsafe { sink.OnKeyDown(&context, WPARAM(key as usize), LPARAM(0)).unwrap().as_bool() });
+        assert_eq!(host.ended.get(), 1, "a host that also invokes OnKeyDown must not finalize twice");
+    }
+}
+
+#[test]
+fn navigation_test_keeps_private_typing_private_and_denied_writes_unchanged() {
+    for deny in [false, true] {
+        let (service, host, context) = fixture();
+        host.scope_valid.set(true);
+        host.scope_value_failure.set(true);
+        host.caret_selection.set(true);
+        service.apply_context_policy(edit::FieldAccess::Private, false, Some((&context, 1))).unwrap();
+        seed(&service, &host, &context);
+        host.deny_write.set(deny);
+        let writes = host.writes.get();
+        let sink = service.to_interface::<ITfKeyEventSink>();
+        for _ in 0..2 {
+            assert_eq!(unsafe { sink.OnTestKeyDown(&context, WPARAM(crate::shell::vk::END as usize), LPARAM(0)).unwrap().as_bool() }, deny,
+                "pending finalization must keep the host navigation claim until it actually ends");
+        }
+        assert_eq!(&*host.text.borrow(), "안녕");
+        assert_eq!(host.writes.get(), writes);
+        assert_eq!(host.ended.get(), if deny { 0 } else { 1 });
+        assert!(service.state.borrow().password_field, "do not enable private-field input traces");
+        assert!(service.state.borrow().shell.as_ref().unwrap().engine().learned_words().is_empty());
+        host.deny_write.set(false);
+        service.drain_finishes(Some((&context, 1))).unwrap();
+        assert_eq!(host.ended.get(), 1, "a refused finalization remains recoverable");
+    }
+}
+
+#[test]
+fn navigation_test_does_not_edit_unknown_or_protected_fields() {
+    for protected in [false, true] {
+        let (service, host, context) = fixture();
+        host.scope_valid.set(protected);
+        host.read_only.set(protected);
+        seed(&service, &host, &context);
+        let writes = host.writes.get();
+        let sink = service.to_interface::<ITfKeyEventSink>();
+        assert!(unsafe { sink.OnTestKeyDown(&context, WPARAM(crate::shell::vk::END as usize), LPARAM(0)).unwrap().as_bool() });
+        assert_eq!(host.ended.get(), 0);
+        assert_eq!(host.writes.get(), writes);
+        assert_eq!(&*host.text.borrow(), "안녕");
+    }
+}
+
+#[test]
+fn navigation_probe_keeps_claim_when_reentry_cancels_finalization() {
+    let (service, host, context) = fixture();
+    host.scope_valid.set(true);
+    seed(&service, &host, &context);
+    let sink = service.to_interface::<ITfKeyEventSink>();
+    let reentrant = sink.clone();
+    *host.before_write.borrow_mut() = Some(Box::new(move || {
+        reentrant.cast_object_ref::<TextService>().unwrap().candidates.clear();
+    }));
+    assert!(unsafe { sink.OnTestKeyDown(&context, WPARAM(crate::shell::vk::END as usize), LPARAM(0)).unwrap().as_bool() });
+    assert_eq!(host.ended.get(), 0);
+    assert!(service.state.borrow().composition.is_some());
+    assert!(!unsafe { sink.OnKeyDown(&context, WPARAM(crate::shell::vk::END as usize), LPARAM(0)).unwrap().as_bool() });
+    assert_eq!(host.ended.get(), 1);
+    assert_eq!(&*host.text.borrow(), "안녕");
+}
+
+#[test]
+fn navigation_probe_disarms_a_right_alt_tap() {
+    let (service, host, context) = fixture();
+    host.scope_valid.set(true);
+    seed(&service, &host, &context);
+    let mode = service.state.borrow().shell.as_ref().unwrap().mode();
+    let alt = KeyEvent::new(crate::shell::vk::RMENU, Mods::NONE);
+    let _ = service.state.borrow_mut().shell.as_mut().unwrap().test_key_down(alt);
+    let sink = service.to_interface::<ITfKeyEventSink>();
+    assert!(!unsafe { sink.OnTestKeyDown(&context, WPARAM(crate::shell::vk::END as usize), LPARAM(0)).unwrap().as_bool() });
+    let out = service.state.borrow_mut().shell.as_mut().unwrap().key_up(alt);
+    assert!(!out.eaten);
+    assert_eq!(service.state.borrow().shell.as_ref().unwrap().mode(), mode);
 }
 
 #[test]
