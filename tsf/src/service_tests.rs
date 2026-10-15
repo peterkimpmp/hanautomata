@@ -442,6 +442,61 @@ fn navigation_probe_disarms_a_right_alt_tap() {
     assert_eq!(service.state.borrow().shell.as_ref().unwrap().mode(), mode);
 }
 
+/// Manual component measurement: production COM callbacks and an in-process mock document.
+/// This does not send Windows input, time painting, or stand in for any real application's acceptance.
+#[test]
+#[ignore = "manual COM callback latency measurement; keep the real tray stopped"]
+fn measure_com_callback_navigation_replay() {
+    use std::time::Instant;
+    use windows::Win32::System::Threading::{GetCurrentProcess, GetProcessHandleCount};
+    fn handles() -> u32 {
+        let mut count = 0;
+        unsafe { GetProcessHandleCount(GetCurrentProcess(), &mut count).unwrap(); }
+        count
+    }
+    assert!(!system::tray_running(), "this measurement must not bypass the tray coexistence guard");
+    let (service, host, context) = fixture();
+    service.state.borrow_mut().sink = Some(TestCompositionSink.into());
+    host.scope_valid.set(true);
+    host.caret_selection.set(true);
+    let sink = service.to_interface::<ITfKeyEventSink>();
+    let mut timings = Vec::with_capacity(11_200);
+    let mut handles_before = 0;
+    for cycle in 0..1_632 {
+        if cycle == 32 { handles_before = handles(); }
+        host.text.borrow_mut().clear();
+        let boundary = if cycle % 2 == 0 { crate::shell::vk::END } else { crate::shell::vk::SPACE };
+        for key in [b'D' as u16, b'K' as u16, b'S' as u16, b'S' as u16, b'U' as u16, b'D' as u16, boundary] {
+            let start = Instant::now();
+            let test = unsafe { sink.OnTestKeyDown(&context, WPARAM(key as usize), LPARAM(0)).unwrap().as_bool() };
+            let eaten = unsafe { sink.OnKeyDown(&context, WPARAM(key as usize), LPARAM(0)).unwrap().as_bool() };
+            unsafe {
+                let _ = sink.OnTestKeyUp(&context, WPARAM(key as usize), LPARAM(0xC0000001u32 as isize)).unwrap();
+                let _ = sink.OnKeyUp(&context, WPARAM(key as usize), LPARAM(0xC0000001u32 as isize)).unwrap();
+            }
+            if cycle >= 32 { timings.push(start.elapsed().as_secs_f64() * 1_000.0); }
+            assert_eq!(test, key != crate::shell::vk::END, "unexpected probe at cycle {cycle}");
+            assert_eq!(eaten, key != crate::shell::vk::END, "unexpected consumption at cycle {cycle}");
+        }
+        let expected = if boundary == crate::shell::vk::END { "안녕" } else { "안녕 " };
+        assert_eq!(&*host.text.borrow(), expected, "lost/duplicated input at cycle {cycle}");
+        assert!(service.state.borrow().composition.is_none());
+        assert_eq!(host.ended.get(), cycle + 1);
+        assert!(service.state.borrow().pending_finishes.iter().all(|f| f.done.get()));
+    }
+    let handles_after = handles();
+    timings.sort_by(f64::total_cmp);
+    let n = timings.len();
+    println!("{}", serde_json::json!({
+        "scope": "COM callbacks with mock document; no real app, keyboard, painting or learning worker latency",
+        "measured_keys": n, "warmup_keys": 224, "cycles": 1632, "mismatches": 0,
+        "mean_ms": timings.iter().sum::<f64>() / n as f64,
+        "p50_ms": timings[n / 2], "p95_ms": timings[n * 95 / 100],
+        "p99_ms": timings[n * 99 / 100], "max_ms": timings[n - 1],
+        "handles_before": handles_before, "handles_after": handles_after
+    }));
+}
+
 #[test]
 fn navigation_commits_visible_text_without_rewriting_or_repositioning_it() {
     use crate::shell::vk;
