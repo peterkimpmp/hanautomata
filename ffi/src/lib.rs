@@ -205,6 +205,10 @@ impl Engine {
     pub fn confirm_learning_with_status(&self, batch: &hanautomata_core::LearningBatch) -> hanautomata_core::LearningConfirmation {
         self.preferences.confirm_learning_with_status(batch)
     }
+    /// Current (enabled, paused), or unavailable without waiting for the preference lock.
+    pub fn try_learning_flags(&self) -> Option<(bool, bool)> {
+        self.preferences.try_learning_flags()
+    }
 
     fn run(&self, action: impl FnOnce(&mut Session) -> Response) -> KeyResult {
         let mut session = guard(&self.session);
@@ -374,11 +378,6 @@ impl Engine {
 
     pub fn learning_enabled(&self) -> bool {
         self.preferences.enabled()
-    }
-
-    /// Current (enabled, paused), or unavailable without waiting for the preference lock.
-    pub fn try_learning_flags(&self) -> Option<(bool, bool)> {
-        self.preferences.try_learning_flags()
     }
 
     pub fn set_learning_enabled(&self, enabled: bool) {
