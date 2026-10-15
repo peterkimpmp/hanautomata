@@ -837,3 +837,95 @@ Sky의 개별 키 주입과 화면/접근성 관측이다. `left right`만 시�
 | `selection-space-build.log` | x64/x86 release 빌드·양쪽 DLL selftest 통과, 여섯 payload 해시 동결 |
 
 첫 빌드 로그 수집은 내부 작업 디렉터리 변경 때문에 상대 로그 경로에서 실패했다. 성공으로 계산하지 않고 절대 로그 경로로 다시 실행한 위 로그를 최종 근거로 삼았다. C# 소스는 이번 수정에서 바꾸지 않았으며 C# 전체 검사를 새로 실행했다고 주장하지 않는다. Word의 위 사례는 통과했지만 앱별 전체 승인 **0/6**, WQ-07·로그인·관리자/제한 호스트·장기 성능 등 필수 게이트는 미완료다.
+
+## 빌드 집계와 잔여 단계 — 2026-10-15 진행 보고
+
+현재 품질 작업의 `build/tsf/wq-*` 가운데 `sha256.json`과 x64/x86 DLL이 함께 보존된 후보는 **10종**이다. 빈 준비 디렉터리 2개, 동일 후보의 반복 컴파일과 아키텍처를 중복 합산하지 않는다. 전체 개발 기간의 모든 컴파일 횟수를 복원한 수치가 아니다. 이 10종에는 원인 추적판과 효과가 없었던 가설 시험판도 포함된다.
+
+| 보존 후보 | 목적·확인된 경계 |
+|---|---|
+| `wq-5971010-20261015` | 설정·후보 표시·입력 보강을 포함한 현재 시스템 설치본 |
+| `wq-field-probe-20261015` | 실제 Word 필드 조회의 진단 |
+| `wq-word-scope-20261015` | Word의 조회 실패 조건과 조합 처리 보강 |
+| `wq-word-language-order-20261015` | 언어 지정 순서 가설 시험. 실제 Word F2 해결로 승인하지 않음 |
+| `wq-word-explicit-20261015` | 명시적 교정 조합 가설 시험. 실제 Word에서 실패해 해당 구현 제외 |
+| `wq-word-separator-20261015` | 기존 공백을 다시 쓰지 않는 F2 교체 후보 |
+| `wq-learning-confirmation-20261015` | 문서 반영 성공 뒤에만 학습 확정 |
+| `wq-learning-client-20261015` | 확정 선택 큐·응답 재시도. 이 묶음의 공백 보존 수정으로 실제 Word F2 왕복 확인 |
+| `wq-service-learning-20261015` | TSF 서비스와 확정 선택 큐 연결 |
+| `wq-selection-space-20261015` | 공백 포함 Shift+F2 양방향과 Undo/Redo를 실제 Word에서 확인 |
+
+Program Files의 `update-result.json`이 남은 시스템 갱신은 **5회**다. `d2-session-20261012`, `d2-f2-20261012`, `d2-f2-trace-20261013`, `d2-word-correction-20261013`, `wq-5971010-20261015`이며 최초 기본 설치는 별도다. 이는 위 후보 수와 다른 집계이고 둘을 더해 총 빌드 횟수라고 하지 않는다. 최신 학습 worker는 개발 소스·검사 단계이며 10개 동결 후보에 아직 포함하지 않았다.
+
+남은 작업은 ① 학습 저장의 종료 복구·상태/관리·실행 중 갱신·제한 호스트 연결, ② 메모장·Chrome·Edge·Word·시작 검색·관리자 메모장 전체 케이스, ③ 설치/제거/롤백·실제 로그인·DPI·10,000키/30분 성능·최종 패키지의 **3단계**다. 추가 후보 검증 3~5회는 계획 범위이며 결함 재현과 권한/화면 관측에 따라 늘어난다. 아직 남은 구현이 있어 단순 최종 검사만 남은 상태가 아니며, 완료 시간·진행률을 추정 수치로 확정하지 않는다. 일부 Word 사례 통과와 전체 앱 승인 **0/6**을 구분한다.
+
+## 일반 데스크톱 학습 worker 개발 검증 — 2026-10-15
+
+기준 HEAD `6519f59` 위의 미커밋 개발 변경이다. 정상 서비스 활성화 후 같은 revision의 setup 도구를 별도 자식으로 시작하고, 정확한 부모·자식 프로세스와 무작위 파이프/nonce를 확인한다. 입력 콜백은 준비된 초기 사전과 제한 큐만 다루며 저장과 통신은 worker에서 수행한다. 여러 앱의 자식은 트랜잭션마다 전용 파일 잠금을 잡고 최신 상태를 읽는다. 입력 endpoint는 학습만 허용하고 삭제·초기화·다른 연결 관리는 거부한다.
+
+초기 사전은 기존 학습을 메모리에서 합치고 중복 항목에는 새 저장소를 우선한다. 기존 파일을 쓰거나 자동 이관하지 않는다. 로컬 선택이 먼저 변했다면 초기 복원을 생략해 해당 선택을 보존한다. 오래된 미완료 문서 콜백은 새 문서의 큐 연결을 막지 않으며, 이전 단어의 저장 세대를 새 세대로 바꾸지 않는다.
+
+| 검사와 로그 (`build/windows-quality/`) | 결과·범위 |
+|---|---|
+| `learning-runtime-final-core.log` | core **106개** 통과. 초기 사전 교환·로컬 변경 보존·기존 사전 병합 포함 |
+| `learning-runtime-final-x64.log`, `learning-runtime-final-x86.log` | 각 TSF lib **149개**, shell 19개, stdio 프로세스 1개, pipe 프로세스 3개, runtime 프로세스 5개 통과 |
+| `learning-runtime-final-{x64,x86}-product_worker_connects_real_callbacks.log` | 합성 문서의 실제 TextService 콜백→제품 worker→실제 자식→저장→다음 서비스 복원, 양쪽 통과 |
+| `learning-runtime-final-{x64,x86}-abandoned_old_context.log` | 오래된 미완료 문서 콜백이 있어도 새 문서의 저장 연결·확정만 기록, 양쪽 통과 |
+| `learning-runtime-contention-red.log` | 1초 이상 파일 잠금 뒤 이전 재시도 정책으로 저장이 회복되지 않는 assertion 실패 재현. 후속 runtime 시험에서 잠금 해제 후 저장·정리 확인 |
+| `learning-runtime-final-build.log` | 기본 제품 기능의 `tsf/build.ps1 -X86`, 종료 코드 0. x64/x86 release 빌드·양쪽 DLL selftest 통과. 설치하지 않음 |
+
+위 범위의 **고유 Rust 검사 285개 = core 106 + TSF lib 149 + 명시적 서비스 통합 2 + shell 19 + stdio 1 + pipe 3 + runtime 5**다. 아키텍처·반복·부모가 실행하는 자식 fixture는 중복 합산하지 않는다. 별도 진단 도구 14개(probe 11, store driver 3)도 통과했지만 이전 273개와의 비교 집계에는 넣지 않는다. C# 소스와 전체 C# 검사는 이번 단계에서 갱신하지 않았다. 합성 문서/자식 프로세스 통합 검사는 실제 Word 영속 학습이나 6개 앱 승인으로 대체하지 않는다.
+
+첫 opposite-vendor 읽기 전용 소스 검토의 핸들 상속·작업 폴더·재시도 중단·기존 학습 소실 가능성·큐 연결 지연을 보강했다. 명시적 `CreateProcessW` 호출의 핸들 미상속과 실행 파일 폴더 고정은 상속 ON 양성 대조를 포함한 시험으로 확인했다. 이전 Rust 표준 실행기의 핸들 유출은 실제 재현하지 않았으므로 관측된 유출로 주장하지 않는다.
+
+후속 검토 `learning-runtime-review-followup.json`은 제공한 소스 범위에서 High 잔여 없음과 Medium 후속 항목을 보고했다. 검토자는 실행 도구 없이 소스만 읽었으며 아래 항목은 아직 해결 완료가 아니다.
+
+- 보안 정책의 실행 거부 코드 범위·프로세스 생성 제한 사전 판정 보강.
+- 500ms 통신 예산에 느린 디스크 커밋이 포함되는 조건의 결함 주입 검증과 대기 정책 수정.
+- 반복 I/O 실패·세대 갱신 재시도의 간격/상태, 10ms 유휴 polling의 전력 비용 보강. 손상 상태는 core의 `InvalidState`이고 `Faulted`는 해당 Authority 객체의 오류 표식이므로 두 의미를 혼동하지 않는다.
+- 초기 병합의 용량/중복/순서 경계와 argv의 특수 문자·UTF-16 시험 확장.
+
+특히 **종료하지 못한 연결(고아 lease)이 누적되어 256개 한도에 도달하는 문제는 설치·릴리즈 차단 조건**이다. 부모 종료·로그오프·잠금 중 정리 시간 초과에도 살아 있는 다른 연결을 제거하지 않는 회복 경로가 필요하다. 입력 내용 로그·사용자 문서·시스템 등록은 변경하지 않았다. 이 후보는 아직 설치하지 않으며 학습 상태/관리 UI·실행 중 사전 갱신·제한 호스트·강제 종료 전 ACK 미수신 내구성·실제 앱 승인은 남아 있다. **WQ-07 미완료·전체 앱 0/6·목표 진행 중**이다.
+
+## 학습 연결 회수·유휴 대기·사전 병합 보강 — 2026-10-15
+
+직전 차단 조건인 고아 연결을 실제 자식 프로세스 강제 종료로 재현했다(`learning-lifetime-red.log`, 컴파일 성공 뒤 assertion 실패). 연결마다 `WindowsMutexV1` 정책을 저장하고 등록 전 전역 mutex를 소유하도록 바꿨다. 등록과 회수는 같은 저장 파일 잠금 아래 진행한다. 소유자가 없거나 종료된 관리 대상만 회수하며, 접근 오류·동일 이름의 다른 종류 객체·살아 있는 소유자·이전/관리용 연결은 보존한다. 자기 연결은 재귀 mutex 획득으로 오판하지 않도록 검사에서 제외한다.
+
+| 재현·수정 | 근거와 결과 |
+|---|---|
+| 강제 종료 뒤 연결 누적 | 실제 자식 한 개를 종료하고 나머지는 합성 관리 대상 기록으로 256개 한도까지 채움. 새 시작 때 회수, 기존 살아 있는 앱의 추가 저장과 관리용 연결 보존 통과 |
+| 잠금 중 종료 | 자기 연결을 정리하지 못하고 종료한 뒤 다음 시작에서 회수 통과. 사용자 앱을 강제 종료하지 않음 |
+| 유휴 worker 반복 깨우기 | `learning-idle-red.log`: 입력 없는 300ms에 29회. 큐/종료 이벤트와 정확한 자식 핸들을 함께 기다리도록 수정한 뒤 같은 검사에서 1회 이하, 새 선택 저장·종료 통과. 배터리 사용량 측정은 아님 |
+| 느린 저장 뒤 응답 실패 | `learning-runtime-followup-red.log`: 800ms 지연 뒤 전송 시한 만료 재현. 응답 전송 예산을 새로 시작하여 통과. 실제 백신 환경 p99 측정은 별도 |
+| 보안 실행 거부 반복 | 같은 red 로그에서 누락된 오류 코드 재현. SDK 상수 대조 후 범위 보강. 별도 소유 시험 프로세스에 자식 생성 금지를 설정하여 spawn 시도 전 거부도 확인. 사용자 보안 정책 변경 없음 |
+| 초기 사전 손실 | `learning-merge-capacity-red.log`: 고유 1,024개가 중복/용량 처리로 512개가 됨. 각 원본의 순서를 유지해 중복을 합친 뒤 용량을 적용하여 1,024개 보존·새 저장소 중복 우선 통과 |
+
+`learning-lifetime-core-full.log`의 core **109개**, `learning-lifetime-final-x64.log`·`learning-lifetime-final-x86.log`의 각 TSF lib **155개**·shell 19개·stdio 1개·pipe 3개·runtime 8개가 통과했다. 양쪽의 `learning-lifetime-final-<arch>-product_worker_connects_real_callbacks_and_restores_the_next_service.log`와 `...-abandoned_old_context_cannot_block_a_new_contexts_persistence_connection.log`는 명시적 서비스 통합 2개 통과다. 전체 빌드가 출력한 정확한 테스트 실행 파일을 사용했다. **고유 Rust 검사 297개 = 109 + 155 + 19 + 1 + 3 + 8 + 2**이며 아키텍처·fixture·재실행은 중복 합산하지 않는다. 진단 도구 14개는 별도다. `learning-lifetime-final-build.log`는 기본 제품 기능의 x64/x86 빌드와 양쪽 DLL selftest 통과 기록이다.
+
+중간 `learning-runtime-followup-green.log`는 이름과 달리 실패 기록이다. 자기 프로세스의 pseudo handle을 복수 대기에 넣은 시험 코드와 비정상 UTF-16 인수를 Unicode 전용 libtest 진입점에 넘긴 시험 코드 2개가 실패했다. 실제 프로세스 핸들로 고쳤고, 유효 인수는 실제 자식에서·비정상 UTF-16은 네이티브 인수 parser에서 각각 확인했다. 제품이 비정상 UTF-16 인수로 실제 실행까지 성공했다고 확대하지 않는다. 최종 양쪽 로그를 통과 근거로 사용한다.
+
+이 단계는 사용자 설치·등록·기본 입력기·문서를 변경하지 않았다. Windows 화면 도구는 기존 메모장 창 2개와 열린 Word 창 부재를 반환했으며 앱 시험을 새로 통과시킨 기록은 없다. 관리 UI·실행 중 갱신·제한 호스트·실제 다른 세션·제품 롤백·학습 ACK 전 강제 종료·6종 앱·로그인·장기 성능은 계속 남는다. **전체 앱 승인 0/6·목표 진행 중**을 유지한다.
+
+## 저장 자식의 유휴 대기·구형 저장소 복귀 — 2026-10-15
+
+읽기 전용 opposite-vendor 검토 `learning-lifetime-review.json`은 입력 측 worker 외에 저장 자식도 500ms마다 깨어나는 점과 신형 연결 메타데이터를 V1 헤더로 쓰는 점을 지적했다. 소스 확인에서 DLL pin은 worker 시작 전 실행되고, setup의 내부 자식 분기는 등록 CLI 전에 종료되며, 저장 경로는 LocalAppData임을 확인했다. 학습 삭제/초기화·관리 UI는 계속 미구현 범위다.
+
+- `learning-companion-idle-red.log`: 1.2초 유휴 중 accept 시작 3회로 assertion 실패. 부모 프로세스 핸들과 overlapped event를 함께 기다리도록 바꾼 `learning-companion-idle-green.log`에서 1회와 Close 응답, 부모 종료 시 취소 완료 후 같은 파이프 재사용이 통과했다. 배터리 사용량이나 30분 성능 결과는 아니다.
+- `learning-format-red.log`: 신형 메타데이터의 버전 표기와 위장 V1 거부 2개 실패. 수정 후 관리 대상 연결이 있는 동안 V2, 마지막 연결 정리 후 기존 데이터와 revision을 보존한 V1을 기록한다. `learning-format-core-green.log`의 core 111개가 통과했다.
+- `learning-rollback-red.log`: 일반 회수 함수를 그대로 롤백 준비로 사용하면 살아 있거나 불명확한 연결에도 성공을 반환하는 2개 실패. 롤백 준비는 이러한 연결을 만나면 커밋 전에 `Busy`로 끝나도록 분리했다. 실제 소유 자식 프로세스가 살아 있을 때 파일 바이트 보존, 종료 뒤 학습 항목 보존과 V1 복귀는 `learning-companion-final-runtime-x64.log`에서 통과했다.
+- `learning-rollback-compat-final.log`: 이전 커밋 `6519f59d6cace880e73a9ba4d61c4dc4dea33e1d`를 archive하여 실제 구형 core 실행 파일을 빌드했다. 구형 쓰기→신형 쓰기→구형의 V2 거부(exit 3·바이트 불변)→신형 연결 정리→구형 읽기/추가 쓰기→신형 읽기가 통과했다. 합성 항목 3개·store ID 보존·revision 7을 확인했다. 영수증은 `rollback-compat-4bfc1725138c4a158cd85b874c5939ab/result.json`이다.
+
+호환 시험 스크립트의 첫 PowerShell 5.1 실행은 cargo의 정상 stderr 진행 문구를 PowerShell 오류로 처리해 중단됐다(`learning-rollback-compat.log`). native exit code를 검사하도록 고쳐 같은 PowerShell 5.1에서 위 최종 시험이 통과했다. 첫 실패를 저장소 결함이나 성공으로 계산하지 않는다. 명령은 앱을 닫거나 등록을 변경하지 않으며, 전체 제품 롤백·실제 6개 앱 승인은 여전히 별도다.
+
+후속 `learning-compat-review.json`은 제공한 소스에서 입증된 High/Medium 결함 없음과 격리 일반 앱 시험의 조건부 진행을 기록했다. 검토자는 도구를 실행하지 않았다. 조건은 다음 근거로 구분한다.
+
+- CM-1: `LearnedWord` 직렬화, `normalize`, `valid_context`는 기준 커밋 이후 변경하지 않았다. 추가로 `learning-rollback-compat-expanded-final.log`에서 한글 앞말의 문맥 fingerprint, 전역/문맥 별도 항목, Forget/Reset fence, 유효 가중치 0/16 경계를 실제 구형/신형 도구로 시험했다. 원본 4항목 = 복원 4항목이며 구형 추가 쓰기 뒤 5항목이다. 별도 Reset 뒤 0항목·구형 추가 쓰기 뒤 1항목도 확인했다. 영수증은 `rollback-compat-0aaab65ccb5a47a2aebe642ec5fe5ade/result.json`이다.
+- 확장 시험의 첫 assertion은 문맥 학습이 전역·문맥 두 항목을 저장한다는 계약을 빠뜨려 4항목을 기대했다(`learning-rollback-compat-expanded.log`). DB에 두 항목이 정상 보존된 것을 확인한 뒤 기대값과 문맥 선택 조건을 수정했다. 제품 데이터를 손실로 오판한 시험 결함이며 제품 코드는 바꾸지 않았다.
+- CM-2: 기준 커밋의 서비스는 학습 파일을 읽기만 하며 제품 worker 실행이나 `tsf-learning.db` 경로가 없다. 구형 Authority는 신형 헤더를 `InvalidState`로 거부하고 DB 바이트를 보존했다. 이 근거는 실제 설치 중 혼합 revision 승인과는 별도다.
+- CM-3: `Peer::process`는 `PROCESS_SYNCHRONIZE` 권한을 요청한다. 양쪽 아키텍처의 실제 setup 자식 통합 검사로 부모 검사·등록·저장·종료가 통과했다.
+
+최종 개발 증거는 core **111개**, TSF lib **159개**, 명시적 서비스 통합 2개, shell 19개, stdio 1개, pipe 3개, runtime **9개**, 총 **고유 Rust 304개**다. core는 `learning-format-core-green.log`, TSF는 `learning-companion-final-x64.log`·`learning-companion-final-x86.log`, 추가 x64 runtime은 `learning-companion-final-runtime-x64.log`, 서비스 통합은 `learning-companion-final-<arch>-<test>.log`다. 별도 진단 도구 14개·아키텍처·반복 실행은 중복 합산하지 않는다. `learning-companion-final-build.log`는 양쪽 기본 제품 빌드와 DLL selftest 통과다. 후속 변경은 롤백 오류 안내·주석 및 호환 시험뿐이며 최종 payload 빌드는 별도 원장에 보관한다.
+
+명시적 롤백 준비의 사전 존재 검사와 파일 열기 사이 외부 프로그램이 DB와 owner marker를 동시에 삭제하는 경쟁 상황은 아직 비생성 보장으로 승인하지 않았다. 기존 파일만 열 수 있는 경로가 후속 관리 기능의 보강 항목이다. 사용자 설치·실제 사전·문서·기본 입력기는 변경하지 않았으며 **전체 앱 승인 0/6·WQ-07 미완료·목표 진행 중**이다.
+
+`learning-companion-payload-build.log`에서 안내 문구와 주석을 반영한 최종 x64/x86 제품 빌드·selftest가 통과했다. 양쪽 setup의 롤백 명령 인수 거부도 상태 접근 전에 확인했다(`learning-rollback-cli-<arch>.log`). `build/tsf/wq-learning-runtime-20261015`에 setup·DLL·UI 6파일과 SHA256을 복사·재검증해 보존했다. 따라서 현재 품질 작업의 보존 후보는 **11종**, 시스템 갱신 receipt는 **5회**다. 새 후보는 시스템에 설치하지 않았으며 공개 릴리즈로 승인하지 않았다.

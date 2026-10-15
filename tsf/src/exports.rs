@@ -14,6 +14,17 @@ use crate::service::TextService;
 
 static MODULE: AtomicPtr<c_void> = AtomicPtr::new(std::ptr::null_mut());
 
+/// The existing COM policy keeps this text-service DLL loaded for process lifetime. Make that guarantee explicit
+/// before detached Rust workers can run. Called from activation, never DllMain; no join under the loader lock.
+pub(crate) fn pin_for_worker() -> Result<()> {
+    use windows::Win32::System::LibraryLoader::{GetModuleHandleExW, GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, GET_MODULE_HANDLE_EX_FLAG_PIN};
+    let address = MODULE.load(Ordering::Relaxed);
+    if address.is_null() { return Err(windows::Win32::Foundation::E_FAIL.into()); }
+    let mut module = windows::Win32::Foundation::HMODULE::default();
+    unsafe { GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN,
+        windows::core::PCWSTR(address.cast()), &mut module) }
+}
+
 /// Resolve this DLL (never the host EXE). Preserve UTF-16 paths and reject truncation or missing DllMain state.
 pub(crate) fn module_path() -> Result<std::path::PathBuf> {
     use std::os::windows::ffi::OsStringExt;

@@ -65,6 +65,78 @@ fn request(endpoint: &Endpoint, peer: &Peer, command: WireCommand) -> serde_json
 }
 
 #[test]
+#[ignore = "requires HANAUTOMATA_TEST_SETUP pointing to this build's setup executable; owned test store only"]
+fn product_worker_connects_real_callbacks_and_restores_the_next_service() {
+    use crate::learning_runtime::{Runtime, Phase};
+    let files = Fixture::new();
+    let setup = PathBuf::from(std::env::var_os("HANAUTOMATA_TEST_SETUP").expect("explicit matching setup build"));
+    let wait = |action: &mut dyn FnMut() -> bool| {
+        let end = Instant::now() + Duration::from_secs(10);
+        while !action() { assert!(Instant::now() < end, "product worker deadline"); thread::sleep(Duration::from_millis(10)); }
+    };
+    for restart in [false, true] {
+        let (service, host, context) = fixture(); host.caret_selection.set(true);
+        {
+            let mut state = service.state.borrow_mut(); state.sink = Some(TestCompositionSink.into());
+            state.learning_version = state.shell.as_ref().unwrap().engine().learning_version();
+            state.learning_runtime = Some(Runtime::start(setup.clone(), files.root.join("learning.db")).unwrap());
+        }
+        wait(&mut || { service.poll_learning(); service.state.borrow().learning.report().connected });
+        assert_eq!(service.state.borrow().learning.report().initial_snapshot_applied, Some(true));
+        assert_eq!(service.state.borrow().shell.as_ref().unwrap().engine().learned_count(), if restart { 1 } else { 0 });
+        if !restart {
+            type_choice(&service, &context, b"DKSSUD"); commit(&service, &context);
+            assert_eq!(&*host.text.borrow(), "dkssud ");
+            wait(&mut || { service.poll_learning(); service.state.borrow().learning.report().storage.unwrap().committed == 1 });
+            // A refused document edit still must not create another persistent choice.
+            type_choice(&service, &context, b"HELLO"); host.fail_set.set(true);
+            let _ = paired_key(&service, &context, b' ', edit::FieldAccess::Ordinary);
+        }
+        let runtime = service.state.borrow_mut().learning_runtime.take().unwrap();
+        unsafe { service.to_interface::<ITfTextInputProcessorEx>().Deactivate().unwrap(); }
+        runtime.stop(); wait(&mut || runtime.status().phase == Phase::Stopped);
+    }
+    let owner = Authority::open(files.root.join("learning.db"), Endpoint::random().unwrap().token()).unwrap();
+    let snapshot = owner.snapshot().unwrap(); assert_eq!(snapshot.entries.len(), 1);
+    assert_eq!(snapshot.entries[0].raw, "dkssud"); assert_eq!(snapshot.entries[0].english_weight, 1.0);
+    assert!(owner.clients().unwrap().is_empty());
+}
+
+#[test]
+#[ignore = "requires HANAUTOMATA_TEST_SETUP; owned store and synthetic document contexts only"]
+fn abandoned_old_context_cannot_block_a_new_contexts_persistence_connection() {
+    use crate::learning_runtime::{Runtime, Phase};
+    let files = Fixture::new(); let setup = PathBuf::from(std::env::var_os("HANAUTOMATA_TEST_SETUP").unwrap());
+    let (service, host, context) = fixture(); host.caret_selection.set(true);
+    service.state.borrow_mut().sink = Some(TestCompositionSink.into());
+    type_choice(&service, &context, b"DKSSUD"); host.defer.set(true);
+    unsafe { service.to_interface::<ITfKeyEventSink>().OnSetFocus(false).unwrap(); }
+    assert!(service.state.borrow().pending_finishes.iter().any(|f| !f.done.get()));
+    {
+        let mut state = service.state.borrow_mut();
+        state.learning_version = state.shell.as_ref().unwrap().engine().learning_version();
+        state.learning_runtime = Some(Runtime::start(setup, files.root.join("learning.db")).unwrap());
+    }
+    let end = Instant::now() + Duration::from_secs(10);
+    loop {
+        service.poll_learning();
+        if service.state.borrow().learning.report().connected { break; }
+        assert!(Instant::now() < end, "old callback cannot prevent queue connection"); thread::sleep(Duration::from_millis(10));
+    }
+    assert!(service.state.borrow().pending_finishes.iter().any(|f| !f.done.get()));
+    let (_, new_host, new_context) = fixture(); new_host.caret_selection.set(true);
+    type_choice(&service, &new_context, b"HELLO"); commit(&service, &new_context);
+    let runtime = service.state.borrow_mut().learning_runtime.take().unwrap();
+    while runtime.status().committed != 1 { assert!(Instant::now() < end); thread::sleep(Duration::from_millis(10)); }
+    host.deny.set(true); unsafe { service.to_interface::<ITfTextInputProcessorEx>().Deactivate().unwrap(); }
+    host.pending.borrow_mut().clear(); runtime.stop();
+    while runtime.status().phase != Phase::Stopped { assert!(Instant::now() < end); thread::sleep(Duration::from_millis(10)); }
+    let owner = Authority::open(files.root.join("learning.db"), Endpoint::random().unwrap().token()).unwrap();
+    assert_eq!(owner.snapshot().unwrap().entries.len(), 1);
+    assert_eq!(owner.snapshot().unwrap().entries[0].raw, "hello");
+}
+
+#[test]
 fn confirmed_service_edit_reaches_a_separate_authenticated_store_after_the_key_callback() {
     let mut broker = Fixture::new(); let (endpoint, peer) = broker.start(4);
     let lease: Lease = serde_json::from_value(request(&endpoint, &peer, WireCommand::Register {})["lease"].clone()).unwrap();

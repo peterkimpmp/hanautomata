@@ -6,15 +6,21 @@
 //! S0 scope: registration step by step, composition and commit in real applications, the switch keys (⇧Space, Caps Lock
 //! short/long, 한/영, right Alt tap), F2/Shift+F2, F12 pause, the system mode indicator (가/A), pass-through in password
 //! fields, beside the tray app (W-17) and in elevated processes (W-14). Candidate preview and a separate settings editor
-//! are development implementations awaiting real-app/visual acceptance. Saving learning is not implemented yet
-//! (one learning file and many processes: see core/src/store.rs).
+//! are development implementations awaiting real-app/visual acceptance. Ordinary desktop learning now has an
+//! asynchronous companion; restricted-host persistence and full product acceptance remain incomplete.
 
 pub mod shell;
 pub mod settings;
 
-// Development-only authenticated transport. Not loaded or started by the installed text service.
-#[cfg(all(windows, feature = "quality-probes"))]
+// Worker-only authenticated transport; ordinary desktop peers only.
+#[cfg(windows)]
 pub mod learning_pipe;
+#[cfg(windows)]
+pub mod learning_runtime;
+#[cfg(windows)]
+mod learning_process;
+#[cfg(windows)]
+mod learning_wake;
 
 #[cfg(windows)]
 mod display;

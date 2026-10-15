@@ -44,6 +44,57 @@ fn learn(lease: &Lease, raw: &str, korean: bool) -> Request {
 }
 
 #[test]
+fn managed_lease_format_is_versioned_and_returns_to_legacy_after_drain() {
+    let fixture = Fixture::new(); let mut owner = fixture.open();
+    let old = owner.register(ALICE).unwrap();
+    let managed = owner.register_with_lifetime(BOB, LeaseLifetime::WindowsMutexV1).unwrap();
+    owner.apply(&learn(&managed, "retained", true)).unwrap();
+    let words = owner.snapshot().unwrap().entries;
+    let managed_bytes = fs::read(&fixture.path).unwrap();
+    assert!(managed_bytes.starts_with(b"Hanautomata.TsfLearning/2\n"), "a strict legacy reader must see an explicit format change");
+    drop(owner); let mut owner = fixture.open();
+    owner.retire(BOB, managed.lease_revision).unwrap();
+    let bytes = fs::read(&fixture.path).unwrap();
+    assert!(bytes.starts_with(b"Hanautomata.TsfLearning/1\n"));
+    assert!(!String::from_utf8(bytes).unwrap().contains("lifetime"));
+    assert_eq!(owner.snapshot().unwrap().entries, words);
+    assert_eq!(owner.clients().unwrap()[0].key.client_id, ALICE);
+    // Existing unmanaged sessions and their monotonic identities survive a downgrade.
+    owner.apply(&learn(&old, "after", false)).unwrap();
+    assert_eq!(owner.snapshot().unwrap().entries.len(), 2);
+}
+
+#[test]
+fn managed_metadata_under_a_legacy_header_is_rejected_without_overwrite() {
+    let fixture = Fixture::new(); let mut owner = fixture.open();
+    owner.register_with_lifetime(BOB, LeaseLifetime::WindowsMutexV1).unwrap(); drop(owner);
+    let bytes = fs::read(&fixture.path).unwrap();
+    let newline = bytes.iter().position(|b| *b == b'\n').unwrap();
+    let mut misleading = b"Hanautomata.TsfLearning/1\n".to_vec(); misleading.extend_from_slice(&bytes[newline + 1..]);
+    fs::write(&fixture.path, &misleading).unwrap();
+    assert_eq!(Authority::open(&fixture.path, STORE).unwrap_err(), Error::InvalidState);
+    assert_eq!(fs::read(&fixture.path).unwrap(), misleading);
+}
+
+#[test]
+fn lifetime_policy_survives_reopen_and_apply_and_cannot_reclassify_an_existing_lease() {
+    let fixture = Fixture::new(); let mut owner = fixture.open();
+    owner.register(ALICE).unwrap();
+    assert!(!String::from_utf8(fs::read(&fixture.path).unwrap()).unwrap().contains("lifetime"), "older unmanaged records retain their encoding");
+    let managed = owner.register_with_lifetime(BOB, LeaseLifetime::WindowsMutexV1).unwrap();
+    owner.apply(&learn(&managed, "hello", true)).unwrap(); drop(owner);
+    let mut owner = fixture.open(); let clients = owner.clients().unwrap();
+    assert_eq!(clients[0].lifetime, LeaseLifetime::Unmanaged);
+    assert_eq!(clients[1].lifetime, LeaseLifetime::WindowsMutexV1);
+    let disk = fs::read(&fixture.path).unwrap();
+    assert_eq!(owner.register(BOB).unwrap_err(), Error::InvalidRequest);
+    assert_eq!(owner.register_with_lifetime(ALICE, LeaseLifetime::WindowsMutexV1).unwrap_err(), Error::InvalidRequest);
+    let retry = owner.register_with_lifetime(BOB, LeaseLifetime::WindowsMutexV1).unwrap();
+    assert_eq!(retry.lease_revision, managed.lease_revision); assert_eq!(retry.next_sequence, 2);
+    assert_eq!(fs::read(&fixture.path).unwrap(), disk, "retries and refused policy changes must not write");
+}
+
+#[test]
 fn independent_clients_contribute_without_stale_snapshot_overwrites() {
     let fixture = Fixture::new(); let mut owner = fixture.open();
     let a = owner.register(ALICE).unwrap(); let b = owner.register(BOB).unwrap();

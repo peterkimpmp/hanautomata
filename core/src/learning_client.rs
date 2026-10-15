@@ -28,7 +28,7 @@ struct State {
     lease: Lease, observed: Version, next_sequence: u64, last_committed: u64,
     pending: VecDeque<Pending>, flight: Option<Flight>, refresh_after: Option<u64>, closed: bool,
 }
-struct Shared { state: Mutex<State>, epoch: AtomicU64 }
+struct Shared { state: Mutex<State>, epoch: AtomicU64, waker: Option<std::task::Waker> }
 
 /// A one-use capture of the storage generation before the user/document operation. It contains no input text.
 pub struct Action { owner: Weak<Shared>, epoch: u64, generation: u64 }
@@ -69,11 +69,19 @@ fn close(state: &mut State) { state.closed = true; state.pending.clear(); state.
 
 /// One authenticated lease per queue. Never reuse queued work under a different store or lease.
 pub fn channel(lease: Lease) -> Result<(Producer, Worker)> {
+    make_channel(lease, None)
+}
+/// An optional nonblocking, panic-free in-process notification supplied by the platform worker.
+/// Notification happens after releasing the queue lock; it must never perform file/transport work.
+pub fn channel_with_waker(lease: Lease, waker: std::task::Waker) -> Result<(Producer, Worker)> {
+    make_channel(lease, Some(waker))
+}
+fn make_channel(lease: Lease, waker: Option<std::task::Waker>) -> Result<(Producer, Worker)> {
     if !valid_version(&lease.version) || !valid_id(&lease.client_id) || lease.lease_revision == 0
         || lease.lease_revision > lease.version.revision || lease.next_sequence == 0
         || lease.next_sequence == u64::MAX
         || lease.next_sequence - 1 > lease.version.revision - lease.lease_revision { return Err(QueueError::InvalidLease); }
-    let shared = Arc::new(Shared { epoch: AtomicU64::new(2), state: Mutex::new(State {
+    let shared = Arc::new(Shared { epoch: AtomicU64::new(2), waker, state: Mutex::new(State {
         observed: lease.version.clone(), next_sequence: lease.next_sequence, last_committed: lease.lease_revision,
         lease, pending: VecDeque::with_capacity(MAX_QUEUED_CHOICES), flight: None, refresh_after: None, closed: false,
     }) });
@@ -117,6 +125,8 @@ impl Producer {
         if self.shared.epoch.load(Ordering::Acquire) != action.epoch { return Err(QueueError::Paused); }
         state.pending.extend(choices.iter().map(|c| Pending { generation: action.generation,
             operation: Operation::Learn { raw: c.raw.clone(), keys: c.keys.clone(), korean: c.korean, context: c.context.clone() } }));
+        drop(state);
+        if !choices.is_empty() { if let Some(waker) = &self.shared.waker { waker.wake_by_ref(); } }
         Ok(())
     }
 }
@@ -186,6 +196,28 @@ mod tests {
     fn lease() -> Lease { Lease { client_id: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(), lease_revision: 2,
         version: Version { store_id: "11111111111111111111111111111111".into(), generation: 1, revision: 2 }, next_sequence: 1 } }
     fn choice() -> LearningChoice { LearningChoice { raw: "privateword".into(), keys: "privateword".into(), korean: true, context: String::new() } }
+
+    #[test]
+    fn only_accepted_nonempty_submissions_notify_after_releasing_the_queue_lock() {
+        struct Signal { queue: std::sync::OnceLock<Weak<Shared>>, count: AtomicU64 }
+        impl std::task::Wake for Signal {
+            fn wake(self: Arc<Self>) { self.wake_by_ref(); }
+            fn wake_by_ref(self: &Arc<Self>) {
+                let queue = self.queue.get().unwrap().upgrade().unwrap();
+                assert!(queue.state.try_lock().is_ok(), "notification must not hold the input queue lock");
+                self.count.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+        let signal = Arc::new(Signal { queue: std::sync::OnceLock::new(), count: AtomicU64::new(0) });
+        let (producer, worker) = channel_with_waker(lease(), std::task::Waker::from(signal.clone())).unwrap();
+        signal.queue.set(Arc::downgrade(&producer.shared)).ok().unwrap();
+        producer.submit(producer.begin().unwrap(), &[]).unwrap();
+        producer.submit(producer.begin().unwrap(), &[choice()]).unwrap();
+        assert_eq!(signal.count.load(Ordering::Relaxed), 1);
+        let action = producer.begin().unwrap(); let held = worker.shared.state.lock().unwrap();
+        assert_eq!(producer.submit(action, &[choice()]), Err(QueueError::Busy)); drop(held);
+        assert_eq!(signal.count.load(Ordering::Relaxed), 1);
+    }
 
     #[test]
     fn input_calls_never_wait_for_a_worker_lock() {

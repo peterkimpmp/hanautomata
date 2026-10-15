@@ -8,6 +8,9 @@ use std::{cell::Cell, rc::Rc, sync::Arc};
 pub(super) enum Failure { Disconnected, MissingOrigin, Queue(QueueError) }
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(super) struct Report {
+    pub storage: Option<crate::learning_runtime::Status>,
+    /// None until the first snapshot is considered; false preserves local choices made during startup.
+    pub initial_snapshot_applied: Option<bool>,
     /// A producer is attached; this is not a live broker connection or a successful disk write.
     pub connected: bool,
     /// Cumulative choices accepted by the memory queue, not a disk ACK or a durability claim.
@@ -25,7 +28,6 @@ pub(super) struct Confirmation { pub engine: Arc<Engine>, pub batches: Vec<Learn
 
 impl Link {
     /// Called only with a freshly authenticated, service-specific lease/worker. Discovery remains a platform task.
-    #[allow(dead_code)] // Product worker launch is not enabled yet; production callbacks are exercised with an owned test worker.
     pub fn connect(&mut self, producer: Producer) {
         self.disconnect(); self.producer = Some(producer);
         let mut report = self.report.get(); report.connected = true; self.report.set(report);
@@ -45,6 +47,11 @@ impl Link {
     }
     #[allow(dead_code)] // Status UI will consume this; tests assert rejected choices are observable now.
     pub fn report(&self) -> Report { self.report.get() }
+    pub fn storage_status(&self, status: crate::learning_runtime::Status, imported: Option<bool>) {
+        let mut report = self.report.get(); report.storage = Some(status);
+        if let Some(imported) = imported { report.initial_snapshot_applied = Some(imported); }
+        self.report.set(report);
+    }
 }
 impl Drop for Link { fn drop(&mut self) { self.disconnect(); } }
 impl Confirmation {

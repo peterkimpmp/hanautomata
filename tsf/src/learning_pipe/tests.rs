@@ -1,5 +1,68 @@
 use super::*;
 #[test]
+#[ignore = "owned parent-exit fixture; the controlling test terminates only this child"]
+fn parent_wait_fixture() { std::thread::sleep(Duration::from_secs(30)); }
+
+#[test]
+fn parent_exit_cancels_and_drains_a_long_accept_and_the_pipe_can_be_reused() {
+    let child = crate::learning_process::Child::spawn(&std::env::current_exe().unwrap(),
+        &["--ignored".into(), "--exact".into(), "learning_pipe::tests::parent_wait_fixture".into()]).unwrap();
+    let parent = child.peer().unwrap();
+    let endpoint = Endpoint::random().unwrap(); let mut listener = Listener::bind(&endpoint).unwrap();
+    let raw = HANDLE(listener.pipe.as_raw_handle());
+    let killer = std::thread::spawn(move || { std::thread::sleep(Duration::from_millis(50)); drop(child); });
+    let before = Instant::now();
+    let result = io_until_peer_exit(raw, deadline(Duration::from_secs(30)).unwrap(), Some(parent.handle()),
+        |overlapped| unsafe { ConnectNamedPipe(raw, Some(overlapped)) });
+    killer.join().unwrap(); assert_eq!(result, Err(Error::Cancelled)); assert!(before.elapsed() < Duration::from_secs(3));
+    unsafe { let _ = DisconnectNamedPipe(raw); }
+    let server = std::thread::spawn(move || listener.exchange(None, Duration::from_secs(2), |_, _| json!({"ok":true})));
+    let this = Peer::process(std::process::id()).unwrap();
+    let reply = call(&endpoint, &this, &Envelope::new("11111111111111111111111111111111", Command::Snapshot {}).unwrap(), Duration::from_secs(2));
+    assert_eq!(reply.unwrap()["ok"], true); assert!(server.join().unwrap().is_ok());
+}
+
+#[test]
+fn idle_product_companion_keeps_one_pending_accept_and_wakes_for_close() {
+    use std::sync::{Arc, atomic::{AtomicUsize, Ordering}};
+    let endpoint = Endpoint::random().unwrap(); let nonce = Endpoint::random().unwrap();
+    let parent = Peer::process(std::process::id()).unwrap();
+    let attempts = Arc::new(AtomicUsize::new(0)); let observed = attempts.clone();
+    let server_endpoint = endpoint.clone(); let server_nonce = nonce.token().to_owned(); let server_parent = parent.clone();
+    let unused_path = std::env::temp_dir().join(format!("hanautomata-no-store-{}", endpoint.token()));
+    let path = unused_path.clone();
+    let server = std::thread::spawn(move || {
+        ACCEPT_OBSERVER.with(|observer| *observer.borrow_mut() = Some(observed));
+        companion(server_endpoint, server_parent, server_nonce, path)
+    });
+    let limit = Instant::now() + Duration::from_secs(3);
+    while attempts.load(Ordering::Relaxed) == 0 {
+        assert!(Instant::now() < limit); std::thread::sleep(Duration::from_millis(5));
+    }
+    std::thread::sleep(Duration::from_millis(1200));
+    let idle_attempts = attempts.load(Ordering::Relaxed);
+    let before_close = Instant::now();
+    let response = call(&endpoint, &parent, &Envelope::new(nonce.token(), Command::Close { lease_revision: 0 }).unwrap(), Duration::from_secs(2));
+    assert!(server.join().unwrap().is_ok()); assert_eq!(response.unwrap()["ok"], true);
+    assert!(!unused_path.exists(), "closing before Register must not create a store");
+    assert!(before_close.elapsed() < Duration::from_secs(2));
+    assert_eq!(idle_attempts, 1, "an idle companion must retain its pending accept instead of polling");
+}
+
+#[test]
+fn slow_store_work_does_not_consume_the_response_transport_budget() {
+    let endpoint = Endpoint::random().unwrap(); let mut listener = Listener::bind(&endpoint).unwrap();
+    let peer = Peer::process(std::process::id()).unwrap();
+    let server = std::thread::spawn(move || listener.exchange(None, Duration::from_millis(500), |_, _| {
+        // Inject storage latency after the authenticated request, before serializing the response.
+        std::thread::sleep(Duration::from_millis(800)); json!({"ok":true})
+    }));
+    let result = call(&endpoint, &peer, &Envelope::new("11111111111111111111111111111111", Command::Register {}).unwrap(), Duration::from_secs(3));
+    let served = server.join().unwrap();
+    assert!(served.is_ok(), "completed storage work needs a fresh reply transport budget: {served:?}");
+    assert_eq!(result.unwrap()["ok"], true);
+}
+#[test]
 fn endpoints_cannot_select_remote_or_installed_pipes() {
     assert!(Endpoint::random().is_ok());
     for bad in ["", "0", "00000000000000000000000000000000", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "..\\live", "\\\\server\\pipe\\x"] {

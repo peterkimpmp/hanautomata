@@ -98,6 +98,33 @@ pub struct WordPreferences {
     confirmation_owner: Arc<()>,
 }
 
+/// Construct on a worker. Installation swaps bounded containers; the returned old containers can be disposed
+/// on that worker too. Never apply to an engine whose local choices changed since the snapshot was requested.
+pub struct PreparedLearning { words: HashMap<String, LearnedWord>, undo: Vec<Vec<Change>>, sequence: i64 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SnapshotInstall { Applied, Changed, Busy }
+impl PreparedLearning {
+    /// Preserve legacy choices in memory; the new store wins matching identities. Never write legacy data implicitly.
+    pub fn with_legacy(legacy: &[LearnedWord], stored: &[LearnedWord]) -> Self {
+        let mut merged = HashMap::new(); let mut sequence = 0;
+        for source in [legacy, stored] {
+            let mut words: Vec<_> = Self::new(source).words.into_values().collect();
+            words.sort_by_key(|word| word.sequence);
+            for mut word in words {
+                sequence += 1; word.sequence = sequence;
+                merged.insert(identity(&word), word);
+            }
+        }
+        // Capacity applies to unique identities, after validating each source and preserving its recency.
+        Self::new(&merged.into_values().collect::<Vec<_>>())
+    }
+    pub fn new(entries: &[LearnedWord]) -> Self {
+        let preferences = WordPreferences::new(); preferences.restore(entries);
+        let mut inner = preferences.lock();
+        Self { words: std::mem::take(&mut inner.words), undo: vec![], sequence: inner.sequence }
+    }
+}
+
 impl Default for WordPreferences {
     fn default() -> Self {
         Self::new()
@@ -150,6 +177,16 @@ fn identity(word: &LearnedWord) -> String {
 }
 
 impl WordPreferences {
+    pub fn try_install_snapshot(&self, version: i32, prepared: &mut PreparedLearning) -> SnapshotInstall {
+        let Ok(mut inner) = self.inner.try_lock() else { return SnapshotInstall::Busy; };
+        if inner.version != version || !inner.pending.is_empty() || inner.pending_overflow { return SnapshotInstall::Changed; }
+        inner.invalidate_confirmations();
+        std::mem::swap(&mut inner.words, &mut prepared.words);
+        std::mem::swap(&mut inner.undo, &mut prepared.undo);
+        std::mem::swap(&mut inner.sequence, &mut prepared.sequence);
+        inner.version = inner.version.wrapping_add(1);
+        SnapshotInstall::Applied
+    }
     pub fn new() -> Self {
         WordPreferences {
             inner: Mutex::new(Inner {
@@ -456,5 +493,64 @@ fn net_min(a: f64, b: f64) -> f64 {
         a
     } else {
         b
+    }
+}
+
+#[cfg(test)]
+mod snapshot_tests {
+    use super::*;
+    fn prepared() -> PreparedLearning {
+        let source = WordPreferences::new(); source.remember_global("saved", "saved", true);
+        PreparedLearning::new(&source.export().0)
+    }
+    #[test]
+    fn initial_store_keeps_legacy_choices_and_new_store_wins_only_matching_entries() {
+        let legacy = WordPreferences::new(); legacy.remember_global("legacy", "legacy", true); legacy.remember_global("same", "same", false);
+        let fresh = WordPreferences::new(); fresh.remember_global("same", "same", true);
+        for stored in [vec![], fresh.export().0] {
+            let preferences = WordPreferences::new(); let mut snapshot = PreparedLearning::with_legacy(&legacy.export().0, &stored);
+            assert_eq!(preferences.try_install_snapshot(preferences.version(), &mut snapshot), SnapshotInstall::Applied);
+            assert_eq!(preferences.try_get_global("legacy", "legacy"), Some(true));
+            assert_eq!(preferences.try_get_global("same", "same"), Some(!stored.is_empty()));
+            assert_eq!(legacy.try_get_global("same", "same"), Some(false));
+        }
+    }
+    #[test]
+    fn startup_merge_deduplicates_before_capacity_and_preserves_source_recency() {
+        fn word(index: usize) -> String { format!("word{}{}{}", (b'a' + (index / 676) as u8) as char,
+            (b'a' + ((index / 26) % 26) as u8) as char, (b'a' + (index % 26) as u8) as char) }
+        let legacy = WordPreferences::new(); let stored = WordPreferences::new();
+        for index in 0..CAPACITY { let raw = word(index); legacy.remember_global(&raw, &raw, false); }
+        for index in CAPACITY / 2..CAPACITY { let raw = word(index); stored.remember_global(&raw, &raw, true); }
+        let mut entries = stored.export().0; entries.reverse(); // on-disk iteration order is not recency
+        let restored = WordPreferences::new(); let mut snapshot = PreparedLearning::with_legacy(&legacy.export().0, &entries);
+        assert_eq!(restored.try_install_snapshot(restored.version(), &mut snapshot), SnapshotInstall::Applied);
+        assert_eq!(restored.count(), CAPACITY, "duplicates must not evict distinct legacy choices");
+        assert_eq!(restored.try_get_global(&word(0), &word(0)), Some(false));
+        assert_eq!(restored.try_get_global(&word(CAPACITY - 1), &word(CAPACITY - 1)), Some(true));
+        assert_eq!(restored.export().0.last().unwrap().raw, word(CAPACITY - 1));
+    }
+    #[test]
+    fn prepared_snapshot_swaps_without_waiting_and_preserves_privacy_flags() {
+        let preferences = WordPreferences::new(); preferences.defer_learning(true); preferences.set_recording(false);
+        let mut snapshot = prepared(); let version = preferences.version();
+        let held = preferences.lock();
+        assert_eq!(preferences.try_install_snapshot(version, &mut snapshot), SnapshotInstall::Busy); drop(held);
+        assert_eq!(preferences.try_install_snapshot(version, &mut snapshot), SnapshotInstall::Applied);
+        assert_eq!(preferences.try_get_global("saved", "saved"), Some(true));
+        assert!(!preferences.recording()); assert!(preferences.lock().deferred);
+        assert!(snapshot.words.is_empty(), "old dictionary is returned for off-thread disposal");
+    }
+    #[test]
+    fn startup_snapshot_cannot_overwrite_new_local_choices_or_pending_confirmation() {
+        for deferred in [false, true] {
+            let preferences = WordPreferences::new(); preferences.defer_learning(deferred);
+            let version = preferences.version(); let mut snapshot = prepared();
+            preferences.remember_global("recent", "recent", false);
+            assert_eq!(preferences.try_install_snapshot(version, &mut snapshot), SnapshotInstall::Changed);
+            assert!(!preferences.try_get_global("saved", "saved").is_some());
+            if deferred { assert!(preferences.take_learning().is_some()); }
+            else { assert_eq!(preferences.try_get_global("recent", "recent"), Some(false)); }
+        }
     }
 }

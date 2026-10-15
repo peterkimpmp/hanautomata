@@ -188,6 +188,11 @@ fn single(text: &str) -> Option<char> {
 
 impl Engine {
     // Rust-only TSF interface: the Swift/UniFFI ABI and its existing persistence lifecycle are unchanged.
+    pub fn learning_version(&self) -> i32 { self.preferences.version() }
+    pub fn learning_entries(&self) -> Vec<hanautomata_core::LearnedWord> { self.preferences.export().0 }
+    pub fn try_install_learning(&self, version: i32, prepared: &mut hanautomata_core::PreparedLearning) -> hanautomata_core::SnapshotInstall {
+        self.preferences.try_install_snapshot(version, prepared)
+    }
     pub fn defer_learning(&self) { self.preferences.defer_learning(true); }
     pub fn take_learning(&self) -> Option<hanautomata_core::LearningBatch> { self.preferences.take_learning() }
     pub fn confirm_learning(&self, batch: &hanautomata_core::LearningBatch) -> Vec<hanautomata_core::LearningChoice> {

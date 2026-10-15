@@ -8,7 +8,7 @@ use windows::{core::PWSTR, Win32::{Foundation::{HANDLE, HLOCAL, FILETIME, LocalF
         TokenElevation, TokenIsAppContainer, TokenRestrictedSids, TokenIntegrityLevel, TokenImpersonationLevel,
         TOKEN_INFORMATION_CLASS, TOKEN_USER, TOKEN_GROUPS, TOKEN_STATISTICS, TOKEN_MANDATORY_LABEL, TOKEN_QUERY},
     System::{Threading::{OpenProcess, OpenProcessToken, OpenThreadToken, GetCurrentThread, GetProcessTimes,
-        PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SYNCHRONIZE},
+        PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SYNCHRONIZE, GetProcessId},
         Pipes::{GetNamedPipeClientProcessId, GetNamedPipeClientSessionId, GetNamedPipeServerProcessId,
             GetNamedPipeServerSessionId, ImpersonateNamedPipeClient}},
 }};
@@ -64,16 +64,30 @@ impl Token {
 }
 
 /// Pin the exact OS process object supplied by a trusted launcher, not a PID from the wire.
-/// No automatic discovery or executable trust policy is implied by this development API.
+/// No automatic discovery or executable trust policy is implied by this API.
 #[derive(Clone)]
 pub struct Peer { _process: Arc<OwnedHandle>, pid: u32, born: u64, token: Token }
 impl std::fmt::Debug for Peer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { f.write_str("Peer { authenticated OS identity, redacted }") }
 }
 impl Peer {
+    pub(super) fn handle(&self) -> HANDLE { HANDLE(self._process.as_raw_handle()) }
+    pub(crate) fn birth(&self) -> u64 { self.born }
+    pub(crate) fn is_alive(&self) -> bool {
+        (unsafe { windows::Win32::System::Threading::WaitForSingleObject(HANDLE(self._process.as_raw_handle()), 0) })
+            == windows::Win32::Foundation::WAIT_TIMEOUT
+    }
+    pub(crate) fn same_process(&self, other: &Self) -> bool {
+        self.pid == other.pid && self.born == other.born && self.token == other.token
+    }
     pub fn process(pid: u32) -> Result<Self> {
         if pid == 0 { return Err(Error::Unauthorized); }
         let process = owned(unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_SYNCHRONIZE, false, pid) }?);
+        Self::from_owned_process(process)
+    }
+    pub(crate) fn from_owned_process(process: OwnedHandle) -> Result<Self> {
+        let pid = unsafe { GetProcessId(HANDLE(process.as_raw_handle())) };
+        if pid == 0 { return Err(Error::Unauthorized); }
         let raw = HANDLE(process.as_raw_handle()); let mut token = HANDLE::default();
         unsafe { OpenProcessToken(raw, TOKEN_QUERY, &mut token) }?; let token = owned(token);
         let token = Token::read(HANDLE(token.as_raw_handle()))?;
@@ -85,6 +99,7 @@ impl Peer {
         Ok(Self { _process: Arc::new(process), pid, born, token })
     }
     pub(super) fn logon_sid(&self) -> &str { &self.token.logon }
+    pub(super) fn user_sid(&self) -> &str { &self.token.user }
     pub(super) fn bound_client(&self, nonce: &str) -> Result<String> {
         if !super::valid_token(nonce) { return Err(Error::Protocol); }
         // Delimited, versioned values; the user supplies only the nonce. OS identity binds the lease across reconnects.
@@ -134,7 +149,7 @@ pub(super) fn no_thread_token() -> Result<()> {
 struct Revert;
 impl Drop for Revert {
     fn drop(&mut self) {
-        // This module is confined to the development broker. Continuing under the peer's identity is unsafe.
+        // Server impersonation runs only in a companion/test process. Continuing under the peer's identity is unsafe.
         if unsafe { RevertToSelf() }.is_err() { std::process::abort(); }
     }
 }

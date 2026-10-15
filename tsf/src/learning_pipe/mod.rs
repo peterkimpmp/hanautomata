@@ -1,7 +1,8 @@
-//! Development transport for a single-writer learning authority, ordinary desktop peers only.
-//! Not installed, auto-discovered, or called by TSF. All calls belong on a worker, never a key callback.
+//! Authenticated transport for a single-writer learning authority, ordinary desktop peers only.
+//! All calls belong on a worker, never a key callback.
 //! The caller must obtain `Peer` from its trusted child/launcher; a wire PID or pipe name is not a trust anchor.
 mod identity;
+mod lifetime;
 pub use identity::Peer;
 use hanautomata_core::learning::{Authority, Request, MAX_STATE_BYTES};
 use serde::{Deserialize, Serialize};
@@ -13,16 +14,20 @@ use windows::{core::{HSTRING, PCWSTR}, Win32::{
     Storage::FileSystem::{CreateFileW, ReadFile, WriteFile, FILE_FLAG_FIRST_PIPE_INSTANCE, FILE_FLAG_OVERLAPPED, FILE_SHARE_MODE,
         OPEN_EXISTING, PIPE_ACCESS_DUPLEX, SECURITY_IDENTIFICATION, SECURITY_SQOS_PRESENT},
     System::{Com::CoCreateGuid, IO::{CancelIoEx, GetOverlappedResult, OVERLAPPED},
-        Threading::{CreateEventW, WaitForSingleObject}, Pipes::{ConnectNamedPipe, CreateNamedPipeW, DisconnectNamedPipe,
+        Threading::{CreateEventW, WaitForSingleObject, WaitForMultipleObjects}, Pipes::{ConnectNamedPipe, CreateNamedPipeW, DisconnectNamedPipe,
             PIPE_TYPE_BYTE, PIPE_READMODE_BYTE, PIPE_WAIT, PIPE_REJECT_REMOTE_CLIENTS}},
 }};
 const MAX_COMMAND: usize = 8192;
 const MAX_REPLY: usize = MAX_STATE_BYTES * 2;
 // FILE_GENERIC_READ | FILE_WRITE_DATA, excluding FILE_CREATE_PIPE_INSTANCE, WRITE_DAC and WRITE_OWNER.
 const CLIENT_ACCESS: u32 = 0x0012_008b;
+#[cfg(test)]
+thread_local! {
+    static ACCEPT_OBSERVER: std::cell::RefCell<Option<std::sync::Arc<std::sync::atomic::AtomicUsize>>> = const { std::cell::RefCell::new(None) };
+}
 type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Error { Io, Timeout, Protocol, Unauthorized }
+pub enum Error { Io, Timeout, Protocol, Unauthorized, Cancelled }
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { write!(f, "learning pipe: {self:?}") }
 }
@@ -39,11 +44,11 @@ impl Endpoint {
         if !valid_token(token) { return Err(Error::Protocol); } Ok(Self(token.into()))
     }
     pub fn token(&self) -> &str { &self.0 }
-    fn name(&self) -> HSTRING { HSTRING::from(format!(r"\\.\pipe\Hanautomata.Learning.Development.{}", self.0)) }
+    fn name(&self) -> HSTRING { HSTRING::from(format!(r"\\.\pipe\Hanautomata.Learning.Session.1.{}", self.0)) }
 }
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "command", rename_all = "snake_case", deny_unknown_fields)]
-pub enum Command { Register {}, Snapshot {}, Apply { request: Request } }
+pub enum Command { Register {}, Snapshot {}, Apply { request: Request }, Close { lease_revision: u64 } }
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Envelope { protocol: u32, nonce: String, command: Command }
@@ -66,6 +71,10 @@ fn remaining(end: Instant) -> Result<u32> {
 // Event, OVERLAPPED and caller's buffer stay alive until the operation has finished, including cancellation.
 // CancelIoEx is a request, not completion: always drain it before releasing the stack/buffer.
 fn io(handle: HANDLE, end: Instant, start: impl FnOnce(*mut OVERLAPPED) -> windows::core::Result<()>) -> Result<u32> {
+    io_until_peer_exit(handle, end, None, start)
+}
+fn io_until_peer_exit(handle: HANDLE, end: Instant, peer: Option<HANDLE>,
+    start: impl FnOnce(*mut OVERLAPPED) -> windows::core::Result<()>) -> Result<u32> {
     remaining(end)?;
     let event = owned(unsafe { CreateEventW(None, true, false, PCWSTR::null()) }?);
     let mut overlapped = OVERLAPPED { hEvent: HANDLE(event.as_raw_handle()), ..Default::default() };
@@ -73,13 +82,27 @@ fn io(handle: HANDLE, end: Instant, start: impl FnOnce(*mut OVERLAPPED) -> windo
         Ok(()) => {},
         Err(error) if error.code() == ERROR_PIPE_CONNECTED.to_hresult() => return Ok(0),
         Err(error) if error.code() == ERROR_IO_PENDING.to_hresult() => {
-            let wait = remaining(end).map(|ms| unsafe { WaitForSingleObject(HANDLE(event.as_raw_handle()), ms) });
-            if wait != Ok(WAIT_OBJECT_0) {
+            let wait = remaining(end).and_then(|ms| {
+                let event = HANDLE(event.as_raw_handle());
+                if let Some(peer) = peer {
+                    match unsafe { WaitForMultipleObjects(&[peer, event], false, ms) } {
+                        WAIT_OBJECT_0 => Err(Error::Cancelled), // Parent exit wins a simultaneous pipe completion.
+                        value if value.0 == WAIT_OBJECT_0.0 + 1 => Ok(()),
+                        WAIT_TIMEOUT => Err(Error::Timeout),
+                        _ => Err(Error::Io),
+                    }
+                } else {
+                    match unsafe { WaitForSingleObject(event, ms) } {
+                        WAIT_OBJECT_0 => Ok(()), WAIT_TIMEOUT => Err(Error::Timeout), _ => Err(Error::Io),
+                    }
+                }
+            });
+            if let Err(error) = wait {
                 unsafe {
                     let _ = CancelIoEx(handle, Some(&overlapped));
                     let mut ignored = 0; let _ = GetOverlappedResult(handle, &overlapped, &mut ignored, true);
                 }
-                return Err(if wait == Ok(WAIT_TIMEOUT) || wait == Err(Error::Timeout) { Error::Timeout } else { Error::Io });
+                return Err(error);
             }
         },
         Err(error) => return Err(error.into()),
@@ -127,18 +150,33 @@ impl Listener {
     /// One authenticated exchange. A missing receipt means the reply may be lost, not that the write rolled back.
     /// Reconnect with exactly the same request to learn the committed result.
     pub fn serve_once(&mut self, authority: &mut Authority, timeout: Duration) -> Result<()> {
+        self.exchange(None, timeout, |peer, envelope| dispatch(authority, peer, envelope))
+    }
+    /// Product companions admit only their launching process and nonce; no caller-supplied store paths.
+    pub(crate) fn exchange(&mut self, expected: Option<&Peer>, timeout: Duration,
+        dispatch: impl FnOnce(&Peer, Envelope) -> Value) -> Result<()> {
+        self.exchange_with_budget(expected, timeout, timeout, dispatch)
+    }
+    fn exchange_with_budget(&mut self, expected: Option<&Peer>, accept_timeout: Duration, transport_timeout: Duration,
+        dispatch: impl FnOnce(&Peer, Envelope) -> Value) -> Result<()> {
         identity::no_thread_token()?;
-        let raw = HANDLE(self.pipe.as_raw_handle()); let end = deadline(timeout)?;
+        let raw = HANDLE(self.pipe.as_raw_handle()); let end = deadline(accept_timeout)?;
         let result = (|| {
-            io(raw, end, |overlapped| unsafe { ConnectNamedPipe(raw, Some(overlapped)) })?;
+            #[cfg(test)] ACCEPT_OBSERVER.with(|observer| {
+                if let Some(count) = observer.borrow().as_ref() { count.fetch_add(1, std::sync::atomic::Ordering::Relaxed); }
+            });
+            io_until_peer_exit(raw, end, expected.map(Peer::handle), |overlapped| unsafe { ConnectNamedPipe(raw, Some(overlapped)) })?;
+            let end = deadline(transport_timeout)?; // Accept wait must not consume a connected request's budget.
             let peer = Peer::connected_client(raw, &self.owner)?;
+            if expected.is_some_and(|expected| !expected.same_process(&peer)) { return Err(Error::Unauthorized); }
             let bytes = read_packet(raw, MAX_COMMAND, end)?;
             peer.check_client_message(raw)?;
             let result = match serde_json::from_slice::<Envelope>(&bytes) {
-                Ok(envelope) => dispatch(authority, &peer, envelope),
-                Err(_) => json!({"ok":false,"error":"invalid_protocol"}),
+                Ok(envelope) if envelope.protocol == 1 && valid_token(&envelope.nonce) => dispatch(&peer, envelope),
+                _ => json!({"ok":false,"error":"invalid_protocol"}),
             };
             let bytes = serde_json::to_vec(&result).map_err(|_| Error::Protocol)?;
+            let end = deadline(transport_timeout)?; // Disk work does not consume the response's transfer budget.
             write_packet(raw, &bytes, MAX_REPLY, end)?;
             // Do not FlushFileBuffers (unbounded wait), or discard the reply by disconnecting immediately.
             let mut receipt = [0u8]; read_exact(raw, &mut receipt, end)?;
@@ -153,12 +191,106 @@ fn dispatch(authority: &mut Authority, peer: &Peer, envelope: Envelope) -> Value
     let result = match envelope.command {
         Command::Register {} => authority.register(&client_id).map(|lease| json!({"ok":true,"lease":lease})),
         Command::Snapshot {} => authority.snapshot().map(|snapshot| json!({"ok":true,"snapshot":snapshot})),
+        Command::Close { lease_revision } => authority.retire(&client_id, lease_revision).map(|retired| json!({"ok":true,"retired":retired})),
         Command::Apply { request } => {
             if request.client_id != client_id { return json!({"ok":false,"error":"unauthorized"}); }
             authority.apply(&request).map(|reply| json!({"ok":true,"reply":reply}))
         },
     };
     result.unwrap_or_else(|error| json!({"ok":false,"error":error}))
+}
+
+/// A per-service companion takes the store lock for each transaction, never while waiting for a client.
+/// All companions re-read committed state under that lock; an old in-process dictionary is never saved.
+pub(crate) fn companion(endpoint: Endpoint, parent: Peer, nonce: String, path: std::path::PathBuf) -> Result<()> {
+    use hanautomata_core::learning::{Error as StoreError, Lease, LeaseLifetime, Operation};
+    if !valid_token(&nonce) || !path.is_absolute() { return Err(Error::Protocol); }
+    let mut listener = Listener::bind(&endpoint)?;
+    let mut lease: Option<Lease> = None;
+    let mut lifetime: Option<(String, lifetime::Guard)> = None;
+    let mut registration_attempted = false;
+    let mut closed = false;
+    let store_id = Endpoint::random()?;
+    while parent.is_alive() && !closed {
+        let result = listener.exchange_with_budget(Some(&parent), Duration::from_secs(30), Duration::from_secs(5), |peer, envelope| {
+            if envelope.nonce != nonce { return json!({"ok":false,"error":"unauthorized"}); }
+            if matches!(envelope.command, Command::Close { lease_revision: 0 }) && !registration_attempted {
+                closed = true; return json!({"ok":true,"retired":false});
+            }
+            // No reset/forget/reconciliation through the input process's endpoint.
+            if matches!(&envelope.command, Command::Apply { request } if !matches!(request.operation, Operation::Learn { .. })) {
+                return json!({"ok":false,"error":"unauthorized"});
+            }
+            let outcome = (|| {
+                let mut owner = Authority::open(&path, store_id.token())?;
+                let client = peer.bound_client(&nonce).map_err(|_| StoreError::InvalidRequest)?;
+                match envelope.command {
+                    Command::Register {} => {
+                        let store = owner.snapshot()?.version.store_id;
+                        if lifetime.as_ref().is_some_and(|(id, _)| id != &store) { return Err(StoreError::WrongStore); }
+                        lifetime::reclaim(&mut owner, &store, &client)?;
+                        if lifetime.is_none() { lifetime = Some((store.clone(), lifetime::acquire(&store, &client, peer)?)); }
+                        registration_attempted = true;
+                        let registered = owner.register_with_lifetime(&client, LeaseLifetime::WindowsMutexV1)?;
+                        lease = Some(registered.clone()); Ok(json!({"ok":true,"lease":registered})) },
+                    Command::Snapshot {} if lease.is_some() => Ok(json!({"ok":true,"snapshot":owner.snapshot()?})),
+                    Command::Apply { request } if lease.as_ref().is_some_and(|l| l.client_id == request.client_id && l.lease_revision == request.lease_revision) =>
+                        owner.apply(&request).map(|reply| json!({"ok":true,"reply":reply})),
+                    Command::Close { lease_revision } if lease_revision == 0 || lease.as_ref().is_some_and(|l| l.lease_revision == lease_revision) => {
+                        // A Register write may have committed before returning an I/O failure. Resolve only this
+                        // authenticated session's ID; do not leak a lease merely because its reply was uncertain.
+                        if let Some(registered) = owner.clients()?.iter().find(|l| l.key.client_id == client) {
+                            owner.retire(&client, registered.key.lease_revision)?;
+                        }
+                        lease = None; registration_attempted = false; closed = true; Ok(json!({"ok":true,"retired":true}))
+                    },
+                    _ => Err(StoreError::InvalidRequest),
+                }
+            })();
+            outcome.unwrap_or_else(|error| json!({"ok":false,"error":error}))
+        });
+        // Disconnects/timeouts do not discard the lease or change an uncertain operation's identity.
+        if result == Err(Error::Cancelled) { break; }
+    }
+    if registration_attempted {
+        let client = parent.bound_client(&nonce)?;
+        let end = Instant::now() + Duration::from_secs(2);
+        loop {
+            match Authority::open(&path, store_id.token()) {
+                Ok(mut owner) => {
+                    if let Ok(clients) = owner.clients() {
+                        if let Some(registered) = clients.iter().find(|l| l.key.client_id == client) {
+                            let _ = owner.retire(&client, registered.key.lease_revision);
+                        }
+                    }
+                    break;
+                },
+                Err(StoreError::Busy) if Instant::now() < end => std::thread::sleep(Duration::from_millis(10)),
+                _ => break,
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Explicit management operation, never offered through an input companion's pipe.
+/// No host is stopped. Busy/uncertain liveness leaves database bytes intact; Authority may prune stale pending files.
+/// The missing-file check avoids ordinary initialization here; this is not an atomic guard against external deletion.
+/// This is a point-in-time check: keep TSF hosts closed until the binary rollback has finished.
+pub fn prepare_rollback(path: &std::path::Path) -> std::result::Result<usize, hanautomata_core::learning::Error> {
+    use hanautomata_core::learning::Error as StoreError;
+    identity::no_thread_token().map_err(|_| StoreError::InvalidRequest)?;
+    let _user = Peer::process(std::process::id()).map_err(|_| StoreError::InvalidRequest)?;
+    if !path.is_absolute() { return Err(StoreError::InvalidRequest); }
+    match std::fs::symlink_metadata(path) {
+        Ok(_) => {},
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Err(StoreError::MissingState),
+        Err(_) => return Err(StoreError::Io),
+    }
+    let id = Endpoint::random().map_err(|_| StoreError::Io)?;
+    let mut owner = Authority::open(path, id.token())?;
+    let store = owner.snapshot()?.version.store_id;
+    lifetime::prepare_rollback(&mut owner, &store)
 }
 
 /// Bounded worker-only round trip; authenticates the exact expected server before writing any request bytes.
@@ -177,10 +309,11 @@ pub fn call(endpoint: &Endpoint, expected: &Peer, envelope: &Envelope, timeout: 
         }
     };
     let raw = HANDLE(pipe.as_raw_handle()); expected.check_server(raw)?;
+    let end = deadline(timeout)?;
     write_packet(raw, &bytes, MAX_COMMAND, end)?;
     let reply = read_packet(raw, MAX_REPLY, end)?;
     let result = serde_json::from_slice(&reply).map_err(|_| Error::Protocol)?;
-    write_all(raw, &[1], end)?; Ok(result)
+    let _ = write_all(raw, &[1], end); Ok(result) // A complete authenticated response remains valid if its receipt is lost.
 }
 
 #[cfg(test)]

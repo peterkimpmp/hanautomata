@@ -113,7 +113,7 @@ static NEXT_SERVICE_ID: AtomicU64 = AtomicU64::new(1);
 
 /// Each text-service instance owns its composition session. A process can host multiple services: sharing an Engine
 /// makes one service's activation/reset discard another service's in-progress word (observed in Word during D2).
-/// S0 reads the same learning file but does not save; shared learning needs a separate design after S0.
+/// The legacy dictionary is read-only. An asynchronous companion supplies the separate TSF dictionary after startup.
 fn engine(home: String, store: std::path::PathBuf) -> Arc<Engine> {
     Engine::new(home, store.to_string_lossy().into_owned())
 }
@@ -192,6 +192,9 @@ struct State {
     pending_finishes: Vec<Rc<PendingFinish>>,
     learning: learning::Link,
     word_learning: Option<learning::Stamp>,
+    learning_runtime: Option<crate::learning_runtime::Runtime>,
+    learning_ready: Option<crate::learning_runtime::Ready>,
+    learning_version: i32,
     shell: Option<Shell>,
     attribute_atom: u32,
     /// Password/private scope or a failed field query. Never trace these contexts.
@@ -225,6 +228,31 @@ pub struct TextService {
 }
 
 impl TextService {
+    /// A bounded mailbox poll. No IPC, file access, process creation, waiting, or COM calls on the key path.
+    /// Install the worker-prepared initial dictionary only at a clean word boundary and only if local learning
+    /// did not change during startup. Older words retain their original disconnected/generation stamp.
+    fn poll_learning(&self) {
+        let mut st = self.state.borrow_mut();
+        let Some(runtime) = st.learning_runtime.as_mut() else { return; };
+        let status = runtime.status();
+        let arrived = runtime.try_ready();
+        st.learning.storage_status(status, None);
+        if status.phase == crate::learning_runtime::Phase::Failed {
+            st.learning.disconnect(); return;
+        }
+        if let Some(ready) = arrived { st.learning.connect(ready.producer.clone()); st.learning_ready = Some(ready); }
+        let Some(engine) = st.shell.as_ref().map(|shell| shell.engine().clone()) else { return; };
+        // An abandoned old-context callback can defer the initial snapshot, but never block new queue submissions.
+        let changed = engine.learning_version() != st.learning_version;
+        if !changed && (st.word_learning.is_some() || st.pending_finishes.iter().any(|f| !f.done.get())
+            || st.shell.as_ref().is_none_or(|shell| shell.is_composing() || shell.private_context())) { return; }
+        let Some(mut ready) = st.learning_ready.take() else { return; };
+        let installed = engine.try_install_learning(st.learning_version, &mut ready.prepared);
+        if installed == hanautomata_core::SnapshotInstall::Busy { st.learning_ready = Some(ready); return; }
+        st.learning.storage_status(status, Some(installed == hanautomata_core::SnapshotInstall::Applied));
+        if let Some(runtime) = &st.learning_runtime { runtime.recycle(ready); }
+    }
+
     pub fn new() -> TextService {
         TextService {
             thread: unsafe { windows::Win32::System::Threading::GetCurrentThreadId() },
@@ -404,6 +432,7 @@ impl TextService_Impl {
     /// The engine must not accept a key until the application grants the write lock.
     fn key_in_session(&self, context: &ITfContext, access: edit::FieldAccess, tray: bool,
         key: impl FnOnce(&mut Shell) -> Outcome + 'static) -> Result<BOOL> {
+        self.poll_learning();
         // Capture before external callbacks/write-lock acquisition. An existing word keeps its older stamp;
         // this new stamp is for a new word or an F2 reconversion, never a re-stamp of delayed old learning.
         let incoming_learning = self.state.borrow().learning.capture();
@@ -987,6 +1016,9 @@ impl ITfTextInputProcessorEx_Impl for TextService_Impl {
             st.thread_mgr = Some(thread_mgr.clone());
             st.client = tid;
             st.learning.disconnect();
+            st.learning_runtime = None;
+            st.learning_ready = None;
+            st.learning_version = shell.engine().learning_version();
             st.word_learning = None;
             st.shell = Some(shell);
             st.tray_running = tray;
@@ -1029,6 +1061,18 @@ impl ITfTextInputProcessorEx_Impl for TextService_Impl {
         self.trace("activate-before-indicator");
         self.update_indicator();
         self.trace("activate-after-indicator");
+        // Launch only after activation succeeded. I/O/process creation happen on the worker, never a key callback.
+        // Restricted/elevated hosts retain in-memory input; the worker's exact token check refuses persistence.
+        if !excluded && !tray && options.learn_choices && system::desktop_settings_allowed()
+            && !crate::learning_runtime::spawn_denied() && crate::exports::pin_for_worker().is_ok() {
+            if let (Ok(module), Ok(directory)) = (crate::exports::module_path(), system::settings_dir()) {
+                let legacy = self.state.borrow().shell.as_ref().unwrap().engine().learning_entries();
+                match crate::learning_runtime::Runtime::start_with_legacy(module.with_file_name("hanautomata-ime-setup.exe"), directory.join("tsf-learning.db"), legacy) {
+                    Ok(runtime) => self.state.borrow_mut().learning_runtime = Some(runtime),
+                    Err(_) => system::log("learning worker unavailable; input remains in memory"),
+                }
+            }
+        }
         system::log(&format!(
             "activate elevated={} appcontainer={} tray={} caps={}",
             system::elevated(),

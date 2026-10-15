@@ -180,7 +180,7 @@ python3 tsf/test-learning-store.py --exe (Join-Path $target 'release/hanautomata
 
 ### 실제 peer에 묶인 개발용 named pipe
 
-`learning_pipe`와 `--development-pipe`는 별도의 시험 모드입니다. 신뢰된 실행 주체가 지정한 정확한 서버 프로세스 객체·생성 시각·토큰을 확인한 다음 요청을 보냅니다. 서버는 파이프가 알려 준 실제 PID와 마지막 메시지의 토큰을 대조하여 동일 사용자·로그온·세션의 일반 데스크톱 프로세스만 받습니다. 요청에 들어 있는 SID/PID는 인증으로 사용하지 않습니다.
+`--development-pipe`는 별도의 시험 모드입니다. 공통 `learning_pipe`는 신뢰된 실행 주체가 지정한 정확한 서버 프로세스 객체·생성 시각·토큰을 확인한 다음 요청을 보냅니다. 서버는 파이프가 알려 준 실제 PID와 마지막 메시지의 토큰을 대조하여 동일 사용자·로그온·세션의 일반 데스크톱 프로세스만 받습니다. 요청에 들어 있는 SID/PID는 인증으로 사용하지 않습니다.
 
 서버가 관측한 사용자·로그온·세션·PID·생성 시각과 클라이언트의 서비스별 nonce로 lease ID를 만듭니다. 서버 재시작 뒤 같은 클라이언트의 요청은 정확히 재시도할 수 있고, 다른 프로세스나 nonce의 기존 lease 재사용은 거부합니다. 이 ID는 비밀 키가 아니며 같은 사용자 권한의 악성 프로그램 전체를 격리하는 보안 경계가 아닙니다.
 
@@ -193,18 +193,32 @@ cargo +stable-i686-pc-windows-gnu test --manifest-path tsf/Cargo.toml --release 
 
 Microsoft의 [파이프 권한](https://learn.microsoft.com/en-us/windows/win32/ipc/named-pipe-security-and-access-rights), [메시지 토큰 확인](https://learn.microsoft.com/en-us/windows/win32/api/namedpipeapi/nf-namedpipeapi-impersonatenamedpipeclient), [overlapped I/O](https://learn.microsoft.com/en-us/windows/win32/ipc/synchronous-and-overlapped-input-and-output), [취소 완료](https://learn.microsoft.com/en-us/windows/win32/api/ioapiset/nf-ioapiset-cancelioex), [토큰 복귀 실패 처리](https://learn.microsoft.com/en-us/windows/win32/api/securitybaseapi/nf-securitybaseapi-reverttoself)를 따른 개발 구현입니다. 토큰 복귀 실패는 개발 프로세스를 중단합니다. 서버를 TSF 호스트 안에서 실행하지 않습니다.
 
-현재 한 연결씩 처리하며 관리자·AppContainer·제한 토큰은 거부합니다. 제품 서버의 신뢰된 실행/발견, 연결 공정성·lease 정리, 학습/관리 권한 구분, 응답 버전 계약, TSF worker·스냅샷 연결, 설치/종료·이전·백업 정책과 독립 보안 검토가 남습니다. 실제 앱 승인과 WQ-07은 미완료입니다.
+파이프마다 한 연결씩 처리하며 관리자·AppContainer·제한 토큰은 거부합니다. 아래 후속 구현은 전용 자식 실행·학습 권한 구분·worker·초기 스냅샷을 연결합니다. 실제 앱 승인, 종료 내구성·이전/백업·제한 호스트·관리 기능과 WQ-07은 미완료입니다.
 
 ### 서비스의 문서 확정과 메모리 대기열
 
 `service_learning.rs`는 조합 시작 또는 F2 작업 전에 캡처한 세대와 문서 반영 후 확정 델타를 연결합니다. 지연된 조합 완료는 원래 Stamp를 유지하며 초기화 이후의 세대로 바꾸지 않습니다. 실패·비공개·무효화된 선택은 제출하지 않고, 가득 찬/닫힌 큐에서도 입력 문자는 보존합니다. 큐 수락 수와 누락 원인은 메모리에 남으며 디스크 저장 성공을 뜻하지 않습니다.
 
-이 연결은 기본적으로 비활성입니다. 제품 broker 실행/lease 공급은 아직 연결하지 않았고, 검사에서만 서비스별 producer를 공급합니다. `quality-probes`의 서비스 시험은 모의 COM 문서→메모리 큐→별도 worker 스레드→인증된 자식 저장 프로세스→재시작 스냅샷을 대조합니다. 일반 키 콜백에서 파일/파이프 I/O나 worker 생성을 하지 않습니다. 실제 앱 영속 저장과 설정 UI 상태 표시는 후속 과제입니다.
+최신 개발 소스에서는 활성화 성공 후 학습 사용·트레이 미실행·앱 제외 해제 조건에서 비동기 worker를 시작합니다. 같은 revision의 `hanautomata-ime-setup.exe --learning-companion`이 정확한 부모 프로세스와 nonce에 묶인 파이프를 받습니다. 프로세스당 worker는 최대 16개입니다. 모든 프로세스/파일/파이프 작업은 worker/자식에서 수행하며 키 콜백은 비차단 큐·준비된 사전 교환만 사용합니다. DLL은 worker 시작 전에 기존 프로세스 수명 로딩 정책을 명시적으로 고정합니다([GetModuleHandleEx](https://learn.microsoft.com/en-us/windows/win32/api/libloaderapi/nf-libloaderapi-getmodulehandleexa)). DllMain에서는 시작하거나 종료를 기다리지 않습니다.
+
+자식은 각 요청마다 `%LOCALAPPDATA%\Hanautomata\tsf-learning.db`의 독점 잠금 아래 최신 상태를 읽고 선택 델타를 기록합니다. 여러 자식이 오래된 사전을 덮어쓰지 않으며, 파이프 수신을 기다리는 동안 파일 잠금을 보유하지 않습니다. 입력 endpoint에는 Learn만 허용하고 삭제/초기화/다른 연결 관리는 허용하지 않습니다. 정상 종료는 자기 연결을 반납하며 저장/종료 실패는 입력을 보존하고 고정 진단 메시지와 메모리 상태에 남깁니다. 단어·문서 내용은 로그에 남기지 않습니다.
+
+초기 스냅샷은 worker에서 기존 사전과 메모리에서 합친 뒤 단어 경계에서 교환합니다(중복 항목은 새 저장소 우선). 각 원본의 최근 순서를 유지하고 고유 항목을 합친 뒤 1,024개 제한을 적용합니다. 시작 중 로컬 학습이 변했으면 이를 덮어쓰지 않습니다. 기존 `words.json`을 변경하거나 새 저장소로 자동 이전하지 않습니다. 오래된 편집 콜백이 남아도 새 입력의 큐 연결은 진행합니다. 현재 실행 중 앱의 사전 갱신·관리 UI·저장 상태 UI·제한 호스트 통신·강제 종료 시 ACK 전 큐 내구성은 남아 있습니다. 모의 COM 문서와 실제 자식 프로세스의 통합 검사는 실제 앱 영속 저장 승인과 구분합니다. 기존 시스템 설치 후보는 자동 교체하지 않습니다.
+
+제품 연결은 `WindowsMutexV1` 수명 정책을 별도로 기록합니다. 등록 전에 동일 사용자만 접근하는 전역 mutex를 소유하고 모든 저장이 끝날 때까지 유지합니다. 다음 등록 때 파일 잠금 안에서 종료된 연결만 일괄 회수합니다. 살아 있는 연결, 접근/형식 오류로 확인하지 못한 객체, 이전·관리용 `Unmanaged` 연결은 보존합니다. 전역 이름은 같은 사용자의 다른 세션을 로컬 세션 부재로 오판하지 않기 위한 선택입니다([namespace](https://learn.microsoft.com/en-us/windows/win32/termserv/kernel-object-namespaces), [OpenMutex](https://learn.microsoft.com/en-us/windows/win32/api/synchapi/nf-synchapi-openmutexw), [abandoned ownership](https://learn.microsoft.com/en-us/windows/win32/api/synchapi/nf-synchapi-waitforsingleobject)). 실제 다른 로그인 세션의 성공을 시험한 것으로 해석하지 않습니다. 오래된 파일의 정책 누락은 `Unmanaged`로 읽으며 자동 승격하지 않습니다. 저장 위치는 LocalAppData이며 여러 PC에서 동기화·공유하는 저장소는 지원하지 않습니다.
+
+관리 대상 연결이 남아 있을 때는 저장 헤더를 `Hanautomata.TsfLearning/2`로 기록합니다. 이전 reader는 이를 거부하며 변경하지 않습니다. 마지막 관리 대상 연결이 정상 종료하거나 안전하게 회수되면 단어·세대·revision·관리용 연결을 보존한 V1 형식으로 돌아갑니다. 학습 앱을 닫고 **새 버전** setup에서 `learning-prepare-rollback`을 일반 사용자로 실행하면 이 준비를 수행할 수 있습니다. 살아 있거나 상태가 불명확한 연결은 `Busy`로 거부하며 DB 바이트를 바꾸지 않습니다. Authority를 열면서 오래된 pending 파일을 정리할 수 있으므로 모든 보조 파일의 불변을 뜻하지 않습니다. 기존 DB가 없으면 사전 검사에서 오류로 끝납니다. 앱 종료·등록 변경을 하지 않습니다. 성공은 그 순간의 호환성 판정이므로 바이너리 롤백이 끝날 때까지 해당 앱을 닫아 두어야 합니다. 파일 삭제는 복구 절차가 아닙니다. 다른 프로그램이 검사 직후 DB와 owner marker를 함께 삭제하는 경쟁 상황의 비생성 보장은 아직 남은 보강 항목입니다.
+
+`tsf/test-learning-rollback.ps1`은 고정 이전 커밋과 현재 core로 각각 실행 파일을 빌드해 별도 합성 DB에서 구형 쓰기→새 관리 연결→구형 거부→정리→구형 읽기/쓰기→신형 읽기를 시험합니다. 사용자 사전·설치는 건드리지 않습니다. 이 저장 형식 시험은 설치·등록·실제 앱을 포함한 제품 롤백 승인과 별도입니다.
+
+자식은 [CreateProcessW](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-createprocessw)의 핸들 상속을 끄고 실행 파일 폴더를 작업 디렉터리로 지정합니다. 실행이 반환한 프로세스 핸들을 복제해 정확한 자식을 인증합니다. 사용자 앱의 핸들이나 문서 폴더를 따라가지 않습니다. 프로세스의 자식 생성 제한을 먼저 읽고, 보안 정책의 실행 거부는 해당 호스트 수명 동안 다시 시도하지 않습니다. 보안 설정을 바꾸지는 않습니다. 패키지 정체성이 있는 full-trust 앱도 지원 대상으로 간주하지 않습니다.
+
+빈 큐는 이름 없는 작업/종료 이벤트와 자식 프로세스 종료를 함께 기다리며 30초 점검 시한을 둡니다. 저장 자식도 500ms마다 연결을 취소하지 않고 연결 완료와 정확한 부모 핸들을 함께 기다립니다. 부모가 끝나면 대기 중 I/O를 취소하고 커널의 취소 완료를 확인한 뒤 메모리를 해제합니다. 30초 watchdog은 유지합니다. 입력 콜백은 큐 잠금을 놓은 뒤 로컬 신호만 보냅니다. I/O 오류의 재시도 간격은 지수적으로 늘려 최대 5초로 제한합니다. 저장 처리 뒤 응답 전송에는 새 제한 시간을 부여하고, 클라이언트 왕복은 5초·시작 재시도는 15초 예산입니다. 종료는 3초 drain 예산과 2초 close 재시도 예산을 사용하지만 이미 진행 중인 왕복·동기 파일 I/O·커널 취소 완료 전체를 그 시간 안에 강제 완료한다는 뜻은 아닙니다. 입력 콜백은 종료 완료를 기다리지 않습니다.
 
 ## 아직 없는 것(P3에서)
 
 - 후보창의 실제 앱·접근성 승인(C-CMP-02), 설정 창의 실제 설치·Windows 메뉴 연결 및 화면 검증(W-23)
-- 학습 저장 코어·인증 통신·대기열의 TSF 제품 연결, 교정 취소·기존 사전 이전·실제 앱 재시작 검증
+- 학습 저장의 실제 앱/제한 호스트·상태/관리 UI, 교정 취소·기존 사전 이전·실행 중 갱신·실제 앱 재시작 검증
 - ARM64 DLL과 코드 서명(D15)
 - 첫 실행 설정(C-OPS-07)과 후크판 학습 이전(W-17 이전 부분)
 

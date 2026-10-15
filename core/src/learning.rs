@@ -35,7 +35,14 @@ pub struct Lease { pub client_id: String, pub lease_revision: u64, pub version: 
 #[serde(deny_unknown_fields)]
 pub struct LeaseKey { pub client_id: String, pub lease_revision: u64 }
 #[derive(Clone, Debug, Serialize)]
-pub struct ClientInfo { pub key: LeaseKey, pub sequence: u64, pub committed_revision: u64 }
+pub struct ClientInfo { pub key: LeaseKey, pub sequence: u64, pub committed_revision: u64,
+    #[serde(skip_serializing_if = "LeaseLifetime::is_unmanaged")]
+    pub lifetime: LeaseLifetime }
+/// Trusted broker policy, never supplied by an input client. Unmanaged/older leases require explicit management.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LeaseLifetime { #[default] Unmanaged, WindowsMutexV1 }
+impl LeaseLifetime { fn is_unmanaged(&self) -> bool { *self == Self::Unmanaged } }
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Operation {
@@ -59,7 +66,7 @@ pub struct Reply {
 pub struct Snapshot { pub version: Version, pub entries: Vec<LearnedWord>, pub recovery: Recovery }
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
 pub struct Recovery { pub retained_pending: usize, pub removed_pending: usize }
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Error { Io, Busy, InvalidState, MissingState, InvalidRequest, WrongStore, UnknownClient, ExpiredLease,
     TooManyClients, OutOfOrder, Superseded, SequenceConflict, StaleGeneration, Exhausted, Faulted, ExternalChange }
@@ -70,6 +77,9 @@ impl std::error::Error for Error {}
 type Result<T> = std::result::Result<T, Error>;
 
 const PREFIX: &[u8] = b"Hanautomata.TsfLearning/1\n";
+// V2 adds managed-client lifetime metadata. Once all such leases are drained, the exact V1 shape
+// is sufficient again; preserve words, fences, identities and revisions when returning to V1.
+const MANAGED_PREFIX: &[u8] = b"Hanautomata.TsfLearning/2\n";
 const OWNER_PREFIX: &str = "Hanautomata.TsfLearningOwner/1\n";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -77,6 +87,8 @@ const OWNER_PREFIX: &str = "Hanautomata.TsfLearningOwner/1\n";
 struct Client {
     id: String, lease_revision: u64, sequence: u64, fingerprint: Option<String>,
     committed_revision: u64, changed: bool,
+    #[serde(default, skip_serializing_if = "LeaseLifetime::is_unmanaged")]
+    lifetime: LeaseLifetime,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -144,18 +156,28 @@ fn read_blob(path: &Path) -> Result<Option<Vec<u8>>> {
     Ok(Some(data))
 }
 fn decode_state(data: &[u8]) -> Result<State> {
-    let rest = data.strip_prefix(PREFIX).ok_or(Error::InvalidState)?;
+    let (rest, legacy) = if let Some(rest) = data.strip_prefix(PREFIX) { (rest, true) }
+        else { (data.strip_prefix(MANAGED_PREFIX).ok_or(Error::InvalidState)?, false) };
     if rest.len() < 65 || rest[64] != b'\n' { return Err(Error::InvalidState); }
     let checksum = std::str::from_utf8(&rest[..64]).map_err(|_| Error::InvalidState)?;
     let body = &rest[65..];
     if !valid_hex(checksum, 64) || hex(&Sha256::digest(body)) != checksum { return Err(Error::InvalidState); }
     let state: State = serde_json::from_slice(body).map_err(|_| Error::InvalidState)?;
+    if legacy {
+        // A V1 reader rejects *any* lifetime field, even "unmanaged". Do not accept a V2 body
+        // disguised as V1 and then quietly rewrite it into a different compatibility contract.
+        let shape: serde_json::Value = serde_json::from_slice(body).map_err(|_| Error::InvalidState)?;
+        if shape["clients"].as_array().ok_or(Error::InvalidState)?.iter().any(|client| client.get("lifetime").is_some()) {
+            return Err(Error::InvalidState);
+        }
+    }
     state.validate()?; Ok(state)
 }
 fn encode_state(state: &State) -> Result<Vec<u8>> {
     state.validate()?;
     let body = serde_json::to_vec(state).map_err(|_| Error::InvalidState)?;
-    let mut data = PREFIX.to_vec(); data.extend_from_slice(hex(&Sha256::digest(&body)).as_bytes());
+    let prefix = if state.clients.iter().any(|client| client.lifetime != LeaseLifetime::Unmanaged) { MANAGED_PREFIX } else { PREFIX };
+    let mut data = prefix.to_vec(); data.extend_from_slice(hex(&Sha256::digest(&body)).as_bytes());
     data.push(b'\n'); data.extend_from_slice(&body);
     if data.len() > MAX_STATE_BYTES { return Err(Error::InvalidState); } Ok(data)
 }
@@ -295,9 +317,15 @@ impl Authority {
     /// clients explicitly when capacity is reached. A repeated ID recovers that same lease after an uncertain reply;
     /// trusted management only, never interpret ID knowledge as authentication or replay under a new lease.
     pub fn register(&mut self, new_client_id: &str) -> Result<Lease> {
+        self.register_with_lifetime(new_client_id, LeaseLifetime::Unmanaged)
+    }
+    /// The broker must own the declared lifetime guard before registration and keep it through all writes.
+    /// A retry cannot promote an old/unmanaged lease or change its reclamation contract.
+    pub fn register_with_lifetime(&mut self, new_client_id: &str, lifetime: LeaseLifetime) -> Result<Lease> {
         self.ready()?;
         if !valid_id(new_client_id) { return Err(Error::InvalidRequest); }
         if let Some(client) = self.state.clients.iter().find(|c| c.id == new_client_id) {
+            if client.lifetime != lifetime { return Err(Error::InvalidRequest); }
             return Ok(Lease { client_id: client.id.clone(), lease_revision: client.lease_revision, version: self.state.version.clone(),
                 next_sequence: client.sequence.checked_add(1).ok_or(Error::Exhausted)? });
         }
@@ -305,7 +333,7 @@ impl Authority {
         let mut proposed = self.state.clone(); proposed.advance()?;
         let lease_revision = proposed.version.revision;
         proposed.clients.push(Client { id: new_client_id.into(), lease_revision, sequence: 0, fingerprint: None,
-            committed_revision: lease_revision, changed: false });
+            committed_revision: lease_revision, changed: false, lifetime });
         self.commit(proposed)?;
         Ok(Lease { client_id: new_client_id.into(), lease_revision, version: self.state.version.clone(), next_sequence: 1 })
     }
@@ -319,7 +347,7 @@ impl Authority {
     pub fn clients(&self) -> Result<Vec<ClientInfo>> {
         self.ready()?;
         Ok(self.state.clients.iter().map(|client| ClientInfo { key: LeaseKey { client_id: client.id.clone(), lease_revision: client.lease_revision },
-            sequence: client.sequence, committed_revision: client.committed_revision }).collect())
+            sequence: client.sequence, committed_revision: client.committed_revision, lifetime: client.lifetime }).collect())
     }
     pub fn retire_absent(&mut self, keep: &[LeaseKey]) -> Result<usize> {
         self.ready()?;
@@ -365,7 +393,8 @@ impl Authority {
         };
         proposed.entries = preferences.export().0;
         proposed.clients[index] = Client { id: client.id.clone(), lease_revision: client.lease_revision,
-            sequence: request.sequence, fingerprint: Some(fingerprint), committed_revision: proposed.version.revision, changed };
+            sequence: request.sequence, fingerprint: Some(fingerprint), committed_revision: proposed.version.revision, changed,
+            lifetime: client.lifetime };
         self.commit(proposed)?;
         Ok(Reply { version: self.state.version.clone(), committed_revision: self.state.version.revision,
             sequence: request.sequence, changed, duplicate: false })
