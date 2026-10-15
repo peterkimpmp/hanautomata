@@ -908,15 +908,16 @@ impl TextService {
         };
         let flipped = self.state.borrow().shell.as_ref().and_then(|s| s.flip(&text));
         if let Some(flipped) = flipped {
-            // Word selection commonly includes the following space. Keep that existing boundary out
-            // of SetText, just as for F2, so AutoCorrect does not undo the explicit selection choice.
-            let trailing = text.len() - text.trim_end_matches(' ').len();
-            if trailing > 0 && flipped.ends_with(&text[text.len() - trailing..]) {
+            // Word selections can include trailing spaces or tabs. Preserve unchanged whitespace
+            // outside SetText so AutoCorrect does not undo the explicit selection choice.
+            let suffix = &text[text.trim_end_matches(char::is_whitespace).len()..];
+            if !suffix.is_empty() && flipped.ends_with(suffix) {
                 let word_range = unsafe { range.Clone()? };
+                let trailing_units = suffix.encode_utf16().count() as i32;
                 let mut trimmed = 0;
-                unsafe { word_range.ShiftEnd(ec, -(trailing as i32), &mut trimmed, std::ptr::null())?; }
-                if trimmed != -(trailing as i32) { return Err(E_FAIL.into()); }
-                self.corrected_text(ec, context, &word_range, &flipped[..flipped.len() - trailing])?;
+                unsafe { word_range.ShiftEnd(ec, -trailing_units, &mut trimmed, std::ptr::null())?; }
+                if trimmed != -trailing_units { return Err(E_FAIL.into()); }
+                self.corrected_text(ec, context, &word_range, &flipped[..flipped.len() - suffix.len()])?;
             } else {
                 self.corrected_text(ec, context, &range, &flipped)?;
             }

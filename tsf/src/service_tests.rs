@@ -183,7 +183,8 @@ impl ITfRange_Impl for Range_Impl {
         units.truncate(self.offset.get());
         let text = if n > 0 { String::from_utf16(unsafe { std::slice::from_raw_parts(value.0, n as usize) }).unwrap() } else { String::new() };
         *self.host.last_write.borrow_mut() = text.clone();
-        let inserted = if self.host.autocorrect_space.get() && text == "dkssud " { "안녕 " } else { &text };
+        let inserted = if self.host.autocorrect_space.get() && text == "dkssud " { "안녕 " }
+            else if self.host.autocorrect_space.get() && text == "dkssud\t" { "안녕\t" } else { &text };
         units.extend(inserted.encode_utf16());
         units.extend(suffix);
         *self.host.text.borrow_mut() = String::from_utf16(&units).unwrap();
@@ -706,8 +707,8 @@ fn refused_reconversion_range_trim_keeps_the_original_word() {
 }
 
 #[test]
-fn selection_flip_preserves_trailing_spaces_without_retyping_the_word_boundary() {
-    for spaces in [" ", "  "] {
+fn selection_flip_preserves_trailing_whitespace_without_retyping_the_word_boundary() {
+    for spaces in [" ", "  ", "\t", "\t  ", "\r\n", "\u{00a0}", "\u{3000}"] {
         let (service, host, context) = fixture();
         *host.text.borrow_mut() = format!("안녕{spaces}");
         host.autocorrect_space.set(true);
@@ -722,12 +723,23 @@ fn selection_flip_preserves_trailing_spaces_without_retyping_the_word_boundary()
 
 #[test]
 fn refused_selection_flip_trim_preserves_the_original_document() {
+    for suffix in [" ", "\t", "\u{3000}"] {
+        let (service, host, context) = fixture();
+        *host.text.borrow_mut() = format!("안녕{suffix}");
+        host.refuse_end_shift.set(true);
+        assert!(service.flip_selection(1, &context).is_err());
+        assert_eq!(&*host.text.borrow(), &format!("안녕{suffix}"));
+        assert_eq!(host.writes.get(), 0);
+    }
+}
+
+#[test]
+fn selection_flip_preserves_leading_and_internal_whitespace() {
     let (service, host, context) = fixture();
-    *host.text.borrow_mut() = "안녕 ".into();
-    host.refuse_end_shift.set(true);
-    assert!(service.flip_selection(1, &context).is_err());
-    assert_eq!(&*host.text.borrow(), "안녕 ");
-    assert_eq!(host.writes.get(), 0);
+    *host.text.borrow_mut() = "\t안녕 \t가바\t\u{3000}".into();
+    service.flip_selection(1, &context).unwrap();
+    assert_eq!(&*host.text.borrow(), "\tdkssud \trkqk\t\u{3000}");
+    assert_eq!(&*host.last_write.borrow(), "\tdkssud \trkqk");
 }
 
 #[test]

@@ -1095,3 +1095,28 @@ W-14의 학습·진단 억제 정책을 확인하던 중 저장 worker의 제한
 도구/절차 실패도 구분한다. Sky 실행 API는 두 번 `accessibility window-opened handler did not become ready`였지만 실제 프로세스 부재를 확인한 뒤 일반 프로세스 실행으로 새 Word를 열었다. 임시 등록 뒤 `$LASTEXITCODE`를 검사한 절차는 이전 native 종료 코드를 읽어 실패처럼 표시했으며 receipt와 registry를 대조해 이미 적용된 것을 확인했다. 최초 DOCX 읽기는 Word의 파일 잠금으로 실패했고, 저장·종료 후 읽기에 성공했다. 복구·문서 확인·트레이 재시작을 묶은 셸 명령은 자동 검토에서 `blocked by policy`로 거절됐으나, 소유 임시 클래스만 복구하는 단일 명령과 기존 트레이 재시작 명령은 각각 정상 허용·완료됐다.
 
 `user-com-host-privacy-20261015.json`은 **restored**이며 사용자 클래스는 제거됐고 시스템은 기존 `wq-5971010-20261015`를 유지한다. Microsoft IME 활성 상태와 기존 트레이 PID 10300 재시작을 확인했다. 다른 문서는 닫지 않았고 재부팅·로그오프·시작 항목 변경은 하지 않았다. 제품 소스·후보 수는 변경하지 않았으며 이 턴에 자동 회귀 검사를 다시 실행했다고 주장하지 않는다. **16종·시스템 갱신 5회·목표 진행 중**을 유지한다.
+
+## Word의 Tab 포함 선택 변환 수정 — 2026-10-15
+
+후보 16을 적재한 Word PID 1540에서 `값 → Backspace → 갑 → k → 가바 → Tab`을 입력했다. `가바\t` 전체 선택의 Shift+F2는 한글 그대로였지만 Tab을 빼고 선택하면 `rkqk`로 변환됐다. `word-tab-1540-before-keys.json`에 실제 개별 합성 키와 UIA 결과를 보존했다. 문서는 `word-tab-before-1540.docx`로 저장했고 XML의 `rkqk\t`와 Tab 1개를 확인했다.
+
+선택 끝의 ASCII 공백만 보존하던 경로를 변환 결과에서도 동일하게 유지되는 Unicode 공백까지 확장했다. 문자열 절단은 UTF-8 바이트 경계, TSF 범위 축소는 UTF-16 단위로 각각 계산한다. 축소가 실패하거나 요청량보다 적게 이동하면 문서를 쓰지 않는다. 앞쪽·중간 공백은 기존 변환 계약대로 보존한다.
+
+| 근거 (`build/windows-quality/`) | 결과와 범위 |
+|---|---|
+| `selection-tab-red.log` | 원래 구현에서 후행 Tab·Unicode 공백/축소 거부·내부 공백 관련 assertion 3개 실패 |
+| `selection-tab-green-x64.log`, `selection-tab-green-x86.log` | 기본 기능 TSF lib 각각 **177개 통과·6개 명시적 제외**. 제외된 통합/자식 fixture를 실행한 것으로 세지 않음 |
+| `selection-tab-payload-build.log` | x64/x86 제품 빌드와 양쪽 DLL selftest 통과, exit 0 |
+| `selection-tab-review.json` | 도구 없는 반대 공급자 소스 검토. 새 확정 결함 없음. 짧은 범위 이동의 mock 및 실제 호스트별 동작은 검증 한계 |
+| `selection-tab-final-freeze.json` | 후보 **17종**. 새 `wq-selection-tab-20261015`의 6개 파일 해시 대조. 시스템 갱신은 여전히 5회 |
+| `word-selection-tab-module.json` | Word PID **20108**이 새 x64 DLL을 적재. SHA256 `27376EE31280325D2E17BD3652E0E921467110CD0991B7E05E507674058A4957` |
+| `word-selection-tab-20108-keys.json` | `가바\t ↔ rkqk\t`, Undo/Redo 통과. 문장 중간 `123가바\t4 ↔ 123rkqk\t4`도 앞뒤 문자와 Tab 보존 |
+| `word-selection-tab-20108-autocorrect.jpg` | Word 한/영 자동 고침·입력 시 바꾸기 ON 재확인. 설정은 변경하지 않음 |
+
+Word는 변환 뒤 선택을 해제하므로 역변환은 다시 선택해서 수행했다. 선택하지 않고 Shift+F2를 반복해 왕복한 것으로 표현하지 않는다. 이 시험은 Sky의 개별 합성 키이며 물리 키보드 시험이 아니다. 기본 기능 lib 검사 수를 이전 quality-probes·core·명시적 통합 검사 합계와 섞어 새 전체 통과 수로 계산하지 않는다. core/C# 미변경 근거는 앞 단계 기록을 유지한다.
+
+추가로 **숫자 조합 직후 첫 End는 확정만 하고 커서를 유지하며, 두 번째 End는 문장 끝으로 이동하는 현상**을 관측했다. 같은 문서의 Microsoft IME 대조에서는 End 후 입력한 숫자가 끝에 놓였다. 이 대조는 Microsoft IME의 활성 한글 조합까지 비교한 것은 아니다. 일부 UIA 갱신 지연도 있었으나, 숫자 `5` 입력→첫 End→두 번째 End의 실제 화면으로 확정/이동 차이를 재확인했다. 원인은 아직 미확정이며 이 관측을 도구 오류나 해결 완료로 처리하지 않는다.
+
+기존 core/shell은 이동 키에 대해 확정 후 `handled=false`를 반환한다. [Microsoft ITfKeystrokeMgr::KeyDown 계약](https://learn.microsoft.com/en-us/windows/win32/api/msctf/nf-msctf-itfkeystrokemgr-keydown)은 최종 `pfEaten=false`이면 호스트가 키를 처리하도록 설명한다. 따라서 다음 단계는 TSF 서비스 콜백의 실제 반환·조합 종료 순서와 호스트 동작을 구분하는 것이다. 근거 없이 이동 키를 재주입하면 이중 이동 위험이 있으므로 그런 변경은 하지 않았다. WQ-01/02/04의 이동 키 인수는 계속 열어 둔다.
+
+시험 문서 `word-selection-tab-20108.docx`를 저장·종료한 뒤 XML에서 `5123가바\t4`, Tab 1개를 확인했다. SHA256은 `4305B3F96B80AF698DC2C8E2A49E25A915E2B5A40BFD54076BA5771BD637D94E`다. `user-com-selection-tab-20261015.json`은 **restored**, Microsoft IME 활성 및 기존 트레이 PID 6920 복원을 확인했다. 다른 메모장 문서는 유지했다. **17종·시스템 갱신 5회·앱 전체 승인 0/6·목표 진행 중**이며, 다음 항목은 이동 키 경로, 다른 앱, 학습/후보 UI·보호 필드·설치/복구/로그인·DPI/성능/장기 시험이다.
