@@ -1263,3 +1263,11 @@ Word **PID 19984**가 새 DLL을 적재한 것을 확인하고 개별 Sky 합성
 처음에는 부분 이름에 `--exact`를 사용해 검사 0개가 선택됐다. 이어 첫 측정 fixture에 조합 sink가 없어 0번째 회차가 실패했다. 필터와 fixture만 교정했으며 두 실패 기록을 `com-latency-filter-miss.log`, `com-latency-fixture-before.log`에 남겼다. 기준이나 제품 입력 규칙을 바꾸어 통과시킨 것은 아니다.
 
 **이 수치는 실제 앱 입력 지연·화면 갱신·후보창·학습 worker 지연과 30분 연속 사용을 포함하지 않는다.** 짧은 모의 문서의 구성 요소 측정이며 WQ-08 전체 통과가 아니다. 후보 20의 실제 시스템 설치/복구/제거, 새 로그인, 6개 앱 전체 명령·보호 필드·제품 학습 UI, DPI와 실제 앱 10,000키/30분 시험은 미완료다. 전체 앱 승인 **0/6**, 후보 **20종**, 시스템 갱신 **5회**를 유지한다. 관리자 적용 실패를 해결했다고 표시하거나 공개 릴리즈하지 않는다.
+
+### 관리자 적용 스크립트의 PowerShell 5.1 인코딩 오류 교정
+
+사용자가 관리자 창에서 실행했을 때 UTF-8 BOM 없는 `script-hashes.json`의 한글 절대 경로를 Windows PowerShell 5.1이 기본 인코딩으로 잘못 읽었다. 경로 조회 실패가 `Installer script changed after preflight`로 표시됐으며 실제 파일 변경은 아니었다. 기존 기본 읽기 코드로 같은 실패를 재현했다(`system20-resume-20261015/encoding-before-ps51.log`, exit 1). 이전 사전 점검이 PowerShell 7에 한정돼 이 경계를 놓쳤다.
+
+적용 래퍼에 `Get-Content -Encoding UTF8`와 해시 조회의 명시적 오류 중단을 적용했다. `-CheckOnly`로 래퍼 자체부터 전체 사전 점검을 수행할 수 있게 했고, 이 읽기 전용 모드의 실패는 적용 영수증을 만들지 않는다. `C:/Windows/System32`에서 실제 수정본을 실행해 PowerShell **5.1/7 모두 exit 0·preflight-passed**를 확인했다(`encoding-fixed-ps51.log`, `encoding-fixed-ps7.log`). 후보 20 제품 파일은 바꾸지 않았다.
+
+설치 revision이 없고 실패가 스크립트 해시 확인 단계였음을 확인한 뒤 `apply-result.json`을 `apply-result-encoding-failed-20261015.json`으로 보존했다. 원래 래퍼도 `apply-admin.before-encoding.ps1`에 남겼다. 동일한 `apply-admin.ps1` 명령으로 다시 적용할 수 있지만, 이 교정과 사전 점검은 관리자 설치 성공을 뜻하지 않는다. 양쪽 시스템 등록은 이전 revision을 유지한다.
