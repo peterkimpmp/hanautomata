@@ -490,11 +490,20 @@ pub fn register_machine(dll: &str) -> Report {
 
 /// Run in the intended user's normal session, after machine registration.
 pub fn enable_user(enable: bool) -> Report {
+    user_change_in_session(crate::system::elevation_status(), || change_user_profile(enable))
+}
+
+fn user_change_in_session(elevation: Option<u32>, action: impl FnOnce() -> Report) -> Report {
     let mut report = Report::default();
-    if crate::system::elevated() {
-        report.push("user activation requires the intended user's non-elevated session", Err(E_ACCESSDENIED));
+    if elevation != Some(0) {
+        report.push("user profile changes require a verified non-elevated session; no changes made", Err(E_ACCESSDENIED));
         return report;
     }
+    action()
+}
+
+fn change_user_profile(enable: bool) -> Report {
+    let mut report = Report::default();
     if enable && (!key_exists(HKEY_LOCAL_MACHINE, &com_key()) || !key_exists(HKEY_LOCAL_MACHINE, &ctf_key())) {
         report.push("machine registration must exist before user activation", Err(E_FAIL));
         return report;
@@ -810,6 +819,35 @@ fn activation_result(hr: HRESULT) -> std::result::Result<(), HRESULT> {
 #[cfg(test)]
 mod registration_tests {
     use super::*;
+    #[test]
+    fn user_changes_require_confirmed_non_elevated_authority_before_any_action() {
+        for elevation in [None, Some(1), Some(u32::MAX)] {
+            let calls = std::cell::Cell::new(0);
+            let report = user_change_in_session(elevation, || {
+                calls.set(calls.get() + 1);
+                Report::default()
+            });
+            assert_eq!(calls.get(), 0, "unverified/elevated {elevation:?} must not reach settings, COM or language-list changes");
+            assert!(!report.ok());
+            assert_eq!(report.first_error(), E_ACCESSDENIED);
+            assert_eq!(report.steps.len(), 1);
+        }
+    }
+
+    #[test]
+    fn confirmed_normal_user_change_runs_once_and_preserves_its_failure_report() {
+        let calls = std::cell::Cell::new(0);
+        let report = user_change_in_session(Some(0), || {
+            calls.set(calls.get() + 1);
+            let mut report = Report::default();
+            report.push("settings preparation fixture refused", Err(E_FAIL));
+            report
+        });
+        assert_eq!(calls.get(), 1);
+        assert_eq!(report.first_error(), E_FAIL);
+        assert_eq!(report.steps[0].name, "settings preparation fixture refused");
+    }
+
     #[test]
     fn editor_belongs_to_the_same_architecture_payload_revision() {
         for arch in ["x64", "x86"] {

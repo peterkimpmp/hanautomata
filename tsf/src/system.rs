@@ -120,6 +120,9 @@ fn token_u32(class: windows::Win32::Security::TOKEN_INFORMATION_CLASS) -> Option
 pub fn elevated() -> bool { elevation_confirmed(token_u32(TokenElevation)) }
 fn elevation_confirmed(value: Option<u32>) -> bool { value.is_some_and(|value| value != 0) }
 
+/// Preserve query failure for commands that require a confirmed non-elevated user.
+pub(crate) fn elevation_status() -> Option<u32> { token_u32(TokenElevation) }
+
 /// W-14 privacy decision: elevated OR not proven non-elevated. Query failure must not enable learning/logging.
 pub fn requires_host_privacy() -> bool {
     elevated_or_unknown(token_u32(TokenElevation))

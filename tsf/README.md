@@ -77,7 +77,7 @@ if ($LASTEXITCODE -ne 0) { throw '현재 사용자 준비 상태 실패: 앱 시
 & "$env:ProgramFiles\Hanautomata-TSF-S0\install-machine.ps1" -Action Unregister
 ```
 
-설치 결과는 설치 폴더의 `install-result.json`이다. 중간 등록 실패 시 시도한 비트수의 등록을 되돌리고 파일·오류 기록을 남긴다. 관리자 명령의 권한 거부 경로는 일반 PowerShell의 `.\tsf\test-machine-registration.ps1`로 검사한다. `enable-user`/`disable-user`는 현재 사용자에게만 적용되므로 관리자 창에서 실행하면 거부한다. 이때 쓰는 공식 API는 [EnableLanguageProfile](https://learn.microsoft.com/en-us/windows/win32/api/msctf/nf-msctf-itfinputprocessorprofiles-enablelanguageprofile)과 [RegisterProfile](https://learn.microsoft.com/en-us/windows/win32/api/msctf/nf-msctf-itfinputprocessorprofilemgr-registerprofile)이다.
+설치 결과는 설치 폴더의 `install-result.json`이다. 중간 등록 실패 시 시도한 비트수의 등록을 되돌리고 파일·오류 기록을 남긴다. 관리자 명령의 권한 거부 경로는 일반 PowerShell의 `.\tsf\test-machine-registration.ps1`로 검사한다. `enable-user`/`disable-user`는 현재 사용자에게만 적용되므로 관리자 창에서 실행하면 거부한다. 일반 사용자 권한인지 확인하지 못한 경우에도 설정·등록·언어 목록을 바꾸기 전에 거부한다. 이때는 실제 사용할 계정의 일반 PowerShell에서 실행 환경을 확인한다. 이때 쓰는 공식 API는 [EnableLanguageProfile](https://learn.microsoft.com/en-us/windows/win32/api/msctf/nf-msctf-itfinputprocessorprofiles-enablelanguageprofile)과 [RegisterProfile](https://learn.microsoft.com/en-us/windows/win32/api/msctf/nf-msctf-itfinputprocessorprofilemgr-registerprofile)이다.
 
 새 개발 설치·갱신 스크립트는 x64/x86의 setup·DLL, `ui`의 편집기·`.config`를 모두 요구하며 복사 전후 해시를 검사한다. 4개 런타임 파일만 있던 구형 묶음은 새 스크립트에서 거부한다. 압축을 푼 폴더에서는 설치·갱신 스크립트의 기본 Source가 그 폴더다. 기존 revision 파일은 덮어쓰지 않는다. 관리자 설치는 사용자 설정 파일을 만들거나 편집기를 실행하지 않는다.
 

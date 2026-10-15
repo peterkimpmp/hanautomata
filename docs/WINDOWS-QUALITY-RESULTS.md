@@ -10,8 +10,8 @@ disposition: local-reusable
 
 # 개발 회귀를 보강했으며 Windows 전체 동작 승인은 남아 있다
 
-- 보존 후보 18종, 시스템 갱신 5회이며 최신 후보는 미설치다.
-- 최신 후보의 기본 TSF lib 검사는 양쪽 각각 182개 통과다.
+- 보존 후보 19종, 시스템 갱신 5회이며 최신 후보는 미설치다.
+- 최신 후보의 기본 TSF lib 검사는 양쪽 각각 184개 통과다.
 - 저장 상태 안내를 구현했으며 실제 앱 화면 시험은 남았다.
 - Word F2·공백/Tab 포함 Shift+F2는 성공, 첫 이동 키는 미해결이다.
 
@@ -1142,3 +1142,22 @@ Word의 첫 End 현상을 조사하면서 서비스가 이미 보이는 조합�
 직접 시험 준비 시 Windows 세션은 **Disc**였다. 모니터 캡처 `0x80070057`, 재선택 후 `GetCursorPos` 권한 오류를 `navigation-ui-readiness.json`에 기록했다. Word 실행·키 입력·트레이 종료·사용자 COM 등록은 수행하지 않았다. 설치본 `wq-5971010-20261015`, 기존 트레이 PID 6920과 사용자 문서를 유지한다. `user-com-navigation-commit.ps1`은 해시를 고정한 다음 시험용 도구이며 아직 실행하지 않았다.
 
 **첫 End의 실제 개선 여부는 미검증이고 앱 전체 승인은 0/6이다.** 다음 실제 시험은 새 Word의 후보 18 적재 확인 → 조합 중 End/Home/Left/Ctrl+End/Enter/Tab의 첫 입력 결과 → F2/Shift+F2·Undo/Redo 회귀다. 기존 Microsoft IME 대조는 활성 조합 조건이 같지 않았으므로 같은 조건의 대조도 필요하다. 나머지 앱·보호 필드·학습/후보 UI·설치/복구/로그인·DPI·성능/연속 시험을 유지한다. 직전 현황 보고 턴은 진척이 없었으나, 이번 턴은 코드·검사·검토·빌드 후보가 추가된 진척으로 분류한다.
+
+## 사용자 활성화·비활성화의 권한 조회 실패 거부 — 2026-10-15
+
+`host-privacy-followup-review.json`에 남긴 기존 지적을 재현했다. 시스템 등록의 `elevated()`는 조회 실패 때 거짓을 반환했으나, `enable-user`/`disable-user`가 이를 반대로 사용해 일반 사용자 변경을 허용했다. 활성화에는 이후 설정 준비 검사가 있지만 비활성화는 그 단계가 없었다. `user-activation-red.log`에서 권한 조회 불명 `None`에 변경 action이 1회 호출되는 assertion 실패를 확인했다. 실제 사용자 프로필은 건드리지 않는 주입 검사다.
+
+공통 진입점은 이제 성공적으로 읽은 `Some(0)`만 변경 action에 전달한다. 관리자 또는 조회 불명은 설정 준비·COM 초기화·등록·언어 목록 작업에 앞서 `E_ACCESSDENIED` 한 항목으로 반환한다. 실제 프로필 변경 본문과 일반 사용자 오류 보고는 유지한다. 조회 API의 실패와 정상 조회한 0은 서로 다르다([GetTokenInformation](https://learn.microsoft.com/en-us/windows/win32/api/securitybaseapi/nf-securitybaseapi-gettokeninformation), [TOKEN_ELEVATION](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-token_elevation)). 이번 수정은 다른 사용자 명령 전체의 권한 감사나 새로운 impersonation 정책을 완료한 것이 아니다.
+
+| 근거 (`build/windows-quality/`) | 결과와 범위 |
+|---|---|
+| `user-activation-red.log` | 조회 불명에서 변경 action이 실행되는 실패 재현 |
+| `user-activation-green-x64.log`, `user-activation-green-x86.log` | 기본 TSF lib 각각 **184개 통과·6개 명시적 제외**. 거부 시 action 0회, 일반 사용자의 1회 실행·원래 오류 보고 보존 |
+| `user-activation-review.json` | 반대 공급자의 도구 없는 소스 검토에서 구체적 결함 없음. 실제 토큰 조회 실패는 주입하지 않았다는 한계 유지 |
+| `user-activation-payload-build.log` | x64/x86 제품 빌드·DLL selftest exit 0 |
+| `user-activation-machine-denial-x64.log`, `user-activation-machine-denial-x86.log` | 새 setup의 비관리자 시스템 등록/제거 거부 통과. 관측한 등록 키 존재 여부와 사용자 언어 목록 불변. x86은 PowerShell 5.1에서 실행 |
+| `user-activation-final-freeze.json` | 후보 19 `wq-user-activation-20261015`, 여섯 파일 SHA256 검증. 시스템 갱신은 5회 유지 |
+
+검토 후 CLI의 두 사용자 명령 연결과 종료 코드 1 전달을 소스로 확인했다. 예전 오류 문자열을 전제로 하는 호출자는 조사 범위에서 없었으며, 설치 안내에는 조회 실패 시 변경하지 않는 동작을 추가했다. 모델 라우터의 reviewer 단계는 degraded였으므로 모델·effort override 없이 기존 반대 공급자 CLI 설정을 사용했고 결과를 독립 소스 검토로만 분류했다.
+
+Windows 세션은 계속 **Disc**이며 이번 턴의 실제 사용자 활성화·비활성화, 설치 갱신, Word 입력은 수행하지 않았다. 기존 트레이와 설치를 유지한다. 후보 19는 후보 18의 이동 키 변경을 포함하며 실제 Word 인수는 계속 열려 있다. 다음 시험은 최신 후보의 DLL 적재 확인부터 이어간다. **앱 전체 승인 0/6·목표 진행 중**이며 이번 턴은 알려진 권한 판단 결함의 수정·회귀·빌드라는 진척이다.
