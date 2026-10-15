@@ -3,7 +3,7 @@
 #   .\build.ps1 -Test      also the shared engine tests (core) and the Windows key-logic tests (tsf)
 #   .\build.ps1 -X86       also the 32-bit DLL and setup tool for 32-bit applications (W-03) -> build\tsf\x86, and their
 #                          selftest; uses the stable-i686-pc-windows-gnu toolchain when installed (its own 32-bit linker)
-#   .\build.ps1 -X86 -Package  six-file payload + installer dependencies + SHA-256 -> deliverables\Hanautomata-tsf-s0-<commit>-<id>.zip
+#   .\build.ps1 -X86 -Package  six-file payload + installer dependencies + SHA-256 -> deliverables\Hanautomata-ime-<version>-win.zip
 # Registration is a separate, deliberate step: build\tsf\x64\hanautomata-ime-setup.exe register (see README.md).
 # CARGO_TARGET_DIR is honoured: point it at an ASCII path when the user folder has non-ASCII characters (MinGW linker).
 # No dlltool is needed: the crates link through prebuilt import libraries (Cargo.toml explains the windows 0.59 pin).

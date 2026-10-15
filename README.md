@@ -1,17 +1,20 @@
 # Hanautomata
 
-**한영키를 바꾸지 않고 입력하는 Windows 트레이 앱 · 개발 소스 v0.5.0**
+**한영키를 바꾸지 않고 입력한다 — 단어 단위 한/영 자동 판별 입력 도구 (Windows·macOS) v0.5.0**
 
-이 브랜치의 제품 버전은 `VERSION`의 0.5.0입니다. 아래 v0.4.0 베타 검증 수치는 당시 기록이며, 현재 소스의 [Windows 검증 계획](docs/WINDOWS-QUALITY-PLAN.md)과 [개발 시험 결과](docs/WINDOWS-QUALITY-RESULTS.md)는 별도로 관리합니다. TSF 시험판의 실제 앱 승인은 진행 중입니다.
+Hanautomata는 같은 물리 키로 한국어와 영어를 입력하면 **단어 단위로 언어를 판별**해 주는 로컬 입력 도구입니다. 손목록 먼저, 다음은 한글 음절 bigram 대 영문 자모 bigram의 우도비로 판별하고, 애매할 때만 작은 후보창을 보여 주며, Space로 확정하고 F2(직전 단어)·Shift+F2(선택 영역)로 고칩니다. `dkssudgktpdy`는 **안녕하세요**, `hello world`는 **hello world**가 됩니다.
 
-Hanautomata is a Windows tray app that lets you type Korean or English from the same physical keys without toggling the 한/영 mode. It decides word by word (hand lists first, then a syllable-bigram vs letter-bigram likelihood ratio), shows a small candidate window, commits on Space, and fixes mistakes with F2 (last word) or Shift+F2 (selected text). No admin rights, no network, no cloud model. MIT licensed; model tables are aggregate statistics from Wikipedia dumps (CC BY-SA 4.0).
+입력 처리에 네트워크·클라우드 모델·외부 사전이 없습니다. 무엇을 저장하고 무엇을 하지 않는지는 [PRIVACY.md](PRIVACY.md)에 있습니다. 코드는 MIT, 모델 표는 위키백과 덤프의 집계 통계(CC BY-SA 4.0)입니다.
 
-`Hanautomata.exe`를 실행하고 입력 칸에 타이핑하세요.
-`dkssudgktpdy`는 **안녕하세요**, `hello world`는 **hello world**로 판별합니다.
-작은 조합창에 후보가 보이고 **Space에서 실제 편집 칸에 확정**됩니다.
-현재 Microsoft 입력기의 한/영 모드와 관계없이 같은 물리 키를 처리합니다.
+## 세 가지 구성
 
-> **베타 상태**: v0.4.0 공개 모델로 Windows 단위 단언 26,155개와 기능 검사 106개를 통과했고, 설치·이전 데이터 보존·선택 변환을 확인했습니다. 검증 환경은 클라우드 Windows PC 1대이며, 자동 입력과 실물 키보드 검증은 다릅니다. 실물 PC의 물리 키보드·실제 앱(브라우저·채팅·편집기) 호환성과 로그오프 후 로그인은 아직 확인하지 않았습니다. 빌드는 서명되어 있지 않습니다. 자세한 범위는 [검증 기록](docs/VERIFICATION.md)에 있습니다.
+| 구성 | 방식 | 설치 권한 | 검증 상태 |
+|---|---|---|---|
+| **Windows 트레이 앱** (기본 권장) | 시스템 전역 입력 도우미(후크) — 기존 입력기를 바꾸지 않음 | 불필요(Zero Admin) | v0.4.0-beta 공개 검증 · 0.5.0 회귀 통과 |
+| **Windows 입력기(TSF)** | Windows 정식 텍스트 서비스 — 입력기 목록에 추가 | 관리자 1회 | 시험판 — 앱별 승인 현황은 [검증 원장](docs/WINDOWS-QUALITY-RESULTS.md) |
+| **macOS 입력기** | InputMethodKit 입력기 | 불필요 | 자동 검사 통과 · 실물 점검표([G2](macos/COMPATIBILITY.md)) 진행 전 |
+
+세 구성은 같은 Rust 판별 엔진을 쓰고 같은 판별 결과를 냅니다(동등성 게이트 G1). Windows에서 트레이 앱과 입력기(TSF)판을 같이 켜 두면 입력기판이 트레이를 감지하고 키를 그대로 통과시킵니다 — 하나만 쓰세요.
 
 ## 키
 
@@ -38,28 +41,39 @@ v0.4.1부터 현재 사용자의 작업 스케줄러에 등록하여 로그인 1
 트레이 **자동 시작 상태 확인**에서 실제 등록 상태·최근 실행 결과·시작 기록 위치를 볼 수 있습니다. [자동 시작 점검](docs/STARTUP.md)
 트레이의 **판별 민감도**(보수·표준·적극)는 보류 구간의 폭만 바꿉니다. 오변환이 거슬리면 보수, 짧은 단어가 안 바뀌면 적극을 고르세요.
 
-## 설치
+## 다운로드·설치
 
-[v0.4.0-beta 다운로드](https://github.com/peterkimpmp/hanautomata/releases/tag/v0.4.0-beta)에서 `Hanautomata-0.4.0-win.zip`과 `SHA256SUMS.txt`를 받으세요. Windows 10/11과 .NET Framework 4.8이 필요합니다.
+[릴리스 페이지](https://github.com/peterkimpmp/hanautomata/releases)에서 받으세요. 받은 zip은 `SHA256SUMS.txt`(또는 `.sha256`)와 대조합니다. 빌드는 아직 코드 서명이 없어 SmartScreen·Gatekeeper가 경고할 수 있습니다 — 체크섬 대조 또는 직접 빌드를 권합니다([SECURITY.md](SECURITY.md)).
 
-1. `Get-FileHash .\Hanautomata-0.4.0-win.zip -Algorithm SHA256` 결과를 함께 받은 체크섬과 대조합니다.
-2. ZIP을 풀고 `Hanautomata-0.4.0` 폴더에서 `Hanautomata.exe`를 실행합니다. EXE와 config는 같은 폴더에 둡니다.
-3. 현재 사용자에게 설치하려면 같은 폴더에서 아래 명령을 실행합니다. 관리자 권한은 필요하지 않습니다.
+### Windows 트레이 앱 — `Hanautomata-<판>-win.zip`
 
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
-```
+Windows 10/11과 .NET Framework 4.8이 필요합니다.
 
-소스에서 직접 빌드할 때는 저장소 루트에서 실행합니다(별도 SDK 없이 Windows 기본 C# 컴파일러 사용).
+1. `Get-FileHash .\Hanautomata-<판>-win.zip -Algorithm SHA256` 결과를 체크섬과 대조합니다.
+2. ZIP을 풀고 `Hanautomata.exe`를 실행합니다(휴대용). 현재 사용자에게 설치하려면:
 
 ```powershell
-.\build.ps1
-.\install.ps1          # %LOCALAPPDATA%\Programs\Hanautomata + 바탕 화면·시작 메뉴 바로가기
-.\install.ps1 -Startup # 자동 시작까지 원할 때
+powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1          # %LOCALAPPDATA%\Programs\Hanautomata + 바로가기
+powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -Startup # 자동 시작까지
 ```
 
-제거는 트레이에서 자동 시작을 해제하고 종료한 뒤 앱 폴더와 바로가기를 지우면 됩니다. 앱별 제외 설정도 지우려면 `%LOCALAPPDATA%\Hanautomata\settings.json`을 삭제합니다. 이전 버전 사용자는 [데이터 이전과 구 설치본 정리](docs/MIGRATION.md)를 먼저 확인하세요.
-서명되지 않은 베타 빌드라 SmartScreen·백신이 경고할 수 있습니다. 릴리스의 SHA-256과 대조하거나 직접 빌드하세요([SECURITY.md](SECURITY.md)).
+제거는 `uninstall.ps1`입니다(자동 시작 해제 → 종료 → 폴더·바로가기 제거). 학습 단어·설정까지 지우려면 `-PurgeData`를 붙입니다. 이전 HanFlow 사용자는 [데이터 이전](docs/MIGRATION.md)을 먼저 확인하세요.
+
+소스 빌드는 저장소 루트에서 `.\build.ps1`(별도 SDK 없이 Windows 기본 C# 컴파일러) 후 `.\install.ps1`입니다.
+
+### Windows 입력기(TSF) — `Hanautomata-ime-<판>-win.zip` (시험판)
+
+정식 입력기 방식이라 **관리자 1회 설치**가 필요하고, 설치 후 입력기 목록에 '한오토마타'가 추가됩니다. 설치·갱신·제거 절차와 현재 검증 범위는 [tsf/README.md](tsf/README.md)를 따르세요. 트레이 앱과 함께 켜지 않습니다.
+
+### macOS — `Hanautomata-<판>-macos.zip`
+
+macOS 14 이상(Apple Silicon·Intel universal).
+
+1. `shasum -a 256 Hanautomata-<판>-macos.zip` 결과를 체크섬과 대조합니다.
+2. zip을 풀어 `Hanautomata.app`을 `~/Library/Input Methods/`에 둡니다.
+3. 시스템 설정 → 키보드 → 입력 소스 → 편집… → `+` → 한국어 → **한오토마타**를 추가합니다.
+
+서명이 없는 빌드는 Gatekeeper가 차단할 수 있습니다: `xattr -dr com.apple.quarantine ~/Library/Input\ Methods/Hanautomata.app` 후 다시 추가하세요. 제거는 `macos/uninstall.sh` 또는 입력 소스 제거 후 앱 삭제입니다. 자세한 사용법·전환 키·설정은 [macos/README.md](macos/README.md)에 있습니다.
 
 ## 자동 판별의 범위
 
@@ -78,13 +92,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
 
 후보창의 **‘확인 필요’**는 짧거나 선택 이력이 충돌하거나 혼합어 후보 비용이 비슷한 입력, **‘음절 추정’**은 사전보다 약한 통계 근거를 뜻합니다.
 
-정식 TSF IME를 등록하는 앱은 아닙니다. **시스템 전역 입력 도우미**이며, 일반 권한의 편집 가능한 입력 칸을 Windows 접근성 API로 확인할 수 있을 때 동작합니다.
+트레이 앱은 정식 TSF IME를 등록하지 않습니다(그 역할은 입력기판이 합니다). **시스템 전역 입력 도우미**이며, 일반 권한의 편집 가능한 입력 칸을 Windows 접근성 API로 확인할 수 있을 때 동작합니다.
 비밀번호·읽기 전용·관리자 실행 앱·입력 대상 확인 실패 상태는 기본 입력기로 통과합니다.
 게임의 Raw Input, 보안 데스크톱, 터미널, 일부 웹 편집기에서는 동작하지 않을 수 있습니다.
 
 ## 로컬 데이터
 
-앱은 문장 전체나 연속 키 기록을 저장하지 않으며 네트워크 통신을 하지 않습니다.
+세 구성 공통의 저장 항목·위치·삭제 방법은 [PRIVACY.md](PRIVACY.md)에 있습니다. 트레이 앱 기준으로: 문장 전체나 연속 키 기록을 저장하지 않으며 네트워크 통신을 하지 않습니다.
 직접 후보를 바꾸고 확정한 단어에 한해 키열·한글/영문 선택·선택 가중치·앞 단어 지문을 `%LOCALAPPDATA%\Hanautomata\learned-words.json`(읽을 수 있는 JSON)에 저장합니다. 앞 단어는 원문 대신 SHA-256 지문입니다.
 설정 파일에는 제외한 프로세스 이름, 민감도, 개인 학습·세미콜론 전환 사용 여부를 저장합니다.
 자동 판별을 위한 UI Automation 조회는 편집 가능·비밀번호·포커스 등 속성에 한정됩니다. **Shift+F2를 누르면 변환할 선택 영역의 글자를 읽습니다**(최대 4,096자). 문서 전체를 수집하거나 저장하지 않습니다.
@@ -108,7 +122,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
 .\build.ps1 -Test          # 단위 검사(Framework csc)
 .\build.ps1 -Integration   # 전용 시험창에서 실제 후크·Unicode 입력 검사
 .\tests\ReleaseTests.ps1   # ZIP·체크섬·휴대용 설치 입력 검사
-.\package.ps1              # deliverables/Hanautomata-0.4.0-win.zip + SHA256SUMS
+.\package.ps1              # deliverables/Hanautomata-<판>-win.zip + SHA256SUMS (입력기판: .\tsf\build.ps1 -Test -X86 -Package · macOS: macos/package.sh)
 ```
 
 macOS·Linux(또는 Windows의 .NET SDK 9)에서는 `tests/dotnet/`로 같은 소스를 검사합니다. 전체 앱은 .NET Framework 4.8 참조 어셈블리에 C# 5로 컴파일만 하고, 단위 검사는 .NET 9로 실행합니다.

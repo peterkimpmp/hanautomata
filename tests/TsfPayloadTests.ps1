@@ -57,10 +57,13 @@ try {
     $unpacked = Join-Path $testRoot 'unpacked'
     Expand-Archive -LiteralPath $zip -DestinationPath $unpacked
     $null = Assert-HanautomataPayload $unpacked
-    Assert-Payload ((Get-ChildItem -LiteralPath $unpacked -File -Recurse).Count -eq 11) 'package has missing or unexpected files'
-    foreach ($name in @('install-machine.ps1','update-machine.ps1','payload.ps1','README.md')) {
+    Assert-Payload ((Get-ChildItem -LiteralPath $unpacked -File -Recurse).Count -eq 12) 'package has missing or unexpected files'
+    foreach ($name in @('install-machine.ps1','update-machine.ps1','payload.ps1','README.md','release-manifest.json')) {
         Assert-Payload (Test-Path -LiteralPath (Join-Path $unpacked $name)) ('portable dependency missing: ' + $name)
     }
+    $manifest = Get-Content -LiteralPath (Join-Path $unpacked 'release-manifest.json') -Raw | ConvertFrom-Json
+    Assert-Payload ($manifest.version -eq (Get-Content -LiteralPath (Join-Path $root 'VERSION') -Raw).Trim()) 'release manifest version does not match VERSION'
+    Assert-Payload ([bool]$manifest.source_commit) 'release manifest is missing the source commit'
     Assert-Payload (-not (Test-Path -LiteralPath (Join-Path $unpacked 'private-canary.txt'))) 'unlisted source leaked into package'
     $sum = (Get-Content -LiteralPath ($zip + '.sha256')) -split '  ',2
     Assert-Payload ((Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash -eq $sum[0]) 'archive digest mismatch'
