@@ -10,8 +10,8 @@ disposition: local-reusable
 
 # 개발 회귀를 보강했으며 Windows 전체 동작 승인은 남아 있다
 
-- 보존 후보 15종, 시스템 갱신 5회이며 최신 후보는 미설치다.
-- 최신 개발 소스의 고유 Rust 검사 350개가 통과했다.
+- 보존 후보 16종, 시스템 갱신 5회이며 최신 후보는 미설치다.
+- 최신 개발 소스의 고유 Rust 검사 353개가 통과했다.
 - 저장 상태 안내를 구현했으며 실제 앱 화면 시험은 남았다.
 - Word F2·공백 포함 Shift+F2 왕복은 자동 고침 ON에서 성공했다.
 
@@ -1054,3 +1054,23 @@ M1은 사전 교환으로 무효화된 지연 학습을 `Invalidated(count)`로 
 안내는 다음 후보 생성 때 갱신한다. 유휴 중 저장 완료 알림은 제공하지 않는다. 공식 [GetDescription 계약](https://learn.microsoft.com/en-us/windows/win32/api/msctf/nf-msctf-itfuielement-getdescription)은 UI 설명 반환이며 호스트의 시각적 표시를 보장하지 않는다. 실제 앱·접근성·DPI·제한 호스트의 표시/저장 동작은 계속 미검증이다. 이번 사용자 세션 조회도 `Disc`였고 UI 입력은 시도하지 않았다. 설치/복구/제거·실제 로그인·10,000키/30분 성능·최종 배포 조건과 **전체 앱 승인 0/6**을 유지한다.
 
 `learning-notice-payload-build.log`에서 기본 제품 x64/x86 빌드·양쪽 DLL selftest가 통과했다. `wq-learning-notice-20261015`의 6개 파일을 새 폴더로 복사하고 SHA256을 다시 대조했다. `learning-notice-final-freeze.json` 기준 보존 후보는 **15종**, 시스템 갱신 receipt는 **5회**다. 현재 시스템 등록은 양쪽 모두 기존 `wq-5971010-20261015`이고 사용자 임시 COM 클래스는 양쪽 모두 없다. 최신 후보는 미설치이며 제품·공개 릴리즈 승인이 아니다. 이 단계의 현행 체크포인트는 `learning-notice-checkpoint.json`이다.
+
+## 관리자·권한 조회 불명 호스트의 비학습 정책 — 2026-10-15
+
+W-14의 학습·진단 억제 정책을 확인하던 중 저장 worker의 제한만으로 메모리 학습까지 막히지는 않는 경로를 찾았다. `host-privacy-red.log`에서 일반 필드 전환 후 학습 수 1≠0, 관리자/조회 불명에서 진단 writer 호출이라는 두 assertion 실패를 재현했다. 호스트의 비학습 결정을 활성화 때 보존하고 필드 전환·F12 복귀·종료에도 유지한다. 이 정책 자체는 일반 조합/F2를 막지 않으며 암호 필드·제외 앱·트레이 공존의 기존 입력 통과 정책은 유지한다. 관리자 또는 권한 조회 불명에서는 저장 worker와 입력 진단을 시작하지 않고, 일반 진단 로그도 경로 조회·파일 생성 전에 억제한다.
+
+관리자 권한 확인과 비학습 판정은 별도 함수다. 시스템 등록/제거는 명확한 관리자 증거가 있을 때만 허용하고, 비학습은 권한 조회 불명까지 포함한다. 중간 함수 변경은 설치 코드의 세 호출부에서 컴파일 오류가 났으며(`host-privacy-final-x64.log`) 이를 수정한 뒤 최종 검사를 다시 수행했다. 중간 산출물은 동결·설치하지 않았다.
+
+| 근거 (`build/windows-quality/`) | 확인 범위 |
+|---|---|
+| `host-privacy-verified-x64.log`, `host-privacy-verified-x86.log` | 각 TSF 177 + shell 19 + stdio 1 + pipe 4 + runtime 12 통과. 별도 진단 도구 14개는 합계에서 제외 |
+| `host-privacy-verified-<arch>-<case>.log` | 실제 저장 자식과 합성 COM 문서를 사용하는 명시적 서비스 8개를 양쪽에서 통과 |
+| 기존 core/C# 근거 | 변경 없는 core 132개(`learning-notice-core*.log`)와 C# 관리 107개(`learning-recovery-csharp*.log`)는 재사용하며 이번 재실행으로 세지 않음 |
+| `host-privacy-verified-payload-build.log` | x64/x86 기본 제품 빌드·양쪽 DLL selftest 통과, exit 0 |
+| `host-privacy-followup-review.json` | 도구 없는 반대 공급자 소스 검토에서 새 차단 회귀 없음. 실제 실행/앱 승인을 뜻하지 않음 |
+
+고유 Rust 합계는 **353 = 132 + 177 + 19 + 1 + 4 + 12 + 8**이다. 합성 호스트 상태 주입은 실제 관리자 프로세스의 ActivateEx를 검증하지 않는다. F12의 미확정 단어 동반 정지, 실제 권한 토큰의 활성화, 제한 호스트의 표시/로그/학습 결과는 남아 있다. 종료의 일반 호스트 양성 대조는 기존 `host_termination_and_deactivation_confirm_only_successful_owned_writes`가 담당한다. 소스 검토의 기존 enable-user 조회 불명 정책과 worker 설명 주석 개선 지적도 후속 항목으로 보존한다.
+
+`host-privacy-final-freeze.json`에 `wq-host-privacy-20261015`의 파일 6개 SHA256, 보존 후보 **16종**, 시스템 갱신 **5회**를 기록했다. 이는 x64/x86을 한 후보로 센 수이며 모든 빌드 명령/실패 재시도 횟수가 아니다. 시스템 등록은 양쪽 모두 `wq-5971010-20261015`, 임시 사용자 COM 클래스는 양쪽 모두 없다. 후보는 미설치다.
+
+진행 상황 질문에 답하며 다시 조회한 Windows 세션은 Active였다. 메모장 재선택·활성화 후 빈 문서 화면 캡처에 성공했지만 입력 시험은 하지 않았다. 이전 Disc 기록은 당시 관측으로 유지한다. 실제 앱 전체 승인은 **0/6**, 품질 점수는 산정 보류다. 남은 큰 순서는 ① 최신 후보의 6개 앱 명령·보호·학습/UI 검증 ② 설치/복구/제거·실제 로그인 자동 시작 ③ DPI·10,000키·p95·30분 연속 시험 및 최종 패키지다. 이전의 추가 3~5회 순환 추정은 완료 보장이 아니며, 현재 추가 빌드 횟수와 완료 일시는 미정이다.

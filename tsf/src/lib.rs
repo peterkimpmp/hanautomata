@@ -5,7 +5,9 @@
 //!
 //! S0 scope: registration step by step, composition and commit in real applications, the switch keys (⇧Space, Caps Lock
 //! short/long, 한/영, right Alt tap), F2/Shift+F2, F12 pause, the system mode indicator (가/A), pass-through in password
-//! fields, beside the tray app (W-17) and in elevated processes (W-14). Candidate preview and a separate settings editor
+//! fields and beside the tray app (W-17). Elevation/unknown-token policy alone does not block input, but disables
+//! learning and diagnostics (W-14); the other field/coexistence policies still apply.
+//! Candidate preview and a separate settings editor
 //! are development implementations awaiting real-app/visual acceptance. Ordinary desktop learning now has an
 //! asynchronous companion; restricted-host persistence and full product acceptance remain incomplete.
 

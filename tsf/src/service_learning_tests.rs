@@ -25,6 +25,31 @@ fn commit(service: &ComObject<TextService>, context: &ITfContext) {
 }
 
 #[test]
+fn host_privacy_survives_field_transitions_without_disabling_input() {
+    let (service, host, context, _, mut worker) = connected_fixture();
+    service.state.borrow_mut().host_private = true;
+    let engine = service.state.borrow().shell.as_ref().unwrap().engine().clone();
+    for access in [edit::FieldAccess::Ordinary, edit::FieldAccess::Private, edit::FieldAccess::Ordinary] {
+        service.apply_context_policy(access, false, Some((&context, 1))).unwrap();
+        type_choice(&service, &context, b"DKSSUD"); commit(&service, &context);
+        assert!(host.text.borrow().ends_with("dkssud "), "privacy must preserve ordinary composition and F2");
+        assert_eq!(engine.learned_count(), 0, "a private host must not learn even in an ordinary field");
+        assert!(engine.learning_paused());
+        assert!(worker.next().unwrap().is_none(), "no storage request may escape the host privacy policy");
+        assert_eq!(service.state.borrow().learning.report().recovery_pending, 0);
+    }
+    for _ in 0..2 {
+        assert!(paired_key(&service, &context, crate::shell::vk::F12 as u8, edit::FieldAccess::Ordinary).as_bool());
+    }
+    type_choice(&service, &context, b"DKSSUD"); commit(&service, &context);
+    assert_eq!(engine.learned_count(), 0, "F12 pause/resume must not lift host privacy");
+    type_choice(&service, &context, b"HELLO"); // Deliberately leave a pending word for the finalization path.
+    unsafe { service.to_interface::<ITfTextInputProcessorEx>().Deactivate().unwrap(); }
+    assert_eq!(engine.learned_count(), 0, "teardown must not flush a private choice into learning");
+    assert!(worker.next().unwrap().is_none(), "teardown must not submit a private choice");
+}
+
+#[test]
 fn f2_round_trips_queue_one_confirmed_choice_per_document_replacement() {
     let (service, host, context, mut worker) = queued_choice_fixture();
     commit(&service, &context); assert!(matches!(ack(&mut worker).operation, Operation::Learn { korean: false, .. }));

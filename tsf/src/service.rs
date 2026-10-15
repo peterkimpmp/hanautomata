@@ -200,6 +200,8 @@ struct State {
     password_field: bool,
     tray_running: bool,
     excluded_app: bool,
+    /// Process-wide privacy cannot be lifted by moving from a private field to an ordinary field.
+    host_private: bool,
     checked_key: Option<CheckedKey>,
     last_query_failure: Option<(ITfContext, edit::FieldQueryFailure)>,
     /// Our own composition sink, for StartComposition (released on Deactivate, which breaks the cycle).
@@ -640,8 +642,9 @@ impl TextService {
         st.password_field = access.suppresses_trace();
         st.tray_running = tray;
         let pass = access.blocks_keys() || tray || st.excluded_app;
+        let host_private = st.host_private;
         let finish = st.shell.as_mut().and_then(|shell| {
-            let private = if matches!(access, edit::FieldAccess::Unknown(_)) { shell.private_context() }
+            let private = host_private || if matches!(access, edit::FieldAccess::Unknown(_)) { shell.private_context() }
                 else { access == edit::FieldAccess::Private };
             shell.context_policy(pass, private)
         });
@@ -1013,9 +1016,10 @@ impl ITfTextInputProcessor_Impl for TextService_Impl {
 impl ITfTextInputProcessorEx_Impl for TextService_Impl {
     fn ActivateEx(&self, ptim: Ref<ITfThreadMgr>, tid: u32, _flags: u32) -> Result<()> {
         let result = guarded_result(Err(E_FAIL.into()), || {
+        let host_private = system::requires_host_privacy();
         self.diagnostics.set(
             system::process_name().eq_ignore_ascii_case("WINWORD.EXE")
-                && !system::elevated()
+                && !host_private
                 && system::data_dir().join("tsf-diagnostics.enabled").is_file()
         );
         let thread_mgr = ptim.ok()?.clone();
@@ -1032,7 +1036,8 @@ impl ITfTextInputProcessorEx_Impl for TextService_Impl {
         options.apply_new_session(&mut shell);
         let excluded = unavailable || options.excludes_process(system::process_identity().as_deref());
         let tray = system::tray_running();
-        shell.pass_through = tray || excluded;
+        // Fresh shell: no document composition exists to finish. Host privacy survives later field transitions.
+        let _ = shell.context_policy(tray || excluded, host_private);
         {
             let mut st = self.state.borrow_mut();
             st.thread_mgr = Some(thread_mgr.clone());
@@ -1045,6 +1050,7 @@ impl ITfTextInputProcessorEx_Impl for TextService_Impl {
             st.shell = Some(shell);
             st.tray_running = tray;
             st.excluded_app = excluded;
+            st.host_private = host_private;
             st.sink = Some(self.to_interface::<ITfCompositionSink>());
         }
         unsafe {
@@ -1085,7 +1091,7 @@ impl ITfTextInputProcessorEx_Impl for TextService_Impl {
         self.trace("activate-after-indicator");
         // Launch only after activation succeeded. I/O/process creation happen on the worker, never a key callback.
         // Restricted/elevated hosts retain in-memory input; the worker's exact token check refuses persistence.
-        if !excluded && !tray && options.learn_choices && system::desktop_settings_allowed()
+        if !host_private && !excluded && !tray && options.learn_choices && system::desktop_settings_allowed()
             && !crate::learning_runtime::spawn_denied() && crate::exports::pin_for_worker().is_ok() {
             if let (Ok(module), Ok(directory)) = (crate::exports::module_path(), system::settings_dir()) {
                 let legacy = self.state.borrow().shell.as_ref().unwrap().engine().learning_entries();
@@ -1096,8 +1102,8 @@ impl ITfTextInputProcessorEx_Impl for TextService_Impl {
             }
         }
         system::log(&format!(
-            "activate elevated={} appcontainer={} tray={} caps={}",
-            system::elevated(),
+            "activate host_private={} appcontainer={} tray={} caps={}",
+            host_private,
             system::app_container(),
             tray,
             system::caps_lock_on()

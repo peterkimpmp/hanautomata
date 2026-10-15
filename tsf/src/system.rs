@@ -7,7 +7,7 @@ use windows::core::{HSTRING, PCWSTR, PWSTR};
 use windows::Win32::Foundation::{CloseHandle, LocalFree, HANDLE, HLOCAL};
 use windows::Win32::Security::Authorization::ConvertSidToStringSidW;
 use windows::Win32::Security::{
-    GetTokenInformation, TokenElevation, TokenIsAppContainer, TokenUser, TOKEN_ELEVATION, TOKEN_QUERY, TOKEN_USER,
+    GetTokenInformation, TokenElevation, TokenIsAppContainer, TokenUser, TOKEN_QUERY, TOKEN_USER,
 };
 use windows::Win32::System::LibraryLoader::GetModuleFileNameW;
 use windows::Win32::Storage::FileSystem::GetLongPathNameW;
@@ -113,26 +113,19 @@ fn token_u32(class: windows::Win32::Security::TOKEN_INFORMATION_CLASS) -> Option
     unsafe {
         GetTokenInformation(t.0, class, Some(&mut value as *mut u32 as *mut _), 4, &mut len).ok()?;
     }
-    Some(value)
+    (len == 4).then_some(value)
 }
 
-/// The process runs elevated (W-14: it learns nothing and records nothing there).
-pub fn elevated() -> bool {
-    let Some(t) = token() else { return false };
-    let mut e = TOKEN_ELEVATION::default();
-    let mut len = 0u32;
-    unsafe {
-        GetTokenInformation(
-            t.0,
-            TokenElevation,
-            Some(&mut e as *mut TOKEN_ELEVATION as *mut _),
-            std::mem::size_of::<TOKEN_ELEVATION>() as u32,
-            &mut len,
-        )
-        .is_ok()
-            && e.TokenIsElevated != 0
-    }
+/// Privileged registration requires affirmative evidence; unknown elevation grants no authority.
+pub fn elevated() -> bool { elevation_confirmed(token_u32(TokenElevation)) }
+fn elevation_confirmed(value: Option<u32>) -> bool { value.is_some_and(|value| value != 0) }
+
+/// W-14 privacy decision: elevated OR not proven non-elevated. Query failure must not enable learning/logging.
+pub fn requires_host_privacy() -> bool {
+    elevated_or_unknown(token_u32(TokenElevation))
 }
+
+fn elevated_or_unknown(value: Option<u32>) -> bool { value != Some(0) }
 
 /// The process is an AppContainer (Start search, Store apps; W-10).
 pub fn app_container() -> bool {
@@ -356,9 +349,17 @@ mod identity_tests {
     }
 }
 
-/// S0 record: one line per event, no typed text (C-OPS-02). Writes fail silently where the folder is not writable
-/// (AppContainer).
+/// S0 record: one line per event, no typed text (C-OPS-02). Elevated/unknown hosts never resolve a path or attempt
+/// a write (W-14). Other unwritable environments fail silently.
 pub fn log(event: &str) {
+    record_for_host(token_u32(TokenElevation), || write_log(event));
+}
+
+fn record_for_host(elevation: Option<u32>, write: impl FnOnce()) {
+    if !elevated_or_unknown(elevation) { write(); }
+}
+
+fn write_log(event: &str) {
     let dir = data_dir();
     if std::fs::create_dir_all(&dir).is_err() {
         return;
@@ -377,5 +378,28 @@ pub fn log(event: &str) {
             process_name(),
             event
         );
+    }
+}
+
+#[cfg(test)]
+mod host_privacy_tests {
+    #[test]
+    fn host_privacy_unknown_token_neither_grants_registration_nor_allows_recording() {
+        assert!(!super::elevation_confirmed(None));
+        assert!(super::elevated_or_unknown(None));
+        assert!(!super::elevation_confirmed(Some(0)));
+        assert!(!super::elevated_or_unknown(Some(0)));
+        for value in [1, u32::MAX] {
+            assert!(super::elevation_confirmed(Some(value)));
+            assert!(super::elevated_or_unknown(Some(value)));
+        }
+    }
+    #[test]
+    fn host_privacy_diagnostic_writer_is_not_called_for_elevation_or_unknown_token() {
+        let mut writes = Vec::new();
+        for elevation in [Some(0), Some(1), None, Some(u32::MAX)] {
+            super::record_for_host(elevation, || writes.push(elevation));
+        }
+        assert_eq!(writes, [Some(0)], "blocked hosts must not attempt to resolve a path or write any diagnostics");
     }
 }
