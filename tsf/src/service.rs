@@ -497,7 +497,7 @@ impl TextService_Impl {
             *output.borrow_mut() = Some(out.clone());
             this.trace("key-after-shell");
             let mut batches = out.learning.clone();
-            this.run_ops(ec, &ctx, out.ops.iter().filter(|op| !matches!(op, Op::ToggleCapsLock)).cloned().collect(), &written_key, &mut batches)?;
+            this.run_ops(ec, &ctx, out.ops.iter().filter(|op| !matches!(op, Op::ToggleCapsLock)).cloned().collect(), !out.eaten, &written_key, &mut batches)?;
             let has_composition = this.state.borrow().composition.is_some();
             let ended_word = out.ops.iter().any(|op| matches!(op, Op::Commit(_) | Op::ReplaceBefore { .. }));
             if has_composition && !ended_word && batches.is_empty() {
@@ -751,7 +751,7 @@ impl TextService {
     }
 
     /// Runs inside the edit session: the document operations of one key, in order.
-    fn run_ops(&self, ec: u32, context: &ITfContext, ops: Vec<Op>, materialized: &Cell<bool>,
+    fn run_ops(&self, ec: u32, context: &ITfContext, ops: Vec<Op>, pass_to_host: bool, materialized: &Cell<bool>,
         learning: &mut Vec<hanautomata_core::LearningBatch>) -> Result<()> {
         // The final document operation represents this key; earlier operations only finish previous text. Count
         // its SetText even when later caret/end bookkeeping fails, but never count an earlier word's write.
@@ -760,7 +760,7 @@ impl TextService {
             let before = self.state.borrow().write_serial;
             let result = guarded_result(Err(E_FAIL.into()), || -> Result<()> {
             match op {
-                Op::Commit(text) => self.commit(ec, context, &text)?,
+                Op::Commit(text) => self.commit(ec, context, &text, pass_to_host)?,
                 Op::Compose(text) => self.compose(ec, context, &text)?,
                 Op::ReplaceBefore { old, new } => {
                     if self.replace_before(ec, context, &old, &new)? {
@@ -769,7 +769,7 @@ impl TextService {
                             None => Outcome::default(),
                         };
                         let rest: Vec<Op> = after.ops.clone();
-                        self.run_ops(ec, context, rest, &Cell::new(false), learning)?;
+                        self.run_ops(ec, context, rest, false, &Cell::new(false), learning)?;
                         learning.extend(after.learning);
                     } else {
                         if let Some(shell) = self.state.borrow().shell.as_ref() { shell.engine().forget_reconversion(); }
@@ -787,11 +787,19 @@ impl TextService {
         Ok(())
     }
 
-    fn commit(&self, ec: u32, context: &ITfContext, text: &str) -> Result<()> {
+    fn commit(&self, ec: u32, context: &ITfContext, text: &str, pass_to_host: bool) -> Result<()> {
         let composition = self.state.borrow().composition.clone();
         match composition {
             Some(composition) => unsafe {
                 let range = composition.GetRange()?;
+                // Enter/Tab/navigation belong to the host after finalization. If their commit is already
+                // visible, end the composition without rewriting it or resetting the host's selection.
+                // Consumed keys keep their write accounting, and changed final text still follows SetText.
+                if pass_to_host && self.state.borrow().composition_text == text &&
+                    edit::caret_is_after(ec, context, &range).unwrap_or(false) &&
+                    edit::selection_text(ec, &range, text.encode_utf16().count())?.as_deref() == Some(text) {
+                    return self.finish_original_composition(Outcome::default(), Some((context, ec)));
+                }
                 range.SetText(ec, 0, &edit::utf16(text))?;
                 {
                     let mut st = self.state.borrow_mut();

@@ -55,6 +55,19 @@ pub fn selection(ec: u32, context: &ITfContext) -> Result<ITfRange> {
     }
 }
 
+/// Whether the current selection is an ordinary empty caret at the end of `range`.
+pub fn caret_is_after(ec: u32, context: &ITfContext, range: &ITfRange) -> Result<bool> {
+    let mut sel = [TF_SELECTION::default()];
+    let mut fetched = 0;
+    let result = unsafe { context.GetSelection(ec, TF_DEFAULT_SELECTION, &mut sel, &mut fetched) };
+    let selected = unsafe { ManuallyDrop::take(&mut sel[0].range) };
+    result?;
+    let selected = selected.filter(|_| fetched == 1).ok_or(windows::Win32::Foundation::E_FAIL)?;
+    Ok(!sel[0].style.fInterimChar.as_bool() && unsafe {
+        selected.IsEmpty(ec)?.as_bool() && selected.IsEqualEnd(ec, range, TF_ANCHOR_END)?.as_bool()
+    })
+}
+
 /// Puts the caret at the end of `range`.
 pub fn caret_after(ec: u32, context: &ITfContext, range: &ITfRange) -> Result<()> {
     let caret = unsafe { range.Clone()? };

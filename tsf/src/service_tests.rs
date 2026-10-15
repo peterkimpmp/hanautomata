@@ -15,6 +15,7 @@ struct Host {
     defer: Cell<bool>,
     ended: Cell<u32>,
     writes: Cell<u32>,
+    caret_updates: Cell<u32>,
     fail_set: Cell<bool>,
     fail_end: Cell<bool>,
     fail_caret: Cell<bool>,
@@ -34,10 +35,16 @@ struct Host {
     autocorrect_space: Cell<bool>,
     refuse_end_shift: Cell<bool>,
     deny_read: Cell<bool>,
+    fail_text_read: Cell<bool>,
+    fail_read_after_caret_query: Cell<bool>,
     write_requests: Cell<u32>,
     caret_selection: Cell<bool>,
+    interim_selection: Cell<bool>,
+    caret_at_start: Cell<bool>,
+    normalized_selection: Cell<bool>,
     pending: RefCell<Vec<ITfEditSession>>,
     before_set: RefCell<Option<Box<dyn FnOnce()>>>,
+    before_selection: RefCell<Option<Box<dyn FnOnce()>>>,
 }
 
 #[implement(ITfContext, ITfCompartmentMgr, ITfContextComposition, ITfInsertAtSelection)]
@@ -77,15 +84,25 @@ impl ITfContext_Impl for Context_Impl {
     }
     fn InWriteSession(&self, _: u32) -> Result<BOOL> { Ok(true.into()) }
     fn GetSelection(&self, _: u32, _: u32, count: u32, selection: *mut TF_SELECTION, fetched: *mut u32) -> Result<()> {
+        if let Some(callback) = self.0.before_selection.borrow_mut().take() { callback(); }
         if self.0.selection_failure.get() { return Err(E_FAIL.into()); }
         if count == 0 { return Err(E_INVALIDARG.into()); }
         let offset = if self.0.caret_selection.get() { self.0.text.borrow().encode_utf16().count() } else { 0 };
-        let range: ITfRange = Range { host: self.0.clone(), context: self.to_interface(), offset: Cell::new(offset), tail: Cell::new(0) }.into();
-        unsafe { *selection = TF_SELECTION { range: std::mem::ManuallyDrop::new(Some(range)), style: TF_SELECTIONSTYLE::default() }; *fetched = 1; }
+        let (offset, tail) = if self.0.caret_at_start.get() { (0, self.0.text.borrow().encode_utf16().count()) } else { (offset, 0) };
+        let range: ITfRange = Range { host: self.0.clone(), context: self.to_interface(), offset: Cell::new(offset), tail: Cell::new(tail) }.into();
+        unsafe { *selection = TF_SELECTION { range: std::mem::ManuallyDrop::new(Some(range)), style: TF_SELECTIONSTYLE {
+            fInterimChar: self.0.interim_selection.get().into(), ..TF_SELECTIONSTYLE::default() } }; *fetched = 1; }
         Ok(())
     }
-    fn SetSelection(&self, _: u32, _: u32, _: *const TF_SELECTION) -> Result<()> {
+    fn SetSelection(&self, _: u32, count: u32, selection: *const TF_SELECTION) -> Result<()> {
+        self.0.caret_updates.set(self.0.caret_updates.get() + 1);
         if self.0.fail_caret.replace(false) { return Err(E_FAIL.into()); }
+        if count == 1 {
+            let selection = unsafe { &*selection };
+            let range = selection.range.as_ref().unwrap().cast_object_ref::<Range>()?;
+            self.0.normalized_selection.set(range.offset.get() == self.0.text.borrow().encode_utf16().count()
+                && range.tail.get() == 0 && !selection.style.fInterimChar.as_bool());
+        }
         Ok(())
     }
     fn GetStart(&self, _: u32) -> Result<ITfRange> { Err(E_NOTIMPL.into()) }
@@ -166,6 +183,7 @@ impl ITfProperty_Impl for LanguageProperty_Impl {
 struct Range { host: Rc<Host>, context: ITfContext, offset: Cell<usize>, tail: Cell<usize> }
 impl ITfRange_Impl for Range_Impl {
     fn GetText(&self, _: u32, flags: u32, buffer: PWSTR, max: u32, count: *mut u32) -> Result<()> {
+        if self.host.fail_text_read.replace(false) { return Err(E_FAIL.into()); }
         let units: Vec<u16> = self.host.text.borrow().encode_utf16().collect();
         let start = self.offset.get().min(units.len());
         let n = (units.len().saturating_sub(self.tail.get()).saturating_sub(start)).min(max as usize);
@@ -221,7 +239,13 @@ impl ITfRange_Impl for Range_Impl {
         Ok(())
     }
     fn IsEqualStart(&self, _: u32, _: Ref<ITfRange>, _: TfAnchor) -> Result<BOOL> { Err(E_NOTIMPL.into()) }
-    fn IsEqualEnd(&self, _: u32, _: Ref<ITfRange>, _: TfAnchor) -> Result<BOOL> { Err(E_NOTIMPL.into()) }
+    fn IsEqualEnd(&self, _: u32, other: Ref<ITfRange>, anchor: TfAnchor) -> Result<BOOL> {
+        if self.host.fail_read_after_caret_query.replace(false) { self.host.fail_text_read.set(true); }
+        let other = other.ok()?.cast_object_ref::<Range>()?;
+        let len = self.host.text.borrow().encode_utf16().count();
+        let endpoint = if anchor == TF_ANCHOR_END { len.saturating_sub(other.tail.get()) } else { other.offset.get() };
+        Ok((Rc::ptr_eq(&self.host, &other.host) && len.saturating_sub(self.tail.get()) == endpoint).into())
+    }
     fn CompareStart(&self, _: u32, _: Ref<ITfRange>, _: TfAnchor) -> Result<i32> { Err(E_NOTIMPL.into()) }
     fn CompareEnd(&self, _: u32, _: Ref<ITfRange>, _: TfAnchor) -> Result<i32> { Err(E_NOTIMPL.into()) }
     fn AdjustForInsert(&self, _: u32, _: u32) -> Result<BOOL> { Err(E_NOTIMPL.into()) }
@@ -311,6 +335,90 @@ fn paired_key(service: &ComObject<TextService>, context: &ITfContext, key: u8, a
     service.state.borrow_mut().checked_key = Some(CheckedKey { context: context.clone(), wparam: key as usize,
         lparam: 0, down: true, observed: system::now_ms(), access, tray: false, eligible: None });
     unsafe { service.to_interface::<ITfKeyEventSink>().OnKeyDown(context, WPARAM(key as usize), LPARAM(0)).unwrap() }
+}
+
+#[test]
+fn navigation_commits_visible_text_without_rewriting_or_repositioning_it() {
+    use crate::shell::vk;
+    for key in [vk::END, vk::HOME, vk::LEFT, vk::RIGHT, vk::UP, vk::DOWN, vk::PRIOR, vk::NEXT, vk::RETURN, vk::TAB] {
+        let (service, host, context) = fixture();
+        seed(&service, &host, &context);
+        host.caret_selection.set(true);
+        let writes = host.writes.get();
+        let caret_updates = host.caret_updates.get();
+        assert!(!paired_key(&service, &context, key as u8, edit::FieldAccess::Ordinary).as_bool(), "host must receive {key}");
+        assert_eq!(&*host.text.borrow(), "안녕");
+        assert_eq!(host.ended.get(), 1, "composition must end before the host handles {key}");
+        assert_eq!(host.writes.get(), writes, "already visible text must not be rewritten for {key}");
+        assert_eq!(host.caret_updates.get(), caret_updates, "leave the caret to the host for {key}");
+    }
+}
+
+#[test]
+fn unchanged_navigation_commit_confirms_learning_only_after_successful_end() {
+    for refused in [false, true] {
+        let (service, host, context, engine) = explicit_choice_fixture();
+        host.caret_selection.set(true);
+        host.fail_end.set(refused);
+        let writes = host.writes.get();
+        assert!(!paired_key(&service, &context, crate::shell::vk::END as u8, edit::FieldAccess::Ordinary).as_bool());
+        assert_eq!(&*host.text.borrow(), "dkssud");
+        assert_eq!(host.writes.get(), writes);
+        assert_eq!(engine.learned_count(), if refused { 0 } else { 1 });
+        service.state.borrow_mut().sink = Some(TestCompositionSink.into());
+        assert!(paired_key(&service, &context, b'D', edit::FieldAccess::Ordinary).as_bool());
+        assert_eq!(&*host.text.borrow(), "dkssudd", "the same English-mode next key must append once after either successful or refused End");
+    }
+}
+
+#[test]
+fn navigation_normalizes_nonempty_interim_or_unavailable_selection_before_host_key() {
+    for kind in 0..4 {
+        let (service, host, context) = fixture();
+        seed(&service, &host, &context);
+        host.caret_selection.set(kind != 0);
+        host.interim_selection.set(kind == 1);
+        host.selection_failure.set(kind == 2);
+        host.caret_at_start.set(kind == 3);
+        host.normalized_selection.set(false);
+        let caret_updates = host.caret_updates.get();
+        assert!(!paired_key(&service, &context, crate::shell::vk::RETURN as u8, edit::FieldAccess::Ordinary).as_bool());
+        assert_eq!(&*host.text.borrow(), "안녕");
+        assert_eq!(host.ended.get(), 1);
+        assert_eq!(host.caret_updates.get(), caret_updates + 1, "preserve existing caret normalization for selection kind {kind}");
+        assert!(host.normalized_selection.get(), "host key must see an ordinary caret at the composition end");
+    }
+}
+
+#[test]
+fn navigation_read_failure_preserves_text_and_does_not_train_an_unverified_commit() {
+    let (service, host, context, engine) = explicit_choice_fixture();
+    host.caret_selection.set(true);
+    host.fail_read_after_caret_query.set(true);
+    let writes = host.writes.get();
+    assert!(!paired_key(&service, &context, crate::shell::vk::END as u8, edit::FieldAccess::Ordinary).as_bool());
+    assert_eq!(host.writes.get(), writes, "a failed safety read must not fall through to an unverified overwrite");
+    assert_eq!(&*host.text.borrow(), "dkssud");
+    assert_eq!(engine.learned_count(), 0);
+    assert_eq!(host.ended.get(), 1, "guarded cleanup can finish after the transient read failure");
+    service.state.borrow_mut().sink = Some(TestCompositionSink.into());
+    assert!(paired_key(&service, &context, b'D', edit::FieldAccess::Ordinary).as_bool());
+    assert_eq!(&*host.text.borrow(), "dkssudd");
+}
+
+#[test]
+fn navigation_selection_query_allows_host_reentry_without_discarding_the_commit() {
+    let (service, host, context, engine) = explicit_choice_fixture();
+    host.caret_selection.set(true);
+    let sink = service.to_interface::<ITfKeyEventSink>();
+    *host.before_selection.borrow_mut() = Some(Box::new(move || {
+        let service = sink.cast_object_ref::<TextService>().unwrap();
+        let _state = service.state.borrow_mut();
+    }));
+    assert!(!paired_key(&service, &context, crate::shell::vk::END as u8, edit::FieldAccess::Ordinary).as_bool());
+    assert_eq!(&*host.text.borrow(), "dkssud");
+    assert_eq!(engine.learned_count(), 1, "a successful reentrant selection query must not turn finalization into failure");
+    assert_eq!(host.ended.get(), 1);
 }
 
 #[test]

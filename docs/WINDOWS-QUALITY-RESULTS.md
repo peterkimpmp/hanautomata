@@ -10,10 +10,10 @@ disposition: local-reusable
 
 # 개발 회귀를 보강했으며 Windows 전체 동작 승인은 남아 있다
 
-- 보존 후보 16종, 시스템 갱신 5회이며 최신 후보는 미설치다.
-- 최신 개발 소스의 고유 Rust 검사 353개가 통과했다.
+- 보존 후보 18종, 시스템 갱신 5회이며 최신 후보는 미설치다.
+- 최신 후보의 기본 TSF lib 검사는 양쪽 각각 182개 통과다.
 - 저장 상태 안내를 구현했으며 실제 앱 화면 시험은 남았다.
-- Word F2·공백 포함 Shift+F2 왕복은 자동 고침 ON에서 성공했다.
+- Word F2·공백/Tab 포함 Shift+F2는 성공, 첫 이동 키는 미해결이다.
 
 ## 판정과 검증 경로
 
@@ -1120,3 +1120,25 @@ Word는 변환 뒤 선택을 해제하므로 역변환은 다시 선택해서 �
 기존 core/shell은 이동 키에 대해 확정 후 `handled=false`를 반환한다. [Microsoft ITfKeystrokeMgr::KeyDown 계약](https://learn.microsoft.com/en-us/windows/win32/api/msctf/nf-msctf-itfkeystrokemgr-keydown)은 최종 `pfEaten=false`이면 호스트가 키를 처리하도록 설명한다. 따라서 다음 단계는 TSF 서비스 콜백의 실제 반환·조합 종료 순서와 호스트 동작을 구분하는 것이다. 근거 없이 이동 키를 재주입하면 이중 이동 위험이 있으므로 그런 변경은 하지 않았다. WQ-01/02/04의 이동 키 인수는 계속 열어 둔다.
 
 시험 문서 `word-selection-tab-20108.docx`를 저장·종료한 뒤 XML에서 `5123가바\t4`, Tab 1개를 확인했다. SHA256은 `4305B3F96B80AF698DC2C8E2A49E25A915E2B5A40BFD54076BA5771BD637D94E`다. `user-com-selection-tab-20261015.json`은 **restored**, Microsoft IME 활성 및 기존 트레이 PID 6920 복원을 확인했다. 다른 메모장 문서는 유지했다. **17종·시스템 갱신 5회·앱 전체 승인 0/6·목표 진행 중**이며, 다음 항목은 이동 키 경로, 다른 앱, 학습/후보 UI·보호 필드·설치/복구/로그인·DPI/성능/장기 시험이다.
+
+## 이동 키 확정의 중복 쓰기 제거 후보 — 2026-10-15
+
+Word의 첫 End 현상을 조사하면서 서비스가 이미 보이는 조합을 `SetText`로 다시 쓰고 `SetSelection`으로 커서를 다시 지정함을 확인했다. 이는 중복 작업의 소스 근거이며 Word 현상의 원인 확정은 아니다. 후보 18 `wq-navigation-commit-20261015`는 앱으로 전달할 키에 한해, 확정 문자열이 현재 조합과 같고 실제 선택이 **조합 끝의 비임시·빈 커서**일 때 중복 쓰기/위치 지정을 생략한다. 문서 전체 일치를 다시 확인한 뒤 기존 경로로 속성을 정리하고 조합을 끝낸다. Space 등 소비한 키, 변경된 확정 문자열, 선택 범위·임시 선택·다른 위치·선택 조회 실패에는 기존 쓰기/커서 경로를 유지한다.
+
+공식 [EndComposition 계약](https://learn.microsoft.com/en-us/windows/win32/api/msctf/nf-msctf-itfcomposition-endcomposition)은 조합 속성 제거를 설명하며, [KeyDown 계약](https://learn.microsoft.com/en-us/windows/win32/api/msctf/nf-msctf-itfkeystrokemgr-keydown)은 `pfEaten=false`일 때 앱으로 키를 전달하도록 한다. 이 API 설명만으로 Word의 커서 이동 성공을 주장하지 않는다.
+
+| 근거 (`build/windows-quality/`) | 결과와 범위 |
+|---|---|
+| `navigation-commit-red.log` | 원래 소스의 중복 쓰기 관련 assertion 2개 실패. Word 재현 자체를 대신하지 않음 |
+| `navigation-selection-red.log` | 첫 후보가 비어 있지 않은 선택의 기존 커서 정리를 생략하는 실패 재현. 최종 후보에 끝 커서 조건 추가 |
+| `navigation-complete-green-x64.log`, `navigation-complete-green-x86.log` | 기본 TSF lib 각각 **182개 통과·6개 명시적 제외**. Enter/Tab/이동 키 전달, 선택 정리, 실패 시 원문·학습 보존, 다음 글자 중복 방지 포함 |
+| `navigation-reentry-before.log` | 호스트의 선택 조회 재진입 검사 통과. 해당 위험을 재현하지 못했으므로 별도 제품 수정 없음 |
+| `navigation-accepted-payload-build.log` | 최종 제품 코드의 x64/x86 빌드와 DLL selftest 통과. 이후 변경은 검사 코드뿐이며 위 최종 lib 실행으로 확인 |
+| `navigation-review.json`, `navigation-review-followup.json` | 반대 공급자의 도구 없는 소스 검토. 선택 위험을 보강한 후 구체적 잔여 결함 없음. 실제 호스트 효과는 미확인 |
+| `navigation-final-freeze.json` | 여섯 파일 SHA256 검증·보존 후보 **18종**. 시스템 갱신 receipt는 **5회** 유지 |
+
+검토에서 제안한 읽기 실패 후 쓰기 강행은 채택하지 않았다. 안전 확인에 실패한 문서를 덮지 않고 키를 앱으로 전달하며, 후속 정리와 다음 입력의 원문 보존을 실제 서비스 콜백으로 확인했다. 접두어만 비교한다는 우려는 기존 `selection_text`가 제한보다 한 단위 더 읽어 초과를 거부하므로 해당하지 않는다. 처음 추가한 다음 글자 검사는 영문 선택 상태를 한글로 잘못 기대해 두 건 실패했다(`navigation-reviewed-green-x64.log`). 정상 확정과 실패 후 복구를 같은 영문 조건으로 대조하도록 시험 기대값을 교정했으며 제품의 입력 규칙은 바꾸지 않았다.
+
+직접 시험 준비 시 Windows 세션은 **Disc**였다. 모니터 캡처 `0x80070057`, 재선택 후 `GetCursorPos` 권한 오류를 `navigation-ui-readiness.json`에 기록했다. Word 실행·키 입력·트레이 종료·사용자 COM 등록은 수행하지 않았다. 설치본 `wq-5971010-20261015`, 기존 트레이 PID 6920과 사용자 문서를 유지한다. `user-com-navigation-commit.ps1`은 해시를 고정한 다음 시험용 도구이며 아직 실행하지 않았다.
+
+**첫 End의 실제 개선 여부는 미검증이고 앱 전체 승인은 0/6이다.** 다음 실제 시험은 새 Word의 후보 18 적재 확인 → 조합 중 End/Home/Left/Ctrl+End/Enter/Tab의 첫 입력 결과 → F2/Shift+F2·Undo/Redo 회귀다. 기존 Microsoft IME 대조는 활성 조합 조건이 같지 않았으므로 같은 조건의 대조도 필요하다. 나머지 앱·보호 필드·학습/후보 UI·설치/복구/로그인·DPI·성능/연속 시험을 유지한다. 직전 현황 보고 턴은 진척이 없었으나, 이번 턴은 코드·검사·검토·빌드 후보가 추가된 진척으로 분류한다.
