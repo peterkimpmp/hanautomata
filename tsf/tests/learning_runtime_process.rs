@@ -247,9 +247,33 @@ fn an_exclusive_store_lock_does_not_block_submission_and_shutdown_drains_after_r
     runtime.stop(); assert!(client.producer.begin().is_err(), "stop rejects late submissions"); drop(lock);
     wait(|| runtime.status().phase == Phase::Stopped);
     assert_eq!(runtime.status().committed, 1);
+    assert_eq!(runtime.status().discarded, 0, "a transient storage retry is not a discarded choice");
     assert!(runtime.status().failures > 0, "a later success retains the diagnostic failure count");
     let owner = Authority::open(files.store(), Endpoint::random().unwrap().token()).unwrap();
     assert_eq!(owner.snapshot().unwrap().entries.len(), 1); assert!(owner.clients().unwrap().is_empty());
+}
+
+#[test]
+fn reset_discards_old_accepted_choices_without_counting_them_as_stored_or_pending() {
+    use hanautomata_core::learning::Operation;
+    let files = Files::new(); let mut runtime = start(&files); let client = ready(&mut runtime);
+    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let action = client.producer.begin().unwrap();
+        let mut owner = Authority::open_existing(files.store()).unwrap();
+        owner.manage(&owner.snapshot().unwrap().version, Operation::Reset {}).unwrap(); drop(owner);
+        let choices = ["oldone", "oldtwo"].map(|word| LearningChoice {
+            raw: word.into(), keys: word.into(), korean: true, context: String::new(),
+        });
+        client.producer.submit(action, &choices).unwrap();
+        wait(|| runtime.status().discarded == 2);
+        let status = runtime.status();
+        assert_eq!(status.committed, 0); assert_eq!(status.failures, 2);
+        assert_eq!(2 - status.committed - status.discarded, 0, "neither old choice is still awaiting storage");
+        let owner = Authority::open_existing(files.store()).unwrap();
+        assert!(owner.snapshot().unwrap().entries.is_empty());
+    }));
+    runtime.recycle(client); runtime.stop(); wait(|| matches!(runtime.status().phase, Phase::Stopped | Phase::Failed));
+    if let Err(error) = outcome { std::panic::resume_unwind(error); }
 }
 
 #[test]

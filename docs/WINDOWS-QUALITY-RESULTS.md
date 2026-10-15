@@ -10,9 +10,9 @@ disposition: local-reusable
 
 # 개발 회귀를 보강했으며 Windows 전체 동작 승인은 남아 있다
 
-- 보존 후보 14종, 시스템 갱신 5회이며 최신 후보는 미설치다.
-- 최신 개발 소스의 고유 Rust 검사 341개가 통과했다.
-- 앱 간 학습 충돌은 재현 후 보강했고 화면 시험은 남았다.
+- 보존 후보 15종, 시스템 갱신 5회이며 최신 후보는 미설치다.
+- 최신 개발 소스의 고유 Rust 검사 350개가 통과했다.
+- 저장 상태 안내를 구현했으며 실제 앱 화면 시험은 남았다.
 - Word F2·공백 포함 Shift+F2 왕복은 자동 고침 ON에서 성공했다.
 
 ## 판정과 검증 경로
@@ -1033,3 +1033,24 @@ M1은 사전 교환으로 무효화된 지연 학습을 `Invalidated(count)`로 
 실제 화면 준비는 두 번 모두 `GetCursorPos failed: Access denied (0x80070005)`였고 Windows 사용자 세션 2는 `Disc`였다. `learning-cross-service-ui-readiness.json`에 기록했다. 새 UI 입력·사용자 COM 등록·트레이 종료는 실행하지 않았으며 기존 문서와 설치를 유지했다. Aside 가이드의 브라우저 DOM/키 입력 API는 실제 Windows TSF 경유 증거를 대신하지 않는다. 전체 앱 **0/6**, 상태 UI·제한 호스트·실제 로그인·복구/제거·DPI 확대·10,000키/30분 시험을 계속 미완료로 유지한다.
 
 `learning-cross-service-payload-build.log`의 x64/x86 기본 제품 빌드·DLL selftest가 통과했다. `build/tsf/wq-learning-conflict-20261015`의 setup·DLL·UI 6개를 새 폴더에 복사한 뒤 각 SHA256을 대조했다. `learning-cross-service-final-freeze.json` 기준 보존 후보 **14종**, 시스템 갱신 **5회**이며 설치된 양쪽 DLL은 기존 `wq-5971010-20261015`다. 이번 후보는 미설치·공개 릴리즈 미승인이다. 이전 `learning-live-checkpoint.json`의 H1 미해결 상태는 당시 기록이며, 현재 판정은 `learning-cross-service-checkpoint.json`과 이 절을 따른다.
+
+## 선택 기억의 저장 상태 안내 — 2026-10-15
+
+`learning-notice-red.log`에서 후보 UI 설명에 학습 상태가 없다는 assertion 실패를 먼저 확인했다. 안내를 네이티브 후보창의 별도 줄과 호스트용 GetDescription에 연결했다. 변환 후보는 두 개이며 기존 문자열을 바꾸지 않는다. 후보 폐기 시 상태도 제거한다. 실제 문서 쓰기 이후의 메모리 보고서와 worker 카운터를 읽고, 설정 플래그는 try_lock으로 즉시 조회한다. 잠금이 사용 중이거나 손상되었으면 상태 확인 대기로 표시한다.
+
+대기열 수락과 저장 응답을 분리한다. 응답을 받은 누적 선택 수는 이 입력 세션 범위이며 현재 저장 항목 수·조합 중인 단어·전체 앱의 저장 완료를 뜻하지 않는다. 삭제/초기화 세대로 거부된 요청은 별도 `discarded` 카운터로 대기에서 제외한다. 과거 오류와 거부 횟수는 현재 장애 판정에 쓰지 않는다. 임시 기억은 미저장으로 표시하고, 상한 초과·확정 전 무효화 이력을 별도로 알린다. 카운터 불일치/포화는 확인 필요로 처리한다.
+
+| 근거 (`build/windows-quality/`) | 확인 범위 |
+|---|---|
+| `learning-notice-core.log`, `learning-notice-core-x86.log` | 각 core **132개** 통과. 설정 잠금 보유·poison에서도 대기나 상태 추정 없이 반환 |
+| `learning-notice-x64.log`, `learning-notice-x86.log` | 각 TSF **174**, shell 19, stdio 1, pipe 4, runtime **12** 통과. 진단 도구 14개 별도 |
+| `learning-notice-<arch>-<test>.log` | 앞 단계의 명시적 서비스 통합 **8개**를 양쪽에서 다시 실행해 통과 |
+| `reset_discards_old_accepted_choices_without_counting_them_as_stored_or_pending` | 실제 소유 companion·시험 저장소에서 초기화 전 선택 2개를 폐기, 저장 0·대기 0·DB 빈 상태 확인 |
+| 후보·안내 회귀 | 큐/ACK/제외 구분, 일시 정지 중 이전 대기 보존, 회복 후 과거 오류 처리, 후보 문자열·개수 보존, 폐기 후 설명 제거 |
+| 소유 숨은 네이티브 창 | 96/144/192 DPI에서 안내 문자열 보유·폰트 크기·비활성 스타일 검증. 화면 잘림·가독성의 실제 관측은 아님 |
+
+고유 Rust 검사는 **350 = core 132 + TSF 174 + shell 19 + stdio 1 + pipe 4 + runtime 12 + 명시적 서비스 8**이다. 양쪽 아키텍처·재실행·자식 fixture는 중복 합산하지 않는다. C# 관리 107개는 미변경 소스의 기존 근거이며 이번에 다시 실행하지 않았다. 이번 수정의 자체 소스 검토는 상태 표기의 경계·후보 수명·기존 보호 필드 억제·입력 경로의 대기 유무를 확인했으며 독립 공급자 검토나 실제 앱 승인으로 주장하지 않는다.
+
+안내는 다음 후보 생성 때 갱신한다. 유휴 중 저장 완료 알림은 제공하지 않는다. 공식 [GetDescription 계약](https://learn.microsoft.com/en-us/windows/win32/api/msctf/nf-msctf-itfuielement-getdescription)은 UI 설명 반환이며 호스트의 시각적 표시를 보장하지 않는다. 실제 앱·접근성·DPI·제한 호스트의 표시/저장 동작은 계속 미검증이다. 이번 사용자 세션 조회도 `Disc`였고 UI 입력은 시도하지 않았다. 설치/복구/제거·실제 로그인·10,000키/30분 성능·최종 배포 조건과 **전체 앱 승인 0/6**을 유지한다.
+
+`learning-notice-payload-build.log`에서 기본 제품 x64/x86 빌드·양쪽 DLL selftest가 통과했다. `wq-learning-notice-20261015`의 6개 파일을 새 폴더로 복사하고 SHA256을 다시 대조했다. `learning-notice-final-freeze.json` 기준 보존 후보는 **15종**, 시스템 갱신 receipt는 **5회**다. 현재 시스템 등록은 양쪽 모두 기존 `wq-5971010-20261015`이고 사용자 임시 COM 클래스는 양쪽 모두 없다. 최신 후보는 미설치이며 제품·공개 릴리즈 승인이 아니다. 이 단계의 현행 체크포인트는 `learning-notice-checkpoint.json`이다.

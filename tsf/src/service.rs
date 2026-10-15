@@ -508,13 +508,17 @@ impl TextService_Impl {
                 }
             }
             if let Some(Some(data)) = &out.preview {
-                let (tm, composition) = {
+                let (tm, composition, learning_notice) = {
                     let st = this.state.borrow();
-                    (st.thread_focus_cookie.and(st.thread_mgr.clone()), st.composition.clone())
+                    let mut report = st.learning.report();
+                    // Sample counters after document confirmation, without I/O or waiting for any worker.
+                    if let Some(runtime) = &st.learning_runtime { report.storage = Some(runtime.status()); }
+                    let flags = st.shell.as_ref().and_then(|shell| shell.engine().try_learning_flags());
+                    (st.thread_focus_cookie.and(st.thread_mgr.clone()), st.composition.clone(), report.notice(flags))
                 };
                 if let (Some(tm), Some(composition)) = (tm, composition) {
                     // A failed/unknown candidate query must never undo an already successful document edit.
-                    if let Ok(snapshot) = crate::candidate::capture(ec, &ctx, &tm, client, &composition, data.clone()) {
+                    if let Ok(snapshot) = crate::candidate::capture(ec, &ctx, &tm, client, &composition, data.clone(), learning_notice) {
                         if let Ok(manager) = tm.cast::<ITfUIElementMgr>() {
                             *preview_output.borrow_mut() = Some((manager, snapshot, preview_ticket));
                         }

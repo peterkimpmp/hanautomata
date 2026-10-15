@@ -376,6 +376,11 @@ impl Engine {
         self.preferences.enabled()
     }
 
+    /// Current (enabled, paused), or unavailable without waiting for the preference lock.
+    pub fn try_learning_flags(&self) -> Option<(bool, bool)> {
+        self.preferences.try_learning_flags()
+    }
+
     pub fn set_learning_enabled(&self, enabled: bool) {
         self.preferences.set_enabled(enabled);
     }

@@ -4,6 +4,9 @@ use hanautomata_core::{learning::{client::{Action, InstalledOrigin, Producer, Qu
 use hanautomata_ffi::Engine;
 use std::{cell::{Cell, RefCell}, rc::Rc, sync::Arc};
 
+#[path = "service_learning_notice.rs"]
+mod notice;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Failure { Disconnected, MissingOrigin, Queue(QueueError) }
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -62,7 +65,6 @@ impl Link {
         Stamp { producer: self.producer.clone(), report: self.report.clone(), origin: None, recovery: self.recovery.clone(),
             action: Err(if self.producer.is_some() { Failure::MissingOrigin } else { Failure::Disconnected }) }
     }
-    #[allow(dead_code)] // Status UI will consume this; tests assert rejected choices are observable now.
     pub fn report(&self) -> Report { self.report.get() }
     /// Retry only the original, unaccepted action. Unknown-origin choices stay local; a new lease is never used.
     pub fn retry(&self) {

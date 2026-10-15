@@ -235,6 +235,12 @@ impl WordPreferences {
     pub fn enabled(&self) -> bool {
         self.lock().enabled
     }
+
+    /// UI sampling on the input thread must not wait for preference mutation or report stale flags.
+    pub fn try_learning_flags(&self) -> Option<(bool, bool)> {
+        let inner = self.inner.try_lock().ok()?;
+        Some((inner.enabled, !inner.recording))
+    }
     pub fn set_enabled(&self, value: bool) {
         let mut inner = self.lock();
         if inner.enabled != value {
@@ -516,6 +522,27 @@ fn net_min(a: f64, b: f64) -> f64 {
 #[cfg(test)]
 mod snapshot_tests {
     use super::*;
+    #[test]
+    fn learning_flags_are_current_and_never_wait_for_the_preferences_lock() {
+        let preferences = WordPreferences::new();
+        assert_eq!(preferences.try_learning_flags(), Some((true, false)));
+        preferences.set_recording(false);
+        assert_eq!(preferences.try_learning_flags(), Some((true, true)));
+        preferences.set_enabled(false);
+        assert_eq!(preferences.try_learning_flags(), Some((false, true)));
+        let held = preferences.inner.lock().unwrap();
+        assert_eq!(preferences.try_learning_flags(), None);
+        drop(held);
+        assert_eq!(preferences.try_learning_flags(), Some((false, true)));
+    }
+    #[test]
+    fn learning_flags_do_not_invent_a_state_after_lock_poisoning() {
+        let preferences = WordPreferences::new();
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _held = preferences.inner.lock().unwrap(); panic!("owned lock fixture");
+        }));
+        assert_eq!(preferences.try_learning_flags(), None);
+    }
     fn prepared() -> PreparedLearning {
         let source = WordPreferences::new(); source.remember_global("saved", "saved", true);
         PreparedLearning::new(&source.export().0)

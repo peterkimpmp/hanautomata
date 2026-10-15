@@ -25,6 +25,7 @@ fn boundary<T>(f: impl FnOnce() -> Result<T>) -> Result<T> {
 
 pub(crate) struct Snapshot {
     preview: Preview,
+    learning_notice: String,
     document: Option<ITfDocumentMgr>,
     context: Option<ITfContext>,
     geometry: Geometry,
@@ -94,14 +95,15 @@ pub(crate) fn focused(context: &ITfContext, tm: &ITfThreadMgr) -> Result<bool> {
 /// Called only under the original document's edit lock, after successful composition writes.
 /// No guessed position: a valid preview can await layout; stale/protected/unreadable text cannot.
 pub(crate) fn capture(ec: u32, context: &ITfContext, tm: &ITfThreadMgr, client: u32,
-    composition: &ITfComposition, preview: Preview) -> Result<Snapshot> {
+    composition: &ITfComposition, preview: Preview, learning_notice: String) -> Result<Snapshot> {
+    if learning_notice.encode_utf16().count() > 512 || learning_notice.contains('\0') { return Err(E_INVALIDARG.into()); }
     unsafe {
         let document = context.GetDocumentMgr()?;
         let source = Rc::new(Anchor { context: context.clone(), manager: tm.clone(), client,
             selection: edit::selection(ec, context)?.Clone()?, composition: composition.GetRange()?.Clone()?,
             text: preview.text.clone() });
         let geometry = source.sample(ec)?;
-        Ok(Snapshot { preview, document: Some(document), context: Some(context.clone()), geometry, source: Some(source) })
+        Ok(Snapshot { preview, learning_notice, document: Some(document), context: Some(context.clone()), geometry, source: Some(source) })
     }
 }
 
@@ -154,8 +156,8 @@ impl Element {
         }
         if !self.registered.get() { return Ok(()); }
         let info = self.snapshot.borrow().as_ref().and_then(|s| s.geometry.caret.map(|caret|
-            (s.geometry.owner, caret, s.preview.clone())));
-        let Some((owner, caret, preview)) = info else {
+            (s.geometry.owner, caret, s.preview.clone(), s.learning_notice.clone())));
+        let Some((owner, caret, preview, learning_notice)) = info else {
             let popup = self.popup.borrow_mut().take(); drop(popup); return Ok(());
         };
         if !window::foreground(owner) || !crate::system::desktop_settings_allowed() {
@@ -165,7 +167,7 @@ impl Element {
         let previous = self.popup.borrow_mut().take();
         let popup = match previous {
             Some(popup) if popup.reposition(owner, caret)? => popup,
-            previous => { drop(previous); window::Popup::new(owner, caret, &preview)? }
+            previous => { drop(previous); window::Popup::new(owner, caret, &preview, &learning_notice)? }
         };
         // Native window creation may reenter TSF. Never resurrect a retired preview.
         if self.render.get() != render || !self.registered.get() || !self.wanted.get() || self.snapshot.borrow().is_none() { return Ok(()); }
@@ -178,7 +180,10 @@ impl Element {
 }
 
 impl ITfUIElement_Impl for Element_Impl {
-    fn GetDescription(&self) -> Result<BSTR> { self.on_thread(|| Ok(BSTR::from("한오토마타 후보"))) }
+    fn GetDescription(&self) -> Result<BSTR> {
+        self.on_thread(|| Ok(BSTR::from(self.snapshot.borrow().as_ref().map_or_else(
+            || "한오토마타 후보".to_string(), |s| format!("한오토마타 후보 · {}", s.learning_notice)))))
+    }
     fn GetGUID(&self) -> Result<GUID> { self.on_thread(|| Ok(ID)) }
     fn Show(&self, show: BOOL) -> Result<()> { self.on_thread(|| self.visible(show.as_bool())) }
     fn IsShown(&self) -> Result<BOOL> {

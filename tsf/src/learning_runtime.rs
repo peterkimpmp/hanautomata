@@ -22,8 +22,18 @@ fn record_spawn_denial(error: &std::io::Error, denied: &AtomicBool) {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Phase { Starting, Running, Stopped, Failed }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Status { pub phase: Phase, pub committed: u64, pub failures: u64, pub idle_waits: u64 }
-struct Shared { stop: AtomicBool, phase: AtomicU8, committed: AtomicU64, failures: AtomicU64, idle_waits: AtomicU64, signal: Arc<Signal> }
+pub struct Status {
+    pub phase: Phase,
+    /// Acknowledged choices in this worker's lifetime, not the number of entries currently in storage.
+    pub committed: u64,
+    /// Accepted choices deliberately rejected by a newer deletion/reset generation; no retry is pending.
+    pub discarded: u64,
+    /// Historical errors/retries. A nonzero value does not mean storage is currently unavailable.
+    pub failures: u64,
+    pub idle_waits: u64,
+}
+struct Shared { stop: AtomicBool, phase: AtomicU8, committed: AtomicU64, discarded: AtomicU64,
+    failures: AtomicU64, idle_waits: AtomicU64, signal: Arc<Signal> }
 pub struct Ready { pub producer: Producer, pub snapshot: Snapshot, pub prepared: hanautomata_core::PreparedLearning,
     pub origin: Option<InstalledOrigin>, ticket: SnapshotTicket, applied: bool }
 impl Ready {
@@ -53,7 +63,7 @@ impl Runtime {
         let slot = Slot;
         if old >= 16 { return Err(std::io::ErrorKind::WouldBlock.into()); }
         let shared = Arc::new(Shared { stop: AtomicBool::new(false), phase: AtomicU8::new(Phase::Starting as u8),
-            committed: AtomicU64::new(0), failures: AtomicU64::new(0), idle_waits: AtomicU64::new(0), signal: Arc::new(Signal::new()?) });
+            committed: AtomicU64::new(0), discarded: AtomicU64::new(0), failures: AtomicU64::new(0), idle_waits: AtomicU64::new(0), signal: Arc::new(Signal::new()?) });
         let (send, ready) = mpsc::sync_channel(1); let (recycle, disposal) = mpsc::sync_channel(1); let state = shared.clone();
         thread::Builder::new().name("hanautomata-learning".into()).spawn(move || {
             let _slot = slot;
@@ -79,7 +89,7 @@ impl Runtime {
     }
     pub fn status(&self) -> Status {
         let phase = match self.shared.phase.load(Ordering::Acquire) { 0 => Phase::Starting, 1 => Phase::Running, 2 => Phase::Stopped, _ => Phase::Failed };
-        Status { phase, committed: self.shared.committed.load(Ordering::Relaxed), failures: self.shared.failures.load(Ordering::Relaxed),
+        Status { phase, committed: self.shared.committed.load(Ordering::Relaxed), discarded: self.shared.discarded.load(Ordering::Relaxed), failures: self.shared.failures.load(Ordering::Relaxed),
             idle_waits: self.shared.idle_waits.load(Ordering::Relaxed) }
     }
 }
@@ -176,7 +186,8 @@ fn run(executable: PathBuf, store: PathBuf, legacy: Vec<hanautomata_core::Learne
                         Progress::Retry => { shared.failures.fetch_add(1, Ordering::Relaxed); consecutive_errors = (consecutive_errors + 1).min(8);
                             if !peer.is_alive() { return Err(StoreError::Io); }
                             wait_for_signal(shared, &child, retry_delay(consecutive_errors))?; },
-                        Progress::DroppedStale => { shared.failures.fetch_add(1, Ordering::Relaxed); dirty = true; },
+                        Progress::DroppedStale => { shared.discarded.fetch_add(1, Ordering::Relaxed);
+                            shared.failures.fetch_add(1, Ordering::Relaxed); dirty = true; },
                         Progress::Stopped => return Err(StoreError::InvalidState),
                     }
                 },

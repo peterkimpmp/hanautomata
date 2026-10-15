@@ -27,16 +27,16 @@ const TOKEN: PCWSTR = w!("Hanautomata.Candidate.Instance");
 pub(super) struct Popup { window: HWND, owner: HWND, dpi: u32, _font: Font, token: Box<u8> }
 impl Popup {
     /// Construct hidden; the presenter checks its generation again before showing.
-    pub fn new(owner: HWND, caret: RECT, preview: &Preview) -> Result<Self> {
+    pub fn new(owner: HWND, caret: RECT, preview: &Preview, learning_notice: &str) -> Result<Self> {
         if !foreground(owner) || !crate::system::desktop_settings_allowed() { return Err(E_FAIL.into()); }
         let dpi = unsafe { GetDpiForWindow(owner) };
-        Self::build_hidden(owner, caret, preview, dpi)
+        Self::build_hidden(owner, caret, preview, learning_notice, dpi)
     }
-    fn build_hidden(owner: HWND, caret: RECT, preview: &Preview, dpi: u32) -> Result<Self> {
+    fn build_hidden(owner: HWND, caret: RECT, preview: &Preview, learning_notice: &str, dpi: u32) -> Result<Self> {
         if !(48..=768).contains(&dpi) { return Err(E_FAIL.into()); }
-        let text = format!("{}\r\n{}{}{}{}\r\nSpace 확정", preview.text, preview.label,
+        let text = format!("{}\r\n{}{}{}{}\r\nSpace 확정\r\n{}", preview.text, preview.label,
             if preview.label.is_empty() { "" } else { " · " },
-            if preview.correction { "F2 → " } else { "다른 후보: " }, preview.alternative);
+            if preview.correction { "F2 → " } else { "다른 후보: " }, preview.alternative, learning_notice);
         let mut utf16: Vec<u16> = text.encode_utf16().collect();
         // Engine bounds are 128 keys, but never trust an unexpected oversized result inside a host process.
         if utf16.len() > 1024 || utf16.contains(&0) { return Err(E_FAIL.into()); }
@@ -133,8 +133,12 @@ mod tests {
                 0, 0, 100, 100, None, None, None, None).unwrap();
             for dpi in [96, 144, 192] {
                 let preview = Preview { text: "안녕".into(), alternative: "dkssud".into(), label: "확인 필요".into(), correction: true };
-                let popup = Popup::build_hidden(owner, RECT { left: 10, top: 10, right: 10, bottom: 30 }, &preview, dpi).unwrap();
+                let notice = "이 입력 세션의 선택 기억: 준비됨 · 저장 확인 대기 1건";
+                let popup = Popup::build_hidden(owner, RECT { left: 10, top: 10, right: 10, bottom: 30 }, &preview, notice, dpi).unwrap();
                 assert!(!popup.is_visible());
+                let mut text = [0u16; 1025];
+                let count = GetWindowTextW(popup.window, &mut text);
+                assert!(String::from_utf16_lossy(&text[..count as usize]).ends_with(notice));
                 let style = GetWindowLongW(popup.window, GWL_EXSTYLE) as u32;
                 assert_eq!(style & (WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW).0, (WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW).0);
                 let mut font = LOGFONTW::default();

@@ -3,8 +3,24 @@ use windows::Win32::Foundation::E_NOTIMPL;
 
 fn snapshot() -> Snapshot {
     Snapshot { preview: Preview { text: "안녕".into(), alternative: "dkssud".into(), label: "".into(), correction: true },
+        learning_notice: "이 입력 세션의 선택 기억: 준비됨 · 저장 확인 대기 1건".into(),
         document: None, context: None, source: None,
         geometry: Geometry { owner: HWND::default(), caret: Some(RECT { left: 10, top: 10, right: 10, bottom: 30 }) } }
+}
+
+#[test]
+fn candidate_learning_notice_is_descriptive_and_retirement_removes_it() {
+    let element = Element::new(snapshot());
+    let list = element.to_interface::<ITfCandidateListUIElement>();
+    unsafe {
+        assert!(list.GetDescription().unwrap().to_string().contains("선택 기억"), "host-rendered preview needs a separate learning-state description");
+        assert_eq!(list.GetCount().unwrap(), 2, "status must not become a third selectable candidate");
+        assert_eq!(list.GetString(0).unwrap().to_string(), "안녕");
+        assert_eq!(list.GetString(1).unwrap().to_string(), "dkssud");
+        element.clear();
+        assert!(!list.GetDescription().unwrap().to_string().contains("선택 기억"), "retired host elements must not retain the previous field's state");
+        assert_eq!(list.GetCount().unwrap(), 0);
+    }
 }
 
 #[derive(Default)]
