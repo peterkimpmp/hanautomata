@@ -11,7 +11,7 @@ Hanautomata는 같은 물리 키로 한국어와 영어를 입력하면 **단어
 | 구성 | 방식 | 설치 권한 | 검증 상태 |
 |---|---|---|---|
 | **Windows 트레이 앱** (기본 권장) | 시스템 전역 입력 도우미(후크) — 기존 입력기를 바꾸지 않음 | 불필요(Zero Admin) | v0.4.0-beta 공개 검증 · 0.5.0 회귀 통과 |
-| **Windows 입력기(TSF)** | Windows 정식 텍스트 서비스 — 입력기 목록에 추가 | 관리자 1회 | 시험판 — 앱별 승인 현황은 [검증 원장](docs/WINDOWS-QUALITY-RESULTS.md) |
+| **Windows 입력기(TSF)** | Windows 정식 텍스트 서비스 — 입력기 목록에 추가 | 관리자 1회 | 시험판 — 릴리스 빌드 6앱 승인 2/6(메모장·Word, 합성 키) · [검증 원장](docs/WINDOWS-QUALITY-RESULTS.md) |
 | **macOS 입력기** | InputMethodKit 입력기 | 불필요 | 자동 검사 통과 · 실물 점검표([G2](macos/COMPATIBILITY.md)) 진행 전 |
 
 세 구성은 같은 판별 결과를 냅니다(트레이는 C# 엔진, 입력기판·macOS는 Rust 엔진 · 동등성 게이트 G1). 구성별 기능 차이는 [기능 비교](docs/FEATURES.md)에 있습니다. Windows에서 트레이 앱과 입력기(TSF)판을 같이 켜 두면 입력기판이 트레이를 감지하고 키를 그대로 통과시킵니다 — 하나만 쓰세요.
