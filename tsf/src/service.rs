@@ -24,6 +24,9 @@ use crate::system;
 #[path = "service_tests.rs"]
 mod edit_failure_tests;
 
+#[path = "service_learning.rs"]
+mod learning;
+
 struct CheckedKey {
     context: ITfContext,
     wparam: usize,
@@ -45,7 +48,7 @@ struct PendingFinish {
     queued: Cell<bool>,
     done: Cell<bool>,
     failures: Cell<u8>,
-    learning: RefCell<Option<(Arc<Engine>, Vec<hanautomata_core::LearningBatch>)>>,
+    learning: RefCell<Option<learning::Confirmation>>,
 }
 
 /// Deactivation may be refused a final write lock. In all cases, queued callbacks must stop editing on return.
@@ -97,9 +100,7 @@ impl PendingFinish {
     }
 
     fn confirm_learning(&self) {
-        if let Some((engine, batches)) = self.learning.borrow_mut().take() {
-            for batch in batches { engine.confirm_learning(&batch); }
-        }
+        if let Some(confirmation) = self.learning.borrow_mut().take() { confirmation.confirm(); }
     }
 }
 
@@ -189,6 +190,8 @@ struct State {
     composition_text: String,
     write_serial: u64,
     pending_finishes: Vec<Rc<PendingFinish>>,
+    learning: learning::Link,
+    word_learning: Option<learning::Stamp>,
     shell: Option<Shell>,
     attribute_atom: u32,
     /// Password/private scope or a failed field query. Never trace these contexts.
@@ -401,6 +404,9 @@ impl TextService_Impl {
     /// The engine must not accept a key until the application grants the write lock.
     fn key_in_session(&self, context: &ITfContext, access: edit::FieldAccess, tray: bool,
         key: impl FnOnce(&mut Shell) -> Outcome + 'static) -> Result<BOOL> {
+        // Capture before external callbacks/write-lock acquisition. An existing word keeps its older stamp;
+        // this new stamp is for a new word or an F2 reconversion, never a re-stamp of delayed old learning.
+        let incoming_learning = self.state.borrow().learning.capture();
         // EndUIElement is external code and may change focus. Retire the old preview BEFORE the engine
         // accepts this key or we take the write lock, then reject a target invalidated by that callback.
         let had_preview = self.candidates.active();
@@ -430,13 +436,30 @@ impl TextService_Impl {
             this.validate_composition(ec, &ctx)?;
             this.apply_context_policy(access, tray, Some((&ctx, ec)))?;
             if access.blocks_keys() || tray || this.state.borrow().excluded_app { return Ok(()); }
+            let (stamp, next_word_stamp) = {
+                let mut st = this.state.borrow_mut();
+                if let Some(stamp) = st.word_learning.take() { (stamp, Some(incoming_learning)) }
+                else if st.composition.is_some() { (st.learning.missing_origin(), Some(incoming_learning)) }
+                else { (incoming_learning, None) }
+            };
             let out = match this.state.borrow_mut().shell.as_mut() {
                 Some(shell) => key(shell), None => return Ok(()),
             };
             *output.borrow_mut() = Some(out.clone());
             this.trace("key-after-shell");
-            this.run_ops(ec, &ctx, out.ops.iter().filter(|op| !matches!(op, Op::ToggleCapsLock)).cloned().collect(), &written_key)?;
-            this.confirm_learning(&out);
+            let mut batches = out.learning.clone();
+            this.run_ops(ec, &ctx, out.ops.iter().filter(|op| !matches!(op, Op::ToggleCapsLock)).cloned().collect(), &written_key, &mut batches)?;
+            let has_composition = this.state.borrow().composition.is_some();
+            let ended_word = out.ops.iter().any(|op| matches!(op, Op::Commit(_) | Op::ReplaceBefore { .. }));
+            if has_composition && !ended_word && batches.is_empty() {
+                this.state.borrow_mut().word_learning = Some(stamp);
+            } else {
+                this.confirm_learning(&batches, stamp);
+                if has_composition {
+                    let mut st = this.state.borrow_mut();
+                    st.word_learning = Some(next_word_stamp.unwrap_or_else(|| st.learning.missing_origin()));
+                }
+            }
             if let Some(Some(data)) = &out.preview {
                 let (tm, composition) = {
                     let st = this.state.borrow();
@@ -604,7 +627,11 @@ impl TextService {
     /// Flush into the original range. Same-context key handling uses its existing synchronous lock; focus callbacks
     /// queue a guarded edit. Failed requests retain ownership and are retried before the next edit or focus callback.
     fn capture_finish(&self, out: Outcome) {
-        let learning = self.state.borrow().shell.as_ref().map(|shell| (shell.engine().clone(), out.learning));
+        let learning = {
+            let mut st = self.state.borrow_mut();
+            let stamp = st.word_learning.take().unwrap_or_else(|| st.learning.missing_origin());
+            st.shell.as_ref().map(|shell| learning::Confirmation { engine: shell.engine().clone(), batches: out.learning, stamp })
+        };
         let captured = {
             let mut st = self.state.borrow_mut();
             st.composition.take().map(|composition| {
@@ -662,15 +689,16 @@ impl TextService {
 }
 
 impl TextService {
-    /// In-memory confirmation only. A broker client must consume Engine's confirmed deltas later; never save this
-    /// service's whole dictionary over another application's newer state.
-    fn confirm_learning(&self, out: &Outcome) {
+    /// Document success first, then memory confirmation and a nonblocking handoff of confirmed deltas only.
+    /// Never save this service's whole dictionary over another application's newer state.
+    fn confirm_learning(&self, batches: &[hanautomata_core::LearningBatch], stamp: learning::Stamp) {
         let engine = self.state.borrow().shell.as_ref().map(|shell| shell.engine().clone());
-        if let Some(engine) = engine { for batch in &out.learning { engine.confirm_learning(batch); } }
+        if let Some(engine) = engine { learning::Confirmation { engine, batches: batches.to_vec(), stamp }.confirm(); }
     }
 
     /// Runs inside the edit session: the document operations of one key, in order.
-    fn run_ops(&self, ec: u32, context: &ITfContext, ops: Vec<Op>, materialized: &Cell<bool>) -> Result<()> {
+    fn run_ops(&self, ec: u32, context: &ITfContext, ops: Vec<Op>, materialized: &Cell<bool>,
+        learning: &mut Vec<hanautomata_core::LearningBatch>) -> Result<()> {
         // The final document operation represents this key; earlier operations only finish previous text. Count
         // its SetText even when later caret/end bookkeeping fails, but never count an earlier word's write.
         let last = ops.iter().rposition(|op| !matches!(op, Op::ToggleCapsLock));
@@ -687,8 +715,8 @@ impl TextService {
                             None => Outcome::default(),
                         };
                         let rest: Vec<Op> = after.ops.clone();
-                        self.run_ops(ec, context, rest, &Cell::new(false))?;
-                        self.confirm_learning(&after);
+                        self.run_ops(ec, context, rest, &Cell::new(false), learning)?;
+                        learning.extend(after.learning);
                     } else {
                         if let Some(shell) = self.state.borrow().shell.as_ref() { shell.engine().forget_reconversion(); }
                         system::log("reconversion skipped: text before the caret changed");
@@ -826,7 +854,18 @@ impl TextService {
         };
         let flipped = self.state.borrow().shell.as_ref().and_then(|s| s.flip(&text));
         if let Some(flipped) = flipped {
-            self.corrected_text(ec, context, &range, &flipped)?;
+            // Word selection commonly includes the following space. Keep that existing boundary out
+            // of SetText, just as for F2, so AutoCorrect does not undo the explicit selection choice.
+            let trailing = text.len() - text.trim_end_matches(' ').len();
+            if trailing > 0 && flipped.ends_with(&text[text.len() - trailing..]) {
+                let word_range = unsafe { range.Clone()? };
+                let mut trimmed = 0;
+                unsafe { word_range.ShiftEnd(ec, -(trailing as i32), &mut trimmed, std::ptr::null())?; }
+                if trimmed != -(trailing as i32) { return Err(E_FAIL.into()); }
+                self.corrected_text(ec, context, &word_range, &flipped[..flipped.len() - trailing])?;
+            } else {
+                self.corrected_text(ec, context, &range, &flipped)?;
+            }
         }
         Ok(())
     }
@@ -947,6 +986,8 @@ impl ITfTextInputProcessorEx_Impl for TextService_Impl {
             let mut st = self.state.borrow_mut();
             st.thread_mgr = Some(thread_mgr.clone());
             st.client = tid;
+            st.learning.disconnect();
+            st.word_learning = None;
             st.shell = Some(shell);
             st.tray_running = tray;
             st.excluded_app = excluded;
@@ -1088,10 +1129,11 @@ impl ITfCompositionSink_Impl for TextService_Impl {
         }
         self.candidates.clear();
         self.trace("terminated-before");
-        let expected = {
+        let (expected, stamp) = {
             let mut st = self.state.borrow_mut();
             st.composition = None;
-            std::mem::take(&mut st.composition_text)
+            let stamp = st.word_learning.take().unwrap_or_else(|| st.learning.missing_origin());
+            (std::mem::take(&mut st.composition_text), stamp)
         };
         let range = pcomposition.as_ref().and_then(|c| unsafe { c.GetRange().ok() });
         let unchanged = range.as_ref().is_some_and(|range| {
@@ -1106,7 +1148,7 @@ impl ITfCompositionSink_Impl for TextService_Impl {
             let Some(text) = out.ops.iter().find_map(|op| if let Op::Commit(text) = op { Some(text) } else { None }) else { return Ok(()) };
             unsafe {
                 range.SetText(ecwrite, 0, &edit::utf16(&text))?;
-                self.confirm_learning(&out);
+                self.confirm_learning(&out.learning, stamp);
                 if let Ok(context) = range.GetContext() {
                     let _ = edit::set_attribute(ecwrite, &context, &range, 0);
                 }

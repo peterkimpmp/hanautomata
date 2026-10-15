@@ -193,7 +193,13 @@ cargo +stable-i686-pc-windows-gnu test --manifest-path tsf/Cargo.toml --release 
 
 Microsoft의 [파이프 권한](https://learn.microsoft.com/en-us/windows/win32/ipc/named-pipe-security-and-access-rights), [메시지 토큰 확인](https://learn.microsoft.com/en-us/windows/win32/api/namedpipeapi/nf-namedpipeapi-impersonatenamedpipeclient), [overlapped I/O](https://learn.microsoft.com/en-us/windows/win32/ipc/synchronous-and-overlapped-input-and-output), [취소 완료](https://learn.microsoft.com/en-us/windows/win32/api/ioapiset/nf-ioapiset-cancelioex), [토큰 복귀 실패 처리](https://learn.microsoft.com/en-us/windows/win32/api/securitybaseapi/nf-securitybaseapi-reverttoself)를 따른 개발 구현입니다. 토큰 복귀 실패는 개발 프로세스를 중단합니다. 서버를 TSF 호스트 안에서 실행하지 않습니다.
 
-현재 한 연결씩 처리하며 관리자·AppContainer·제한 토큰은 거부합니다. 제품 서버의 신뢰된 실행/발견, 연결 공정성·lease 정리, 학습/관리 권한 구분, 응답 버전 계약, TSF 큐·스냅샷 연결, 설치/종료·이전·백업 정책과 독립 보안 검토가 남습니다. 실제 앱 승인과 WQ-07은 미완료입니다.
+현재 한 연결씩 처리하며 관리자·AppContainer·제한 토큰은 거부합니다. 제품 서버의 신뢰된 실행/발견, 연결 공정성·lease 정리, 학습/관리 권한 구분, 응답 버전 계약, TSF worker·스냅샷 연결, 설치/종료·이전·백업 정책과 독립 보안 검토가 남습니다. 실제 앱 승인과 WQ-07은 미완료입니다.
+
+### 서비스의 문서 확정과 메모리 대기열
+
+`service_learning.rs`는 조합 시작 또는 F2 작업 전에 캡처한 세대와 문서 반영 후 확정 델타를 연결합니다. 지연된 조합 완료는 원래 Stamp를 유지하며 초기화 이후의 세대로 바꾸지 않습니다. 실패·비공개·무효화된 선택은 제출하지 않고, 가득 찬/닫힌 큐에서도 입력 문자는 보존합니다. 큐 수락 수와 누락 원인은 메모리에 남으며 디스크 저장 성공을 뜻하지 않습니다.
+
+이 연결은 기본적으로 비활성입니다. 제품 broker 실행/lease 공급은 아직 연결하지 않았고, 검사에서만 서비스별 producer를 공급합니다. `quality-probes`의 서비스 시험은 모의 COM 문서→메모리 큐→별도 worker 스레드→인증된 자식 저장 프로세스→재시작 스냅샷을 대조합니다. 일반 키 콜백에서 파일/파이프 I/O나 worker 생성을 하지 않습니다. 실제 앱 영속 저장과 설정 UI 상태 표시는 후속 과제입니다.
 
 ## 아직 없는 것(P3에서)
 
@@ -226,3 +232,7 @@ Microsoft의 [파이프 권한](https://learn.microsoft.com/en-us/windows/win32/
 2026-10-13 추적판의 관리자 적용과 새 Word 적재를 확인했다. 최초 Word의 모드 알림 뒤 ⇧Space는 한글 고정 모드였고, 입력기를 다시 선택해 Auto가 된 뒤에는 F2가 처리됐다. Word의 **한/영 자동 고침 OFF에서 F2 왕복 성공, 원래 ON 복원 후 다시 실패**를 관찰했다. 설정은 ON으로 복원했으며 이를 해결 완료로 계산하지 않는다. `hello` 확정 결과만으로 Auto 모드를 판정하지 않는다.
 
 후속 후보 `build/tsf/d2-word-correction-20261013`은 F2·Shift+F2의 확정 텍스트 교체에 `TF_ST_CORRECTION`을 사용한다. 70개 검사와 x64·x86 빌드·selftest 후 **2026-10-13 05:58 KST 관리자 적용을 확인했지만 Word 재시험은 실패**했다. 새 DLL을 적재한 Word의 Auto 모드에서 문장 중간 `한글`을 F2로 바꾸면 화면은 그대로였다. Word의 `자동 고침 취소`를 실행하자 `gksrmf`가 나타났다. 교정 플래그만으로 Word의 후속 자동 고침을 막지 못했다. 이번 시험에서 Word 옵션은 변경하지 않았다. 같은 revision을 다시 설치하지 않으며, 설치 API·처리 콜백 성공만으로 앱 승인을 올리지 않는다. 현재 전체 앱 승인은 0/6이다.
+
+2026-10-15 후속 개발 후보는 원문과 커서를 확인한 뒤 기존 공백을 다시 쓰지 않고 단어만 교체한다. 새 Word PID 24952에서 이 수정이 포함된 `wq-learning-client-20261015` DLL의 경로·해시를 확인했다. **한/영 자동 고침 ON 상태에서 F2 왕복·반복·문장 중간 변환과 Undo/Redo가 성공**했다. 옵션은 변경하지 않았다. Shift+F2는 뒤 공백을 포함한 한글 선택에서 실패하고 공백을 제외하면 성공해 별도로 보강한다. 개별 합성 키 시험이며 전체 앱 승인을 대신하지 않는다. 시험용 사용자 등록은 복구했고 시험 문서는 저장·XML 확인 후 닫았다. 자세한 증거와 잔여 조건은 [결과 원장](../docs/WINDOWS-QUALITY-RESULTS.md#word-f2-왕복-성공--자동-고침-on-2026-10-15-후속-시험)에 남겼다.
+
+같은 날 `wq-selection-space-20261015`를 적재한 새 Word에서 **공백 포함 Shift+F2 양방향·Undo/Redo도 성공**했다. 끝의 동일한 ASCII 공백은 그대로 두고 선택 내용만 교체하며, 범위 축소 거부는 원문을 보존한다. 자동 고침 ON·기본 F2 왕복·겹받침 Backspace·Enter·Esc의 직접 관측과 한계는 [선택 변환 시험](../docs/WINDOWS-QUALITY-RESULTS.md#word-shiftf2의-공백-포함-선택-변환-보강--2026-10-15)에 기록했다. 고유 Rust 273개·양쪽 빌드는 통과했지만 전체 앱 승인·제품 영속 학습·최종 설치 완료를 뜻하지 않는다.

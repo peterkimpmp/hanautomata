@@ -37,10 +37,32 @@ struct Host {
     write_requests: Cell<u32>,
     caret_selection: Cell<bool>,
     pending: RefCell<Vec<ITfEditSession>>,
+    before_set: RefCell<Option<Box<dyn FnOnce()>>>,
 }
 
-#[implement(ITfContext, ITfCompartmentMgr)]
+#[implement(ITfContext, ITfCompartmentMgr, ITfContextComposition, ITfInsertAtSelection)]
 struct Context(Rc<Host>);
+impl ITfContextComposition_Impl for Context_Impl {
+    fn StartComposition(&self, _: u32, range: Ref<ITfRange>, _: Ref<ITfCompositionSink>) -> Result<ITfComposition> {
+        Ok(Composition { host: self.0.clone(), range: range.ok()?.clone() }.into())
+    }
+    fn EnumCompositions(&self) -> Result<IEnumITfCompositionView> { Err(E_NOTIMPL.into()) }
+    fn FindComposition(&self, _: u32, _: Ref<ITfRange>) -> Result<IEnumITfCompositionView> { Err(E_NOTIMPL.into()) }
+    fn TakeOwnership(&self, _: u32, _: Ref<ITfCompositionView>, _: Ref<ITfCompositionSink>) -> Result<ITfComposition> { Err(E_NOTIMPL.into()) }
+}
+impl ITfInsertAtSelection_Impl for Context_Impl {
+    fn InsertTextAtSelection(&self, ec: u32, flags: INSERT_TEXT_AT_SELECTION_FLAGS, text: &PCWSTR, count: i32) -> Result<ITfRange> {
+        let range: ITfRange = Range { host: self.0.clone(), context: self.to_interface(),
+            offset: Cell::new(self.0.text.borrow().encode_utf16().count()), tail: Cell::new(0) }.into();
+        if flags != TF_IAS_QUERYONLY {
+            if count < 0 { return Err(E_INVALIDARG.into()); }
+            let text = if count == 0 { &[] } else { unsafe { std::slice::from_raw_parts(text.0, count as usize) } };
+            unsafe { range.SetText(ec, 0, text)?; }
+        }
+        Ok(range)
+    }
+    fn InsertEmbeddedAtSelection(&self, _: u32, _: u32, _: Ref<IDataObject>) -> Result<ITfRange> { Err(E_NOTIMPL.into()) }
+}
 impl ITfContext_Impl for Context_Impl {
     fn RequestEditSession(&self, _: u32, session: Ref<ITfEditSession>, flags: TF_CONTEXT_EDIT_CONTEXT_FLAGS) -> Result<HRESULT> {
         if flags.0 & TF_ES_READWRITE.0 == TF_ES_READWRITE.0 { self.0.write_requests.set(self.0.write_requests.get() + 1); }
@@ -152,6 +174,7 @@ impl ITfRange_Impl for Range_Impl {
         Ok(())
     }
     fn SetText(&self, _: u32, _: u32, value: &PCWSTR, n: i32) -> Result<()> {
+        if let Some(callback) = self.host.before_set.borrow_mut().take() { callback(); }
         self.host.language_at_write.set(self.host.language.get());
         if self.host.fail_set.replace(false) { return Err(E_FAIL.into()); }
         assert!(n >= 0);
@@ -209,6 +232,11 @@ impl ITfRange_Impl for Range_Impl {
 
 #[implement(ITfComposition)]
 struct Composition { host: Rc<Host>, range: ITfRange }
+#[implement(ITfCompositionSink)]
+struct TestCompositionSink;
+impl ITfCompositionSink_Impl for TestCompositionSink_Impl {
+    fn OnCompositionTerminated(&self, _: u32, _: Ref<ITfComposition>) -> Result<()> { Ok(()) }
+}
 impl ITfComposition_Impl for Composition_Impl {
     fn GetRange(&self) -> Result<ITfRange> { Ok(self.range.clone()) }
     fn ShiftStart(&self, _: u32, _: Ref<ITfRange>) -> Result<()> { Err(E_NOTIMPL.into()) }
@@ -678,6 +706,31 @@ fn refused_reconversion_range_trim_keeps_the_original_word() {
 }
 
 #[test]
+fn selection_flip_preserves_trailing_spaces_without_retyping_the_word_boundary() {
+    for spaces in [" ", "  "] {
+        let (service, host, context) = fixture();
+        *host.text.borrow_mut() = format!("안녕{spaces}");
+        host.autocorrect_space.set(true);
+        service.flip_selection(1, &context).unwrap();
+        assert_eq!(&*host.text.borrow(), &format!("dkssud{spaces}"));
+        assert_eq!(&*host.last_write.borrow(), "dkssud");
+        service.flip_selection(1, &context).unwrap();
+        assert_eq!(&*host.text.borrow(), &format!("안녕{spaces}"));
+        assert_eq!(&*host.last_write.borrow(), "안녕");
+    }
+}
+
+#[test]
+fn refused_selection_flip_trim_preserves_the_original_document() {
+    let (service, host, context) = fixture();
+    *host.text.borrow_mut() = "안녕 ".into();
+    host.refuse_end_shift.set(true);
+    assert!(service.flip_selection(1, &context).is_err());
+    assert_eq!(&*host.text.borrow(), "안녕 ");
+    assert_eq!(host.writes.get(), 0);
+}
+
+#[test]
 fn correction_language_is_ready_before_the_hosts_implicit_composition_ends() {
     let (service, host, context) = fixture();
     seed(&service, &host, &context);
@@ -726,6 +779,43 @@ fn explicit_choice_fixture() -> (ComObject<TextService>, Rc<Host>, ITfContext, A
     let engine = service.state.borrow().shell.as_ref().unwrap().engine().clone();
     assert_eq!(engine.learned_count(), 0);
     (service, host, context, engine)
+}
+
+fn queue_pair() -> (hanautomata_core::learning::client::Producer, hanautomata_core::learning::client::Worker) {
+    use hanautomata_core::learning::{client::channel, Lease, Version};
+    channel(Lease { client_id: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(), lease_revision: 2,
+        version: Version { store_id: "11111111111111111111111111111111".into(), generation: 1, revision: 2 }, next_sequence: 1 }).unwrap()
+}
+
+fn connected_fixture() -> (ComObject<TextService>, Rc<Host>, ITfContext, hanautomata_core::learning::client::Producer, hanautomata_core::learning::client::Worker) {
+    let (service, host, context) = fixture();
+    host.caret_selection.set(true);
+    let (producer, worker) = queue_pair();
+    service.state.borrow_mut().learning.connect(producer.clone());
+    service.state.borrow_mut().sink = Some(TestCompositionSink.into());
+    (service, host, context, producer, worker)
+}
+
+fn queued_choice_fixture() -> (ComObject<TextService>, Rc<Host>, ITfContext, hanautomata_core::learning::client::Worker) {
+    let (service, host, context, _, worker) = connected_fixture();
+    for key in b"DKSSUD" { assert!(paired_key(&service, &context, *key, edit::FieldAccess::Ordinary).as_bool()); }
+    assert!(paired_key(&service, &context, crate::shell::vk::F2 as u8, edit::FieldAccess::Ordinary).as_bool());
+    (service, host, context, worker)
+}
+
+#[path = "service_learning_tests.rs"]
+mod learning_handoff_tests;
+
+#[test]
+fn confirmed_service_choice_reaches_its_queue_only_after_the_document_write() {
+    let (service, host, context, mut worker) = queued_choice_fixture();
+    assert!(worker.next().unwrap().is_none(), "an uncommitted choice cannot reach persistence");
+    assert!(paired_key(&service, &context, b' ', edit::FieldAccess::Ordinary).as_bool());
+    assert_eq!(&*host.text.borrow(), "dkssud ");
+    let request = worker.next().unwrap().expect("confirmed document choice was discarded instead of queued");
+    assert_eq!(request.request().generation, 1);
+    assert!(matches!(&request.request().operation, hanautomata_core::learning::Operation::Learn { raw, korean: false, .. } if raw == "dkssud"));
+    assert_eq!(service.state.borrow().learning.report().queued, 1);
 }
 
 #[test]
