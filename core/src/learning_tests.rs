@@ -44,6 +44,99 @@ fn learn(lease: &Lease, raw: &str, korean: bool) -> Request {
 }
 
 #[test]
+fn existing_open_never_initializes_a_missing_directory_database_or_owner_marker() {
+    let fixture = Fixture::new();
+    let nested = fixture.root.join("missing").join("learning.db");
+    let result = Authority::open_existing(&nested);
+    let outcome = result.as_ref().err().copied(); drop(result);
+    let incorrectly_created = nested.parent().unwrap().exists();
+    if incorrectly_created {
+        // Keep a failing assertion from triggering a second panic in the flat fixture's Drop.
+        for file in [&nested, &suffix(&nested, ".owner.lock")] { if file.exists() { fs::remove_file(file).unwrap(); } }
+        fs::remove_dir(nested.parent().unwrap()).unwrap();
+    }
+    assert_eq!(outcome, Some(Error::MissingState)); assert!(!incorrectly_created);
+    assert_eq!(Authority::open_existing(&fixture.path).unwrap_err(), Error::MissingState);
+    assert_eq!(fs::read_dir(&fixture.root).unwrap().count(), 0);
+    drop(fixture.open()); let data = fs::read(&fixture.path).unwrap();
+    fs::remove_file(suffix(&fixture.path, ".owner.lock")).unwrap();
+    assert_eq!(Authority::open_existing(&fixture.path).unwrap_err(), Error::MissingState);
+    assert_eq!(fs::read(&fixture.path).unwrap(), data);
+    assert!(!suffix(&fixture.path, ".owner.lock").exists());
+}
+
+#[test]
+fn existing_open_preserves_pending_files_and_rejects_an_unowned_database() {
+    let fixture = Fixture::new(); drop(fixture.open());
+    let pending = suffix(&fixture.path, &format!(".pending-{STORE}-1-123-1")); fs::write(&pending, b"recovery evidence").unwrap();
+    let bytes = fs::read(&fixture.path).unwrap(); let marker = fs::read(suffix(&fixture.path, ".owner.lock")).unwrap();
+    drop(Authority::open_existing(&fixture.path).unwrap());
+    assert_eq!(fs::read(&pending).unwrap(), b"recovery evidence");
+    assert_eq!(fs::read(&fixture.path).unwrap(), bytes);
+    assert_eq!(fs::read(suffix(&fixture.path, ".owner.lock")).unwrap(), marker);
+    fs::write(suffix(&fixture.path, ".owner.lock"), []).unwrap();
+    assert_eq!(Authority::open_existing(&fixture.path).unwrap_err(), Error::InvalidState);
+    assert_eq!(fs::read(suffix(&fixture.path, ".owner.lock")).unwrap(), b"");
+    assert_eq!(fs::read(&pending).unwrap(), b"recovery evidence");
+}
+
+fn legacy_seed() -> Vec<LearnedWord> {
+    let prefs = WordPreferences::new(); prefs.remember_global("legacy", "legacy", true); prefs.export().0
+}
+
+#[test]
+fn seeded_open_imports_once_and_cannot_resurrect_entries_after_management_reset() {
+    let fixture = Fixture::new(); let seed = legacy_seed();
+    let mut owner = Authority::open_seeded(&fixture.path, STORE, &seed).unwrap();
+    assert_eq!(owner.snapshot().unwrap().entries, seed);
+    let version = owner.snapshot().unwrap().version;
+    let reset = owner.manage(&version, Operation::Reset {}).unwrap(); assert!(reset.entries.is_empty()); drop(owner);
+    let reopened = Authority::open_seeded(&fixture.path, STORE, &seed).unwrap();
+    assert!(reopened.snapshot().unwrap().entries.is_empty()); assert_eq!(reopened.snapshot().unwrap().version, reset.version);
+}
+
+#[test]
+fn seeded_open_rejects_invalid_seed_without_creating_database_and_ignores_it_for_existing_data() {
+    let fixture = Fixture::new(); let mut invalid = legacy_seed(); invalid[0].korean_weight = -1.0;
+    assert_eq!(Authority::open_seeded(&fixture.path, STORE, &invalid).unwrap_err(), Error::InvalidState);
+    assert!(!fixture.path.exists());
+    let seed = legacy_seed(); drop(Authority::open_seeded(&fixture.path, STORE, &seed).unwrap());
+    let existing = Authority::open_seeded(&fixture.path, STORE, &invalid).unwrap();
+    assert_eq!(existing.snapshot().unwrap().entries, seed);
+}
+
+#[test]
+fn management_requires_exact_snapshot_and_never_accepts_input_learning() {
+    let fixture = Fixture::new(); let mut owner = fixture.open();
+    let version = owner.snapshot().unwrap().version; let lease = owner.register(ALICE).unwrap();
+    let before = fs::read(&fixture.path).unwrap();
+    assert_eq!(owner.manage(&version, Operation::Reset {}).unwrap_err(), Error::ExternalChange);
+    let version = owner.snapshot().unwrap().version;
+    assert_eq!(owner.manage(&version, learn(&lease, "hello", true).operation).unwrap_err(), Error::InvalidRequest);
+    assert_eq!(owner.manage(&version, Operation::Forget { raw: "password 123".into(), keys: "password 123".into() }).unwrap_err(), Error::InvalidRequest);
+    assert_eq!(fs::read(&fixture.path).unwrap(), before);
+}
+
+#[test]
+fn management_forget_and_reset_fence_old_queues_without_changing_their_receipts() {
+    let fixture = Fixture::new(); let mut owner = fixture.open();
+    let a = owner.register(ALICE).unwrap(); let b = owner.register(BOB).unwrap();
+    owner.apply(&learn(&a, "hello", true)).unwrap();
+    let before_clients = serde_json::to_vec(&owner.clients().unwrap()).unwrap();
+    let before = owner.snapshot().unwrap().version;
+    let deleted = owner.manage(&before, Operation::Forget { raw: "hello".into(), keys: "hello".into() }).unwrap();
+    assert!(deleted.entries.is_empty()); assert_eq!(deleted.version.revision, before.revision + 1);
+    assert_eq!(serde_json::to_vec(&owner.clients().unwrap()).unwrap(), before_clients);
+    assert_eq!(owner.apply(&learn(&b, "hello", true)).unwrap_err(), Error::StaleGeneration);
+    owner.apply(&learn(&b, "unrelated", false)).unwrap();
+    let fresh = owner.register(ALICE).unwrap();
+    let reset = owner.manage(&owner.snapshot().unwrap().version, Operation::Reset {}).unwrap();
+    assert!(reset.entries.is_empty());
+    assert_eq!(owner.apply(&learn(&fresh, "different", true)).unwrap_err(), Error::StaleGeneration);
+    assert_eq!(owner.manage(&before, Operation::Reset {}).unwrap_err(), Error::StaleGeneration);
+}
+
+#[test]
 fn managed_lease_format_is_versioned_and_returns_to_legacy_after_drain() {
     let fixture = Fixture::new(); let mut owner = fixture.open();
     let old = owner.register(ALICE).unwrap();

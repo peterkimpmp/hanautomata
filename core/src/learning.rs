@@ -274,16 +274,42 @@ impl std::fmt::Debug for Authority {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Stage { BeforeWrite, AfterSync, AfterReplace }
 impl Authority {
+    /// Open only an existing owned database. Never create directories/files, adopt an empty owner marker,
+    /// or prune pending recovery evidence. This mode is used by management and read-only inspection.
+    pub fn open_existing(path: impl AsRef<Path>) -> Result<Self> {
+        Self::open_inner(path.as_ref(), None, &[])
+    }
+    /// Seed only the initial atomic database creation. Existing databases, including a reset/empty one,
+    /// are authoritative and never merge this seed again. The legacy file remains untouched.
+    pub fn open_seeded(path: impl AsRef<Path>, new_store_id: &str, entries: &[LearnedWord]) -> Result<Self> {
+        Self::open_inner(path.as_ref(), Some(new_store_id), entries)
+    }
+    /// Explicit trusted management, not an input-client command. One atomic change, no temporary lease.
+    /// An uncertain I/O result must be inspected, never blindly retried with a fresh snapshot.
+    pub fn manage(&mut self, expected: &Version, operation: Operation) -> Result<Snapshot> {
+        self.ready()?;
+        if matches!(operation, Operation::Learn { .. }) { return Err(Error::InvalidRequest); }
+        operation.validate()?;
+        if expected.store_id != self.state.version.store_id { return Err(Error::WrongStore); }
+        if expected.generation != self.state.version.generation { return Err(Error::StaleGeneration); }
+        if expected.revision != self.state.version.revision { return Err(Error::ExternalChange); }
+        let mut proposed = self.state.clone(); proposed.advance()?;
+        apply_operation(&mut proposed, &operation)?; self.commit(proposed)?; self.snapshot()
+    }
     pub fn open(path: impl AsRef<Path>, new_store_id: &str) -> Result<Self> {
-        let path = path.as_ref();
+        Self::open_seeded(path, new_store_id, &[])
+    }
+    fn open_inner(path: &Path, new_store_id: Option<&str>, entries: &[LearnedWord]) -> Result<Self> {
+        let create = new_store_id.is_some();
+        let open_error = |error: std::io::Error| if !create && error.kind() == std::io::ErrorKind::NotFound { Error::MissingState } else { Error::Io };
         let file_name = path.file_name().ok_or(Error::InvalidRequest)?;
         let parent = path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or_else(|| Path::new("."));
-        fs::create_dir_all(parent).map_err(|_| Error::Io)?;
-        let path = parent.canonicalize().map_err(|_| Error::Io)?.join(file_name);
+        if create { fs::create_dir_all(parent).map_err(|_| Error::Io)?; }
+        let path = parent.canonicalize().map_err(open_error)?.join(file_name);
         let owner_path = suffix(&path, ".owner.lock"); no_link(&owner_path)?;
-        let mut options = OpenOptions::new(); options.read(true).write(true).create(true).truncate(false);
+        let mut options = OpenOptions::new(); options.read(true).write(true).create(create).truncate(false);
         #[cfg(windows)] { use std::os::windows::fs::OpenOptionsExt; options.share_mode(0x1 | 0x2); } // no FILE_SHARE_DELETE
-        let mut owner = options.open(&owner_path).map_err(|_| Error::Io)?;
+        let mut owner = options.open(&owner_path).map_err(open_error)?;
         owner.try_lock().map_err(|e| match e { TryLockError::WouldBlock => Error::Busy, TryLockError::Error(_) => Error::Io })?;
         let mut marker = Vec::new();
         (&mut owner).take(128).read_to_end(&mut marker).map_err(|_| Error::Io)?;
@@ -292,15 +318,16 @@ impl Authority {
             Some(data) => decode_state(data)?,
             None => {
                 if !marker.is_empty() { return Err(Error::MissingState); }
+                let new_store_id = new_store_id.ok_or(Error::MissingState)?;
                 if !valid_id(new_store_id) { return Err(Error::InvalidRequest); }
-                State { version: Version { store_id: new_store_id.into(), generation: 1, revision: 1 }, entries: vec![], clients: vec![], fences: vec![] }
+                State { version: Version { store_id: new_store_id.into(), generation: 1, revision: 1 }, entries: entries.to_vec(), clients: vec![], fences: vec![] }
             },
         };
         let expected = format!("{OWNER_PREFIX}{}", state.version.store_id);
-        if !marker.is_empty() && marker != expected.as_bytes() { return Err(Error::InvalidState); }
+        if (!marker.is_empty() || !create) && marker != expected.as_bytes() { return Err(Error::InvalidState); }
         let mut authority = Self { path, _owner: owner, state, disk_hash: data.as_ref().map(|bytes| hex(&Sha256::digest(bytes))),
             faulted: false, recovery: Recovery::default(), #[cfg(test)] injection: None };
-        authority.recovery = prune_pending(&authority.path)?;
+        if create { authority.recovery = prune_pending(&authority.path)?; }
         if data.is_none() { authority.commit(authority.state.clone())?; }
         if marker.is_empty() {
             authority._owner.seek(SeekFrom::Start(0)).map_err(|_| Error::Io)?;
@@ -379,19 +406,7 @@ impl Authority {
         if Some(request.sequence) != client.sequence.checked_add(1) { return Err(Error::OutOfOrder); }
         if !self.state.accepts_generation(request) { return Err(Error::StaleGeneration); }
         let mut proposed = self.state.clone(); proposed.advance()?;
-        let preferences = WordPreferences::new(); preferences.restore(&proposed.entries);
-        let changed = match &request.operation {
-            Operation::Learn { raw, keys, korean, context } => preferences.remember(raw, keys, *korean, context),
-            Operation::Forget { raw, keys } => {
-                proposed.fence(Some(word_fingerprint(raw, keys)?))?;
-                preferences.forget(raw, keys) != 0
-            },
-            Operation::Reset {} => {
-                proposed.fence(None)?;
-                let changed = preferences.count() != 0; preferences.clear(); changed
-            },
-        };
-        proposed.entries = preferences.export().0;
+        let changed = apply_operation(&mut proposed, &request.operation)?;
         proposed.clients[index] = Client { id: client.id.clone(), lease_revision: client.lease_revision,
             sequence: request.sequence, fingerprint: Some(fingerprint), committed_revision: proposed.version.revision, changed,
             lifetime: client.lifetime };
@@ -439,6 +454,27 @@ impl Authority {
         if result.is_err() { self.faulted = true; } result
     }
 }
+fn apply_operation(state: &mut State, operation: &Operation) -> Result<bool> {
+    let preferences = WordPreferences::new(); preferences.restore(&state.entries);
+    let changed = match operation {
+        Operation::Learn { raw, keys, korean, context } => preferences.remember(raw, keys, *korean, context),
+        Operation::Forget { raw, keys } => {
+            state.fence(Some(word_fingerprint(raw, keys)?))?; preferences.forget(raw, keys) != 0
+        },
+        Operation::Reset {} => { state.fence(None)?; let changed = preferences.count() != 0; preferences.clear(); changed },
+    };
+    state.entries = preferences.export().0; Ok(changed)
+}
+impl Operation {
+    fn validate(&self) -> Result<()> {
+        let word = |raw: &str, keys: &str| raw.len() <= 256 && keys.len() <= 256 && crate::prefs::normalize(raw, keys).is_some();
+        let valid = match self {
+            Self::Learn { raw, keys, context, .. } => word(raw, keys) && crate::prefs::valid_context(context),
+            Self::Forget { raw, keys } => word(raw, keys), Self::Reset {} => true,
+        };
+        if valid { Ok(()) } else { Err(Error::InvalidRequest) }
+    }
+}
 impl Request {
     pub fn decode(bytes: &[u8]) -> Result<Self> {
         if bytes.len() > MAX_REQUEST_BYTES { return Err(Error::InvalidRequest); }
@@ -449,12 +485,7 @@ impl Request {
         if !valid_id(&self.store_id) || !valid_id(&self.client_id) || self.lease_revision == 0 || self.sequence == 0 || self.generation == 0 {
             return Err(Error::InvalidRequest);
         }
-        let word = |raw: &str, keys: &str| raw.len() <= 256 && keys.len() <= 256 && crate::prefs::normalize(raw, keys).is_some();
-        let valid = match &self.operation {
-            Operation::Learn { raw, keys, context, .. } => word(raw, keys) && crate::prefs::valid_context(context),
-            Operation::Forget { raw, keys } => word(raw, keys), Operation::Reset {} => true,
-        };
-        if valid { Ok(()) } else { Err(Error::InvalidRequest) }
+        self.operation.validate()
     }
     fn fingerprint(&self) -> String {
         let mut hash = Sha256::new(); hash.update(b"hanautomata-learning-request-v1");

@@ -42,7 +42,16 @@ internal static class ImeOptionsLayoutTests
             {
                 tabs.SelectedTab = page;
                 foreach (Control control in Descendants(form).ToArray()) control.PerformLayout();
-                var panel = page.Controls.OfType<FlowLayoutPanel>().Single();
+                if (page.Text == "기억한 선택")
+                {
+                    foreach (var button in Descendants(page).OfType<Button>())
+                    {
+                        var bottom = page.PointToClient(button.PointToScreen(new Point(button.Width, button.Height)));
+                        Check("learning actions fit tab viewport", bottom.Y <= page.ClientSize.Height && bottom.X <= page.ClientSize.Width,
+                            button.Text + " bottom=" + bottom + " viewport=" + page.ClientSize);
+                    }
+                }
+                var panel = page.Controls.OfType<FlowLayoutPanel>().SingleOrDefault();
                 if (page.Text == "입력" || page.Text == "단축키")
                 {
                     int bottom = panel.Controls.Cast<Control>().Max(control => control.Bottom + control.Margin.Bottom) - panel.AutoScrollPosition.Y;
@@ -65,7 +74,7 @@ internal static class ImeOptionsLayoutTests
                     Check("checkbox text fits", box.Width == width && box.Height >= needed,
                         box.AccessibleName + " width=" + width + " measuredWidth=" + box.Width + " actual=" + box.Height + " needed=" + needed);
                 }
-                foreach (TableLayoutPanel row in Descendants(tabs).OfType<TableLayoutPanel>())
+                foreach (TableLayoutPanel row in Descendants(tabs).OfType<TableLayoutPanel>().Where(row => row.Controls.OfType<ComboBox>().Any()))
                 {
                     row.Width = width; row.PerformLayout();
                     var label = row.Controls.OfType<Label>().Single();

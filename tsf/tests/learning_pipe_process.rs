@@ -47,9 +47,20 @@ impl Drop for Broker { fn drop(&mut self) { if self.child.try_wait().ok().flatte
 struct Files { root: PathBuf, path: PathBuf }
 impl Files {
     fn new() -> Self {
-        let root = std::env::temp_dir().join(format!("hanautomata-auth-pipe-{}-{}", std::process::id(), SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()));
+        Self::at(SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos())
+    }
+    fn at(timestamp: u128) -> Self {
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let serial = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let root = std::env::temp_dir().join(format!("hanautomata-auth-pipe-{}-{timestamp}-{serial}", std::process::id()));
         fs::create_dir(&root).unwrap(); Self { path: root.join("learning.db"), root }
     }
+}
+#[test]
+fn fixtures_created_at_the_same_clock_tick_own_different_directories() {
+    let tick = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+    let first = Files::at(tick); let second = Files::at(tick);
+    assert_ne!(first.root, second.root);
 }
 impl Drop for Files {
     fn drop(&mut self) {

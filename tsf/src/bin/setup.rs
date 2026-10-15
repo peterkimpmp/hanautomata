@@ -7,6 +7,10 @@ fn main() {
     if arguments.first().is_some_and(|arg| arg == "--learning-companion") {
         std::process::exit(hanautomata_tsf::learning_runtime::companion_main(&arguments));
     }
+    if arguments.first().is_some_and(|arg| arg == "--learning-manage") {
+        if arguments.len() != 1 { eprintln!("--learning-manage takes no arguments"); std::process::exit(2); }
+        std::process::exit(hanautomata_tsf::learning_pipe::management_main());
+    }
     if arguments.first().is_some_and(|arg| arg == "learning-prepare-rollback") {
         if arguments.len() != 1 { eprintln!("learning-prepare-rollback takes no arguments"); std::process::exit(2); }
         let result = hanautomata_tsf::system::settings_dir().map_err(|_| hanautomata_core::learning::Error::Io)

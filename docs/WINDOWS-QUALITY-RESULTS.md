@@ -10,9 +10,9 @@ disposition: local-reusable
 
 # 개발 회귀를 보강했으며 Windows 전체 동작 승인은 남아 있다
 
-- C# 단위 단언 26,391개가 현재 기준 소스에서 통과했다.
-- 트레이 통합 시험은 TSF 동시 처리 제거 후 106/106이다.
-- 문서 확정→학습 큐→별도 저장 프로세스 경로를 검증했다.
+- 보존 후보 12종, 시스템 갱신 5회이며 최신 후보는 미설치다.
+- 최신 개발 소스의 고유 Rust 검사 315개가 통과했다.
+- 학습 목록·삭제·초기화·최초 이전은 개발 검증을 마쳤다.
 - Word F2·공백 포함 Shift+F2 왕복은 자동 고침 ON에서 성공했다.
 
 ## 판정과 검증 경로
@@ -929,3 +929,37 @@ Program Files의 `update-result.json`이 남은 시스템 갱신은 **5회**다.
 명시적 롤백 준비의 사전 존재 검사와 파일 열기 사이 외부 프로그램이 DB와 owner marker를 동시에 삭제하는 경쟁 상황은 아직 비생성 보장으로 승인하지 않았다. 기존 파일만 열 수 있는 경로가 후속 관리 기능의 보강 항목이다. 사용자 설치·실제 사전·문서·기본 입력기는 변경하지 않았으며 **전체 앱 승인 0/6·WQ-07 미완료·목표 진행 중**이다.
 
 `learning-companion-payload-build.log`에서 안내 문구와 주석을 반영한 최종 x64/x86 제품 빌드·selftest가 통과했다. 양쪽 setup의 롤백 명령 인수 거부도 상태 접근 전에 확인했다(`learning-rollback-cli-<arch>.log`). `build/tsf/wq-learning-runtime-20261015`에 setup·DLL·UI 6파일과 SHA256을 복사·재검증해 보존했다. 따라서 현재 품질 작업의 보존 후보는 **11종**, 시스템 갱신 receipt는 **5회**다. 새 후보는 시스템에 설치하지 않았으며 공개 릴리즈로 승인하지 않았다.
+
+## 학습 목록·삭제·초기화와 첫 사전 이전 — 2026-10-15
+
+설정 창의 `기억한 선택` 탭에 목록·새로고침·개별 삭제·전체 초기화를 연결했다. 같은 revision의 setup 자식과 전용 표준 입출력만 사용하며, 관리 명령은 호출자가 경로·신원·Learn 작업을 지정할 수 없다. 트레이에서 열 때는 HKLM의 설치 경로를 사용한다. 불완전한 revision에서 다른 설치본으로 자동 전환하지 않는다. 사용자 설정·실제 사전·시스템 등록을 변경하지 않고 아래 검증을 수행했다.
+
+관리 작업은 기존 DB와 owner marker만 열고 없는 저장소를 생성하거나 pending 파일을 청소하지 않는다. 화면에 표시한 store ID·generation·revision이 전부 일치할 때만 삭제·초기화한다. stale·busy·응답 불명확 상태는 자동 재시도하지 않는다. 항목 형식을 읽지 못했지만 버전이 유효하면 부분 목록과 개별 삭제를 숨기고 명시적 전체 초기화만 허용한다. 확인 창의 기본 선택은 `아니요`이며, 기존 트레이 학습 파일과 백업이 남는다는 안내를 표시한다.
+
+기존 엔진 사전은 DB를 처음 생성하는 원자적 저장에만 가져온다. 이미 존재하는 DB는 비어 있어도 정본이며 옛 사전을 반복 병합하지 않는다. 512개 초기 항목 전달·Reset·같은 옛 사전으로 재시작 후 0개를 실제 자식 프로세스로 확인했다. 합성 문서의 제품 worker 시험도 학습 1개 저장→다음 서비스 복원→관리 Reset→옛 사전을 가진 다음 서비스의 0개 복원까지 확장했다. 거부된 문서 편집이 저장되지 않는 기존 검사와 가중치 검사를 유지했다. 이는 실제 앱 영속 학습 승인이 아니다.
+
+| 검증 (`build/windows-quality/`) | 결과와 범위 |
+|---|---|
+| `learning-management-core-red-assertions.log` → `learning-management-core-green.log` | 신규 6개 회귀의 assertion 실패 후 core 전체 **117개** 통과. 비생성 열기·최초 이전·정확한 버전 관리·늦은 선택 차단 |
+| `learning-seed-runtime-red.log` → `learning-seed-runtime-green.log` | 초기 512개가 0개로 남는 실패 재현 후 이전·초기화·재시작·원본 파일 보존 통과 |
+| `learning-ui-viewport-red.log` → `learning-ui-viewport-green.log` | 고정 높이 때문에 버튼이 탭 아래로 밀리는 3개 실패 후 Dock 배치로 수정 |
+| `learning-management-final-layout.log` | 설정 저장 **28개**, 배치 **43개**를 native 192 DPI와 96 DPI에서 통과. 두 배율의 같은 검사를 고유 86개로 합산하지 않음 |
+| `learning-management-final-cross-ps7.log`, `learning-management-final-cross-ps51.log` | 관리 UI·프로토콜 **106개**씩 통과. 실제 Rust 직렬화 4개 스냅샷을 C#으로 읽어 문맥·64자·가중치 0/16·삭제·초기화·혼합 대소문자 1,024항목 확인 |
+| `learning-management-final-x64.log`, `learning-management-final-x86.log` | 각 TSF lib **162개**, shell 19개, stdio 1개, pipe 4개, runtime 10개 통과 |
+| `learning-management-final-<arch>-product_worker_connects_real_callbacks_and_restores_the_next_service.log`, `...-abandoned_old_context_cannot_block_a_new_contexts_persistence_connection.log` | 양쪽 명시적 서비스 통합 **2개** 통과. 초기화 후 옛 사전 부활 방지와 오래된 문서 콜백 분리 |
+| `learning-management-final-payload-ps7.log`, `learning-management-final-payload-ps51.log` | 설치 묶음·일반 사용자 준비 회귀 **21개**씩 통과. 합성 payload/별도 설정 파일이며 실제 설치 승인이 아님 |
+| `learning-management-final-csharp-build.log` | 현재 C# 앱과 설정 편집기 컴파일 통과 |
+
+따라서 이 단계의 **고유 Rust 검사는 315개 = core 117 + TSF 162 + shell 19 + stdio 1 + pipe 4 + runtime 10 + 명시적 서비스 2**다. 아키텍처·반복 실행·자식 fixture는 중복 합산하지 않으며 별도 진단 도구 14개는 이전 수치와의 비교에서 제외한다. C# 106개와 저장/배치/패키지 검사는 다른 검사 집합이므로 Rust 수에 더하지 않는다.
+
+중간 x86 실패는 같은 PID와 시계 tick을 쓰는 병렬 시험 폴더가 충돌한 fixture 결함이었다. `learning-pipe-fixture-clock-red.log`에서 동일 tick을 직접 주입해 재현하고 원자적 순번으로 구분한 뒤 양쪽 전체 시험을 통과했다. 제품 저장소 충돌로 해석하지 않는다. 최초 core red의 fixture 정리 중 이중 panic도 제품 stack overflow 증거가 아니며, 깨끗한 assertion 실패 로그를 별도로 보존했다.
+
+읽기 전용 opposite-vendor 검토 `learning-management-review.json`·`learning-management-followup.json`은 소스 범위의 검토다. 지적된 초기화 문구, 불완전한 revision의 fallback, 잘못된 항목 목록의 관리 가능성을 보강했다. 이전 미설치 prototype DB의 소급 병합은 초기화 이력을 구분할 수 없어 자동 수행하지 않는다. 구형 setup의 미지원 명령은 실제 구형 바이너리에서 exit 2로 거부됨을 확인했다.
+
+후속 검토의 UTF-8 BOM 가설은 `learning-management-bom-red.log`에서 유효 관리 JSON 앞에 BOM을 넣어 `invalid_request`가 되는 실패로 재현했다. 네이티브 파서는 맨 앞의 BOM 한 개만 제거하고 JSON 4,096바이트 제한을 유지한다. 최종 양쪽 시험에서 경계·초과·중복 BOM 거부가 통과했다. C# 시험 자식은 텍스트 reader 대신 원시 stdin 바이트를 읽는다. 실제 사용자 PC의 코드 페이지를 바꾸거나 UTF-8 설정 환경 전체를 시험한 것은 아니다. 검토자가 직접 코드를 실행한 것으로 표시하지 않는다.
+
+실제 Sky 설정 화면에서는 가상 2항목 표시, `아니요`의 보존, 개별 삭제 후 나머지 항목 보존, 전체 초기화, 기본 `아니요`에서 Enter의 취소를 관측했다. 버튼이 화면 안에 들어오는지와 탭/목록의 접근성 이름도 확인했다. `learning-management-live-preview.json`은 관측한 창과 해당 빌드 해시를 구분한다. 마지막 상태 안내 문구는 이후 보수적으로 변경했으므로 앞선 화면 관측을 최종 바이너리 전체의 눈검수로 확대하지 않는다. 모든 항목은 메모리 시험 데이터였으며 사용자 메모장 창은 유지했다.
+
+**실행 중 학습 갱신은 아직 미구현**이다. 초기 스냅샷 준비 중 로컬 학습이 먼저 변하면 이를 덮어쓰지 않는다. 관리 후 입력기 재선택은 안내하지만 모든 실제 앱에서 반영된다고 승인하지 않는다. 남은 범위는 실행 중 갱신·저장 상태 표시·제한 호스트, 6개 앱 전체 명령/보호 필드, 설치/복구/제거·실제 로그인·DPI 확대 검증·10,000키/30분 성능이다. **전체 앱 승인 0/6·WQ-07 미완료·목표 진행 중**을 유지한다.
+
+`learning-management-final-payload-build.log`의 기본 제품 x64/x86 빌드와 양쪽 DLL selftest가 통과했다. `build/tsf/wq-learning-management-20261015`에 setup·DLL·UI 6개와 SHA256을 복사한 뒤 다시 대조했다. `learning-management-final-freeze.json` 기준 보존 후보는 **12종**, 시스템 갱신 receipt는 **5회**다. 현재 HKLM의 양쪽 DLL 경로는 기존 `wq-5971010-20261015`이며 이번 후보는 설치하지 않았다. 후보 수는 동일 소스의 재컴파일·아키텍처·빈 디렉터리를 중복 합산하지 않고, 실패한 가설의 진단 후보도 포함한다. 전체 개발 기간의 모든 컴파일 횟수나 12번의 제품 승인이라는 뜻이 아니다.

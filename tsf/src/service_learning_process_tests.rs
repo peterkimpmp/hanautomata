@@ -74,17 +74,25 @@ fn product_worker_connects_real_callbacks_and_restores_the_next_service() {
         let end = Instant::now() + Duration::from_secs(10);
         while !action() { assert!(Instant::now() < end, "product worker deadline"); thread::sleep(Duration::from_millis(10)); }
     };
-    for restart in [false, true] {
+    for pass in 0..3 {
         let (service, host, context) = fixture(); host.caret_selection.set(true);
+        service.state.borrow_mut().sink = Some(TestCompositionSink.into());
+        if pass > 0 {
+            // Simulate the old legacy dictionary loaded before the worker. After management Reset it must
+            // be replaced by the empty authoritative store, not used to re-seed or keep stale predictions.
+            type_choice(&service, &context, b"DKSSUD"); commit(&service, &context);
+            assert_eq!(service.state.borrow().shell.as_ref().unwrap().engine().learned_count(), 1);
+        }
         {
-            let mut state = service.state.borrow_mut(); state.sink = Some(TestCompositionSink.into());
+            let mut state = service.state.borrow_mut();
             state.learning_version = state.shell.as_ref().unwrap().engine().learning_version();
-            state.learning_runtime = Some(Runtime::start(setup.clone(), files.root.join("learning.db")).unwrap());
+            let legacy = state.shell.as_ref().unwrap().engine().learning_entries();
+            state.learning_runtime = Some(Runtime::start_with_legacy(setup.clone(), files.root.join("learning.db"), legacy).unwrap());
         }
         wait(&mut || { service.poll_learning(); service.state.borrow().learning.report().connected });
         assert_eq!(service.state.borrow().learning.report().initial_snapshot_applied, Some(true));
-        assert_eq!(service.state.borrow().shell.as_ref().unwrap().engine().learned_count(), if restart { 1 } else { 0 });
-        if !restart {
+        assert_eq!(service.state.borrow().shell.as_ref().unwrap().engine().learned_count(), if pass == 1 { 1 } else { 0 });
+        if pass == 0 {
             type_choice(&service, &context, b"DKSSUD"); commit(&service, &context);
             assert_eq!(&*host.text.borrow(), "dkssud ");
             wait(&mut || { service.poll_learning(); service.state.borrow().learning.report().storage.unwrap().committed == 1 });
@@ -92,13 +100,21 @@ fn product_worker_connects_real_callbacks_and_restores_the_next_service() {
             type_choice(&service, &context, b"HELLO"); host.fail_set.set(true);
             let _ = paired_key(&service, &context, b' ', edit::FieldAccess::Ordinary);
         }
+        if pass == 1 {
+            let mut owner = Authority::open_existing(files.root.join("learning.db")).unwrap();
+            let persisted = owner.snapshot().unwrap();
+            assert_eq!(persisted.entries.len(), 1);
+            assert_eq!(persisted.entries[0].raw, "dkssud");
+            assert_eq!(persisted.entries[0].english_weight, 1.0);
+            assert_eq!(persisted.entries[0].korean_weight, 0.0);
+            owner.manage(&persisted.version, hanautomata_core::learning::Operation::Reset {}).unwrap();
+        }
         let runtime = service.state.borrow_mut().learning_runtime.take().unwrap();
         unsafe { service.to_interface::<ITfTextInputProcessorEx>().Deactivate().unwrap(); }
         runtime.stop(); wait(&mut || runtime.status().phase == Phase::Stopped);
     }
     let owner = Authority::open(files.root.join("learning.db"), Endpoint::random().unwrap().token()).unwrap();
-    let snapshot = owner.snapshot().unwrap(); assert_eq!(snapshot.entries.len(), 1);
-    assert_eq!(snapshot.entries[0].raw, "dkssud"); assert_eq!(snapshot.entries[0].english_weight, 1.0);
+    assert!(owner.snapshot().unwrap().entries.is_empty(), "legacy input cannot resurrect managed reset after service reactivation");
     assert!(owner.clients().unwrap().is_empty());
 }
 

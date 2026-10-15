@@ -3,6 +3,8 @@
 //! The caller must obtain `Peer` from its trusted child/launcher; a wire PID or pipe name is not a trust anchor.
 mod identity;
 mod lifetime;
+mod management;
+pub use management::management_main;
 pub use identity::Peer;
 use hanautomata_core::learning::{Authority, Request, MAX_STATE_BYTES};
 use serde::{Deserialize, Serialize};
@@ -17,7 +19,9 @@ use windows::{core::{HSTRING, PCWSTR}, Win32::{
         Threading::{CreateEventW, WaitForSingleObject, WaitForMultipleObjects}, Pipes::{ConnectNamedPipe, CreateNamedPipeW, DisconnectNamedPipe,
             PIPE_TYPE_BYTE, PIPE_READMODE_BYTE, PIPE_WAIT, PIPE_REJECT_REMOTE_CLIENTS}},
 }};
-const MAX_COMMAND: usize = 8192;
+// A one-time, authenticated legacy seed may contain up to CAPACITY entries. Ordinary operations retain
+// the core's small word/identity bounds; the frame itself is still capped before allocation.
+const MAX_COMMAND: usize = MAX_STATE_BYTES;
 const MAX_REPLY: usize = MAX_STATE_BYTES * 2;
 // FILE_GENERIC_READ | FILE_WRITE_DATA, excluding FILE_CREATE_PIPE_INSTANCE, WRITE_DAC and WRITE_OWNER.
 const CLIENT_ACCESS: u32 = 0x0012_008b;
@@ -48,7 +52,8 @@ impl Endpoint {
 }
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "command", rename_all = "snake_case", deny_unknown_fields)]
-pub enum Command { Register {}, Snapshot {}, Apply { request: Request }, Close { lease_revision: u64 } }
+pub enum Command { Register {}, RegisterSeeded { entries: Vec<hanautomata_core::LearnedWord> }, Snapshot {},
+    Apply { request: Request }, Close { lease_revision: u64 } }
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Envelope { protocol: u32, nonce: String, command: Command }
@@ -190,6 +195,7 @@ fn dispatch(authority: &mut Authority, peer: &Peer, envelope: Envelope) -> Value
     let Ok(client_id) = peer.bound_client(&envelope.nonce) else { return json!({"ok":false,"error":"invalid_protocol"}); };
     let result = match envelope.command {
         Command::Register {} => authority.register(&client_id).map(|lease| json!({"ok":true,"lease":lease})),
+        Command::RegisterSeeded { .. } => Err(hanautomata_core::learning::Error::InvalidRequest), // Only product initialization owns a path.
         Command::Snapshot {} => authority.snapshot().map(|snapshot| json!({"ok":true,"snapshot":snapshot})),
         Command::Close { lease_revision } => authority.retire(&client_id, lease_revision).map(|retired| json!({"ok":true,"retired":retired})),
         Command::Apply { request } => {
@@ -221,11 +227,18 @@ pub(crate) fn companion(endpoint: Endpoint, parent: Peer, nonce: String, path: s
             if matches!(&envelope.command, Command::Apply { request } if !matches!(request.operation, Operation::Learn { .. })) {
                 return json!({"ok":false,"error":"unauthorized"});
             }
+            if lease.is_none() && !matches!(envelope.command, Command::Register {} | Command::RegisterSeeded { .. } | Command::Close { lease_revision: 0 }) {
+                return json!({"ok":false,"error":"invalid_request"});
+            }
             let outcome = (|| {
-                let mut owner = Authority::open(&path, store_id.token())?;
+                let mut owner = if !registration_attempted && matches!(envelope.command, Command::Register {} | Command::RegisterSeeded { .. }) {
+                    let entries = match &envelope.command { Command::RegisterSeeded { entries } => entries.as_slice(), _ => &[] };
+                    if entries.len() > hanautomata_core::CAPACITY { return Err(StoreError::InvalidRequest); }
+                    Authority::open_seeded(&path, store_id.token(), entries)?
+                } else { Authority::open_existing(&path)? };
                 let client = peer.bound_client(&nonce).map_err(|_| StoreError::InvalidRequest)?;
                 match envelope.command {
-                    Command::Register {} => {
+                    Command::Register {} | Command::RegisterSeeded { .. } => {
                         let store = owner.snapshot()?.version.store_id;
                         if lifetime.as_ref().is_some_and(|(id, _)| id != &store) { return Err(StoreError::WrongStore); }
                         lifetime::reclaim(&mut owner, &store, &client)?;
@@ -256,7 +269,7 @@ pub(crate) fn companion(endpoint: Endpoint, parent: Peer, nonce: String, path: s
         let client = parent.bound_client(&nonce)?;
         let end = Instant::now() + Duration::from_secs(2);
         loop {
-            match Authority::open(&path, store_id.token()) {
+            match Authority::open_existing(&path) {
                 Ok(mut owner) => {
                     if let Ok(clients) = owner.clients() {
                         if let Some(registered) = clients.iter().find(|l| l.key.client_id == client) {
@@ -274,21 +287,14 @@ pub(crate) fn companion(endpoint: Endpoint, parent: Peer, nonce: String, path: s
 }
 
 /// Explicit management operation, never offered through an input companion's pipe.
-/// No host is stopped. Busy/uncertain liveness leaves database bytes intact; Authority may prune stale pending files.
-/// The missing-file check avoids ordinary initialization here; this is not an atomic guard against external deletion.
+/// No host is stopped. Existing-only open does not create/adopt/prune files. Busy/uncertain liveness leaves them intact.
 /// This is a point-in-time check: keep TSF hosts closed until the binary rollback has finished.
 pub fn prepare_rollback(path: &std::path::Path) -> std::result::Result<usize, hanautomata_core::learning::Error> {
     use hanautomata_core::learning::Error as StoreError;
     identity::no_thread_token().map_err(|_| StoreError::InvalidRequest)?;
     let _user = Peer::process(std::process::id()).map_err(|_| StoreError::InvalidRequest)?;
     if !path.is_absolute() { return Err(StoreError::InvalidRequest); }
-    match std::fs::symlink_metadata(path) {
-        Ok(_) => {},
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Err(StoreError::MissingState),
-        Err(_) => return Err(StoreError::Io),
-    }
-    let id = Endpoint::random().map_err(|_| StoreError::Io)?;
-    let mut owner = Authority::open(path, id.token())?;
+    let mut owner = Authority::open_existing(path)?;
     let store = owner.snapshot()?.version.store_id;
     lifetime::prepare_rollback(&mut owner, &store)
 }

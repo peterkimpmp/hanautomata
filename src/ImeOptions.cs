@@ -58,15 +58,17 @@ namespace Hanautomata
         readonly string path;
         ImeSettingsSnapshot snapshot;
         readonly Dictionary<string, Control> bindings = new Dictionary<string, Control>();
-        readonly TabControl tabs = new TabControl { Dock = DockStyle.Fill };
+        readonly TabControl tabs = new TabControl { Dock = DockStyle.Fill, AccessibleName = "입력기 설정 탭" };
         readonly TextBox excluded = new TextBox { Multiline = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill, AcceptsReturn = true, Height = 150, AccessibleName = "제외할 앱 실행 파일 이름" };
         readonly TextBox status = new TextBox { Multiline = true, ReadOnly = true, WordWrap = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill, Height = 96, AccessibleName = "설정 저장 상태" };
         readonly Button save = new Button { Text = "저장", AutoSize = true, Enabled = false };
         readonly Button reset = new Button { Text = "기본값", AutoSize = true };
         readonly Button recover = new Button { Text = "파일에서 복원…", AutoSize = true };
+        readonly LearningPane learning;
         bool loading, dirty, restoring;
 
-        internal ImeOptionsWindow(string settingsPath)
+        internal ImeOptionsWindow(string settingsPath) : this(settingsPath, LearningClient.ForSettings(settingsPath)) { }
+        internal ImeOptionsWindow(string settingsPath, ILearningClient learningClient)
         {
             // Build the complete 96-DPI layout before WinForms scales it once.
             // Early layout otherwise consumes the scale factor before ClientSize and children exist.
@@ -100,9 +102,12 @@ namespace Hanautomata
             Toggle(keys, "PauseKey", "F12로 입력기 일시 정지 / 복귀"); Toggle(keys, "CorrectionKeys", "F2 재변환 · Shift + F2 선택 영역 변환");
             var privacy = Page("학습·제외 앱");
             Toggle(privacy, "LearnChoices", "기억한 선택을 판별에 사용"); Toggle(privacy, "LearningPaused", "새로운 선택 학습 일시 정지");
-            Note(privacy, "새 학습은 입력기를 다시 선택하거나 앱을 닫으면 사라질 수 있습니다.\n계속 보존하는 기능은 아직 준비 중입니다.");
+            Note(privacy, "일반 데스크톱 앱에서 확정한 선택을 저장합니다. 제한된 앱에서는 저장되지 않을 수 있습니다.\n‘기억한 선택’ 탭에서 저장된 목록을 확인하고 지울 수 있습니다.");
             Note(privacy, "제외할 앱의 실행 파일 이름을 한 줄에 하나씩 적어 주세요.\n예: code.exe  (전체 경로는 입력하지 않습니다.)");
             privacy.Controls.Add(excluded); excluded.TextChanged += delegate { Changed(); };
+            var learned = new TabPage("기억한 선택") { Padding = new Padding(12) };
+            learning = new LearningPane(learningClient) { Dock = DockStyle.Fill };
+            learned.Controls.Add(learning); tabs.TabPages.Add(learned);
             var buttons = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, FlowDirection = FlowDirection.RightToLeft };
             var close = new Button { Text = "닫기", AutoSize = true }; close.Click += delegate { Close(); };
             var reload = new Button { Text = "다시 읽기", AutoSize = true };
@@ -115,7 +120,10 @@ namespace Hanautomata
             recover.Click += delegate { PreviewRecovery(); };
             buttons.Controls.AddRange(new Control[] { close, save, reload, recover, reset }); layout.Controls.Add(buttons, 0, 4);
             Controls.Add(layout); CancelButton = close;
-            FormClosing += delegate(object sender, FormClosingEventArgs e) { if (!MayDiscard()) e.Cancel = true; };
+            FormClosing += delegate(object sender, FormClosingEventArgs e) {
+                if (learning.Busy) { SetStatus("학습 처리 결과를 확인한 후 닫아 주세요."); e.Cancel = true; }
+                else if (!MayDiscard()) e.Cancel = true;
+            };
             LoadSettings();
             ResumeLayout(true);
         }

@@ -35,7 +35,7 @@ impl Runtime {
     pub fn start(executable: PathBuf, store: PathBuf) -> std::io::Result<Self> {
         Self::start_with_legacy(executable, store, vec![])
     }
-    pub(crate) fn start_with_legacy(executable: PathBuf, store: PathBuf, legacy: Vec<hanautomata_core::LearnedWord>) -> std::io::Result<Self> {
+    pub fn start_with_legacy(executable: PathBuf, store: PathBuf, legacy: Vec<hanautomata_core::LearnedWord>) -> std::io::Result<Self> {
         if spawn_denied() { return Err(std::io::ErrorKind::PermissionDenied.into()); }
         if !crate::learning_process::child_policy_allows_spawn() {
             SPAWN_DENIED.store(true, Ordering::Release); return Err(std::io::ErrorKind::PermissionDenied.into());
@@ -111,13 +111,13 @@ fn run(executable: PathBuf, store: PathBuf, legacy: Vec<hanautomata_core::Learne
         })?;
     let peer = child.peer().map_err(|_| StoreError::Io)?;
     let result = (|| {
-        let lease: Lease = serde_json::from_value(retry(|| request(&endpoint, &peer, nonce.token(), WireCommand::Register {}), shared, &peer)?["lease"].clone())
+        let lease: Lease = serde_json::from_value(retry(|| request(&endpoint, &peer, nonce.token(), WireCommand::RegisterSeeded { entries: legacy.clone() }), shared, &peer)?["lease"].clone())
             .map_err(|_| StoreError::InvalidState)?;
         let snapshot: Snapshot = serde_json::from_value(retry(|| request(&endpoint, &peer, nonce.token(), WireCommand::Snapshot {}), shared, &peer)?["snapshot"].clone())
             .map_err(|_| StoreError::InvalidState)?;
         let (producer, mut worker) = channel_with_waker(lease.clone(), std::task::Waker::from(shared.signal.clone())).map_err(|_| StoreError::InvalidState)?;
         worker.observe(snapshot.version.clone()).map_err(|_| StoreError::InvalidState)?;
-        let prepared = hanautomata_core::PreparedLearning::with_legacy(&legacy, &snapshot.entries);
+        let prepared = hanautomata_core::PreparedLearning::new(&snapshot.entries);
         send.try_send(Ready { producer, snapshot, prepared }).map_err(|_| StoreError::Io)?;
         shared.phase.store(Phase::Running as u8, Ordering::Release);
         let mut stopping = None; let mut consecutive_errors = 0;

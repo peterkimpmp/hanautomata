@@ -57,6 +57,33 @@ fn registered_child(files: &Files) -> (ChildGuard, hanautomata_core::learning::L
 }
 
 #[test]
+fn legacy_entries_are_imported_once_and_reset_never_restores_the_old_dictionary() {
+    use hanautomata_core::{WordPreferences, SnapshotInstall, learning::Operation};
+    let files = Files::new(); let legacy = WordPreferences::new();
+    for n in 0..512 {
+        let word = format!("word{}{}", (b'a' + (n / 26) as u8) as char, (b'a' + (n % 26) as u8) as char);
+        legacy.remember_global(&word, &word, true);
+    }
+    let entries = legacy.export().0;
+    assert!(serde_json::to_vec(&entries).unwrap().len() > 8192, "seed exceeds ordinary key request size");
+    let setup = PathBuf::from(env!("CARGO_BIN_EXE_hanautomata-ime-setup"));
+    let mut first = Runtime::start_with_legacy(setup.clone(), files.store(), entries.clone()).unwrap();
+    let initial = ready(&mut first); let initial_count = initial.snapshot.entries.len();
+    let mut owner = Authority::open_existing(files.store()).unwrap();
+    let stored_count = owner.snapshot().unwrap().entries.len();
+    owner.manage(&owner.snapshot().unwrap().version, Operation::Reset {}).unwrap(); drop(owner);
+    first.stop(); wait(|| first.status().phase == Phase::Stopped);
+    let mut second = Runtime::start_with_legacy(setup, files.store(), entries.clone()).unwrap();
+    let mut restarted = ready(&mut second); let restored_count = restarted.snapshot.entries.len();
+    let memory = WordPreferences::new();
+    let installed = memory.try_install_snapshot(memory.version(), &mut restarted.prepared);
+    second.stop(); wait(|| second.status().phase == Phase::Stopped);
+    assert_eq!(initial_count, 512); assert_eq!(stored_count, 512);
+    assert_eq!(restored_count, 0); assert_eq!(installed, SnapshotInstall::Applied); assert_eq!(memory.count(), 0);
+    assert_eq!(legacy.export().0, entries, "original legacy data is unchanged");
+}
+
+#[test]
 fn rollback_management_refuses_a_live_process_and_preserves_words_after_its_exit() {
     use hanautomata_core::learning::{Error, Request, Operation};
     use hanautomata_tsf::learning_pipe::prepare_rollback;
