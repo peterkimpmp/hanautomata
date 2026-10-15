@@ -44,6 +44,32 @@ fn learn(lease: &Lease, raw: &str, korean: bool) -> Request {
 }
 
 #[test]
+fn live_local_recovery_obeys_word_deletion_reset_and_missing_history() {
+    let fixture = Fixture::new(); let mut owner = fixture.open();
+    let original = owner.snapshot().unwrap().version;
+    let choice = |raw: &str| crate::LearningChoice { raw: raw.into(), keys: raw.into(), korean: true, context: String::new() };
+    let initial = owner.snapshot().unwrap(); assert!(initial.permits_local(None, &choice("hello")));
+    let forgotten = owner.manage(&initial.version, Operation::Forget { raw: "hello".into(), keys: "hello".into() }).unwrap();
+    assert!(!forgotten.permits_local(Some(&original), &choice("hello")));
+    assert!(forgotten.permits_local(Some(&original), &choice("world")), "unrelated local choices survive Forget");
+    assert!(!forgotten.permits_local(None, &choice("world")), "an unknown origin cannot cross deletion history");
+    let roundtrip: Snapshot = serde_json::from_slice(&serde_json::to_vec(&forgotten).unwrap()).unwrap();
+    assert!(roundtrip.permits_local(Some(&original), &choice("world")));
+    let reset = owner.manage(&forgotten.version, Operation::Reset {}).unwrap();
+    assert!(!reset.permits_local(Some(&original), &choice("world")));
+    assert!(reset.permits_local(Some(&reset.version), &choice("world")));
+    let mut old_wire = serde_json::to_value(&initial).unwrap(); old_wire.as_object_mut().unwrap().remove("fences");
+    let old_wire: Snapshot = serde_json::from_value(old_wire).unwrap(); assert!(!old_wire.permits_local(None, &choice("hello")));
+    for mode in 0..3 {
+        let mut malformed = serde_json::to_value(&forgotten).unwrap();
+        match mode { 0 => malformed["fences"] = serde_json::json!([]),
+            1 => malformed["fences"][0]["generation"] = serde_json::json!(3),
+            _ => malformed["fences"][0]["word"] = serde_json::json!("bad") }
+        let bad: Snapshot = serde_json::from_value(malformed).unwrap(); assert!(!bad.permits_local(Some(&original), &choice("world")));
+    }
+}
+
+#[test]
 fn existing_open_never_initializes_a_missing_directory_database_or_owner_marker() {
     let fixture = Fixture::new();
     let nested = fixture.root.join("missing").join("learning.db");

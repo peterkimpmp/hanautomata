@@ -30,6 +30,147 @@ impl Drop for Fixture {
 fn choice(raw: &str) -> LearningChoice {
     LearningChoice { raw: raw.into(), keys: raw.into(), korean: true, context: String::new() }
 }
+
+#[test]
+fn rejected_submission_returns_the_original_action_without_restamping_or_double_acceptance() {
+    let f = Fixture::new(); let mut owner = f.open();
+    let (producer, mut worker) = channel(owner.register(ALICE).unwrap()).unwrap();
+    let action = producer.begin().unwrap(); let origin = action.origin().clone();
+    for _ in 0..MAX_QUEUED_CHOICES { producer.submit(producer.begin().unwrap(), &[choice("filler")]).unwrap(); }
+    let (error, action) = producer.submit_recoverable(action, &[choice("hello")]).unwrap_err();
+    assert_eq!(error, QueueError::Full); assert_eq!(action.origin(), &origin);
+    while let Some(next) = worker.next().unwrap() { worker.finish(&next, owner.apply(next.request())).unwrap(); }
+    let reset = owner.manage(&owner.snapshot().unwrap().version, Operation::Reset {}).unwrap(); worker.observe(reset.version).unwrap();
+    producer.submit_recoverable(action, &[choice("hello")]).unwrap();
+    let old = worker.next().unwrap().unwrap(); assert_eq!(old.request().generation, origin.generation);
+    assert_eq!(worker.finish(&old, owner.apply(old.request())).unwrap(), Progress::DroppedStale);
+    assert!(owner.snapshot().unwrap().entries.is_empty());
+}
+
+fn snapshot_channel(lease: Lease) -> (hanautomata_core::learning::client::Producer, hanautomata_core::learning::client::Worker) {
+    struct Signal;
+    impl std::task::Wake for Signal { fn wake(self: std::sync::Arc<Self>) {} }
+    hanautomata_core::learning::client::channel_for_snapshots(lease, std::task::Waker::from(std::sync::Arc::new(Signal))).unwrap()
+}
+
+#[test]
+fn snapshot_channel_cannot_learn_before_dictionary_installation() {
+    use hanautomata_core::SnapshotInstall;
+    let f = Fixture::new(); let mut owner = f.open();
+    let (producer, worker) = snapshot_channel(owner.register(ALICE).unwrap());
+    assert!(matches!(producer.begin(), Err(QueueError::NeedsRefresh)));
+    let ticket = worker.snapshot_ticket().unwrap();
+    producer.install_snapshot(&ticket, &owner.snapshot().unwrap().version, || SnapshotInstall::Applied).unwrap();
+    assert!(producer.begin().is_ok());
+}
+
+#[test]
+fn an_observed_deletion_cannot_be_starved_by_new_old_generation_actions() {
+    use hanautomata_core::SnapshotInstall;
+    let f = Fixture::new(); let mut owner = f.open();
+    let (producer, mut worker) = snapshot_channel(owner.register(ALICE).unwrap());
+    let before = owner.snapshot().unwrap();
+    producer.install_snapshot(&worker.snapshot_ticket().unwrap(), &before.version, || SnapshotInstall::Applied).unwrap();
+    let old_word = producer.begin().unwrap();
+    let reset = owner.manage(&before.version, Operation::Reset {}).unwrap(); worker.observe(reset.version.clone()).unwrap();
+    let ticket = worker.snapshot_ticket().unwrap();
+    for _ in 0..32 { let original = producer.begin().unwrap();
+        assert_eq!(original.origin(), &before.version);
+        assert!(matches!(producer.submit_recoverable(original, &[choice("old")]), Err((QueueError::NeedsRefresh, _))),
+            "new words must retain their action without invalidating the pending Reset checkpoint"); }
+    producer.install_snapshot(&ticket, &reset.version, || SnapshotInstall::Applied).unwrap();
+    producer.submit(old_word, &[choice("old")]).unwrap();
+    let old = worker.next().unwrap().unwrap(); assert_eq!(old.request().generation, before.version.generation);
+    worker.finish(&old, owner.apply(old.request())).unwrap(); worker.observe(reset.version.clone()).unwrap();
+    assert_eq!(producer.begin().unwrap().origin(), &reset.version);
+}
+
+#[test]
+fn observing_reset_cannot_restamp_old_memory_before_snapshot_installation() {
+    use hanautomata_core::SnapshotInstall;
+    let f = Fixture::new(); let mut owner = f.open();
+    let (producer, mut worker) = snapshot_channel(owner.register(ALICE).unwrap());
+    let before = owner.snapshot().unwrap();
+    producer.install_snapshot(&worker.snapshot_ticket().unwrap(), &before.version, || SnapshotInstall::Applied).unwrap();
+    let old_word = producer.begin().unwrap();
+    let reset = owner.manage(&before.version, Operation::Reset {}).unwrap();
+    worker.observe(reset.version.clone()).unwrap();
+    for result in [SnapshotInstall::Busy, SnapshotInstall::Changed] {
+        let ticket = worker.snapshot_ticket().unwrap();
+        assert_eq!(producer.install_snapshot(&ticket, &reset.version, || result).unwrap(), result);
+        let action = producer.begin().unwrap(); assert_eq!(action.origin(), &before.version);
+        assert!(matches!(producer.submit_recoverable(action, &[choice("stale")]), Err((QueueError::NeedsRefresh, _))));
+        assert!(worker.next().unwrap().is_none());
+    }
+    producer.install_snapshot(&worker.snapshot_ticket().unwrap(), &reset.version, || SnapshotInstall::Applied).unwrap();
+    producer.submit(old_word, &[choice("late")]).unwrap();
+    let late = worker.next().unwrap().unwrap(); assert_eq!(late.request().generation, before.version.generation);
+    worker.finish(&late, owner.apply(late.request())).unwrap(); worker.observe(reset.version.clone()).unwrap();
+    producer.submit(producer.begin().unwrap(), &[choice("fresh")]).unwrap();
+    let fresh = worker.next().unwrap().unwrap(); assert_eq!(fresh.request().generation, reset.version.generation);
+    worker.finish(&fresh, owner.apply(fresh.request())).unwrap();
+    let entries = owner.snapshot().unwrap().entries; assert_eq!(entries.len(), 1); assert_eq!(entries[0].raw, "fresh");
+}
+
+#[test]
+fn unrelated_word_during_observed_forget_is_persisted_with_its_original_generation() {
+    use hanautomata_core::SnapshotInstall;
+    let f = Fixture::new(); let mut owner = f.open(); let (producer, mut worker) = snapshot_channel(owner.register(ALICE).unwrap());
+    let before = owner.snapshot().unwrap();
+    producer.install_snapshot(&worker.snapshot_ticket().unwrap(), &before.version, || SnapshotInstall::Applied).unwrap();
+    let forgotten = owner.manage(&before.version, Operation::Forget { raw: "other".into(), keys: "other".into() }).unwrap();
+    worker.observe(forgotten.version.clone()).unwrap(); let ticket = worker.snapshot_ticket().unwrap();
+    let action = producer.begin().unwrap(); let (error, action) = producer.submit_recoverable(action, &[choice("hello")]).unwrap_err();
+    assert_eq!(error, QueueError::NeedsRefresh); assert_eq!(action.origin(), &before.version);
+    producer.install_snapshot(&ticket, &forgotten.version, || SnapshotInstall::Applied).unwrap();
+    producer.submit_recoverable(action, &[choice("hello")]).unwrap(); let next = worker.next().unwrap().unwrap();
+    assert_eq!(next.request().generation, before.version.generation);
+    assert_eq!(worker.finish(&next, owner.apply(next.request())).unwrap(), Progress::Committed);
+    assert_eq!(owner.snapshot().unwrap().entries[0].raw, "hello");
+}
+
+#[test]
+fn snapshot_install_rejects_choices_queued_or_committed_after_capture() {
+    use hanautomata_core::SnapshotInstall;
+    let f = Fixture::new(); let mut owner = f.open();
+    let (producer, mut worker) = snapshot_channel(owner.register(ALICE).unwrap());
+    let before = owner.snapshot().unwrap();
+    producer.install_snapshot(&worker.snapshot_ticket().unwrap(), &before.version, || SnapshotInstall::Applied).unwrap();
+    let old_ticket = worker.snapshot_ticket().unwrap();
+    producer.submit(producer.begin().unwrap(), &[choice("local")]).unwrap();
+    assert!(worker.snapshot_ticket().is_err());
+    let called = std::cell::Cell::new(false);
+    assert!(producer.install_snapshot(&old_ticket, &before.version, || { called.set(true); SnapshotInstall::Applied }).is_err());
+    let next = worker.next().unwrap().unwrap(); assert!(worker.snapshot_ticket().is_err());
+    worker.finish(&next, owner.apply(next.request())).unwrap();
+    let latest = owner.snapshot().unwrap();
+    assert!(producer.install_snapshot(&old_ticket, &latest.version, || { called.set(true); SnapshotInstall::Applied }).is_err());
+    assert!(!called.get(), "an obsolete snapshot must not reach the engine swap");
+    producer.install_snapshot(&worker.snapshot_ticket().unwrap(), &latest.version, || SnapshotInstall::Applied).unwrap();
+}
+
+#[test]
+fn snapshot_install_rejects_foreign_and_regressing_versions_before_engine_swap() {
+    use hanautomata_core::SnapshotInstall;
+    let f = Fixture::new(); let mut owner = f.open();
+    let (producer, mut worker) = snapshot_channel(owner.register(ALICE).unwrap());
+    let initial = owner.snapshot().unwrap();
+    producer.install_snapshot(&worker.snapshot_ticket().unwrap(), &initial.version, || SnapshotInstall::Applied).unwrap();
+    let (_other, other_worker) = snapshot_channel(owner.register(BOB).unwrap());
+    let latest = owner.snapshot().unwrap(); worker.observe(latest.version.clone()).unwrap();
+    let called = std::cell::Cell::new(false);
+    assert!(producer.install_snapshot(&other_worker.snapshot_ticket().unwrap(), &latest.version, || { called.set(true); SnapshotInstall::Applied }).is_err());
+    let ticket = worker.snapshot_ticket().unwrap();
+    let mut foreign = latest.version.clone(); foreign.store_id = BOB.into();
+    let mut invalid = latest.version.clone(); invalid.generation = 0;
+    for version in [&initial.version, &foreign, &invalid] {
+        assert!(producer.install_snapshot(&ticket, version, || { called.set(true); SnapshotInstall::Applied }).is_err());
+    }
+    assert!(!called.get());
+    drop(worker);
+    assert!(producer.install_snapshot(&ticket, &latest.version, || { called.set(true); SnapshotInstall::Applied }).is_err());
+    assert!(!called.get());
+}
 fn management(lease: &Lease, operation: Operation) -> Request {
     Request { store_id: lease.version.store_id.clone(), client_id: lease.client_id.clone(), lease_revision: lease.lease_revision,
         sequence: lease.next_sequence, generation: lease.version.generation, operation }

@@ -31,6 +31,9 @@ impl PartialEq for LearningBatch {
     fn eq(&self, other: &Self) -> bool { Arc::ptr_eq(&self.choices, &other.choices) }
 }
 impl Eq for LearningBatch {}
+/// Confirmation evidence is distinct from an empty delta. Invalidated counts are consumed once, too.
+#[derive(Debug, PartialEq, Eq)]
+pub enum LearningConfirmation { Confirmed(Vec<LearningChoice>), Invalidated(usize), ConsumedOrForeign }
 const EDGES: &[u16] = &[
     b'.' as u16,
     b',' as u16,
@@ -178,12 +181,22 @@ fn identity(word: &LearnedWord) -> String {
 
 impl WordPreferences {
     pub fn try_install_snapshot(&self, version: i32, prepared: &mut PreparedLearning) -> SnapshotInstall {
+        self.try_install_snapshot_with_local(version, prepared, &[])
+    }
+    /// Bounded local-only recovery at a clean word boundary. The full dictionary is already worker-prepared;
+    /// at most 64 validated deltas are replayed in memory, never persisted or added to pending confirmations.
+    pub fn try_install_snapshot_with_local(&self, version: i32, prepared: &mut PreparedLearning, local: &[LearningChoice]) -> SnapshotInstall {
+        if local.len() > crate::learning::client::MAX_QUEUED_CHOICES || local.iter().any(|c|
+            !valid_context(&c.context) || normalize(&c.raw, &c.keys).is_none_or(|(_, raw, keys)| raw != c.raw || keys != c.keys)) {
+            return SnapshotInstall::Changed;
+        }
         let Ok(mut inner) = self.inner.try_lock() else { return SnapshotInstall::Busy; };
         if inner.version != version || !inner.pending.is_empty() || inner.pending_overflow { return SnapshotInstall::Changed; }
         inner.invalidate_confirmations();
         std::mem::swap(&mut inner.words, &mut prepared.words);
         std::mem::swap(&mut inner.undo, &mut prepared.undo);
         std::mem::swap(&mut inner.sequence, &mut prepared.sequence);
+        for choice in local { inner.remember(choice); }
         inner.version = inner.version.wrapping_add(1);
         SnapshotInstall::Applied
     }
@@ -260,13 +273,17 @@ impl WordPreferences {
     /// Call only after the associated document edit succeeds. Returns the actual confirmed deltas for an off-key
     /// persistence client; it never writes a file. Stale/private/foreign/replayed tickets produce no deltas.
     pub fn confirm_learning(&self, batch: &LearningBatch) -> Vec<LearningChoice> {
-        if !Arc::ptr_eq(&batch.owner, &self.confirmation_owner) { return Vec::new(); }
+        match self.confirm_learning_with_status(batch) { LearningConfirmation::Confirmed(choices) => choices, _ => Vec::new() }
+    }
+    pub fn confirm_learning_with_status(&self, batch: &LearningBatch) -> LearningConfirmation {
+        if !Arc::ptr_eq(&batch.owner, &self.confirmation_owner) { return LearningConfirmation::ConsumedOrForeign; }
         let mut inner = self.lock();
-        let choices = batch.choices.lock().unwrap_or_else(|p| p.into_inner()).take();
-        if batch.epoch != inner.epoch || inner.epoch == u64::MAX || !inner.deferred || !inner.enabled || !inner.recording { return Vec::new(); }
-        let choices = choices.unwrap_or_default();
+        let Some(choices) = batch.choices.lock().unwrap_or_else(|p| p.into_inner()).take() else { return LearningConfirmation::ConsumedOrForeign; };
+        if batch.epoch != inner.epoch || inner.epoch == u64::MAX || !inner.deferred || !inner.enabled || !inner.recording {
+            return LearningConfirmation::Invalidated(choices.len());
+        }
         for choice in &choices { inner.remember(choice); }
-        choices
+        LearningConfirmation::Confirmed(choices)
     }
 
     /// Global lookup only (no context).

@@ -7,6 +7,48 @@ fn propose(p: &WordPreferences) -> LearningBatch {
 }
 
 #[test]
+fn snapshot_recovery_replays_only_bounded_local_deltas_without_duplicating_on_refresh() {
+    use hanautomata_core::{PreparedLearning, SnapshotInstall, LearningChoice};
+    let p = WordPreferences::new(); p.defer_learning(true);
+    let stored = WordPreferences::new(); stored.remember_global("hello", "hello", true);
+    let local = LearningChoice { raw: "local".into(), keys: "local".into(), korean: false, context: context_key("hello") };
+    for _ in 0..3 {
+        let mut prepared = PreparedLearning::new(&stored.export().0);
+        assert_eq!(p.try_install_snapshot_with_local(p.version(), &mut prepared, &[local.clone()]), SnapshotInstall::Applied);
+        assert_eq!(p.count(), 3); assert!(p.take_learning().is_none());
+        assert!(p.export().0.iter().all(|w| w.korean_weight + w.english_weight == 1.0));
+    }
+    let before = p.export().0; let mut prepared = PreparedLearning::new(&[]);
+    assert_eq!(p.try_install_snapshot_with_local(p.version(), &mut prepared, &vec![local.clone(); 65]), SnapshotInstall::Changed);
+    let mut invalid = local; invalid.context = "unhashed surrounding document".into();
+    assert_eq!(p.try_install_snapshot_with_local(p.version(), &mut prepared, &[invalid]), SnapshotInstall::Changed);
+    assert_eq!(p.export().0, before);
+}
+
+#[test]
+#[ignore = "manual bounded recovery timing; not an application input-latency approval"]
+fn measure_full_dictionary_local_recovery() {
+    use hanautomata_core::{PreparedLearning, SnapshotInstall, LearningChoice, CAPACITY};
+    let key = |prefix: &str, n: usize| format!("{prefix}{}{}{}", (b'a' + ((n / 676) % 26) as u8) as char,
+        (b'a' + ((n / 26) % 26) as u8) as char, (b'a' + (n % 26) as u8) as char);
+    let stored = WordPreferences::new();
+    for n in 0..CAPACITY { let word = key("stored", n); stored.remember_global(&word, &word, true); }
+    let entries = stored.export().0;
+    let local: Vec<_> = (0..64).map(|n| { let word = key("local", n);
+        LearningChoice { raw: word.clone(), keys: word, korean: false, context: context_key("context") } }).collect();
+    let preferences = WordPreferences::new(); let mut samples = Vec::new();
+    for _ in 0..128 {
+        let mut prepared = PreparedLearning::new(&entries); let version = preferences.version();
+        let start = std::time::Instant::now();
+        assert_eq!(preferences.try_install_snapshot_with_local(version, &mut prepared, &local), SnapshotInstall::Applied);
+        samples.push(start.elapsed().as_micros()); assert_eq!(preferences.count(), CAPACITY);
+    }
+    samples.sort();
+    println!("local_recovery samples=128 stored=1024 deltas=64 contextual=true p95_us={} max_us={}", samples[121], samples[127]);
+    assert!(samples[121] < 20_000, "bounded local recovery alone must fit the 20ms input budget");
+}
+
+#[test]
 fn document_confirmation_is_required_and_clones_cannot_train_twice() {
     let p = WordPreferences::new(); p.defer_learning(true);
     let batch = propose(&p);
@@ -52,6 +94,20 @@ fn a_ticket_cannot_be_confirmed_by_a_different_engine() {
     assert!(second.confirm_learning(&batch).is_empty());
     assert_eq!(second.count(), 0);
     assert_eq!(first.confirm_learning(&batch).len(), 1);
+}
+
+#[test]
+fn invalidated_confirmation_reports_its_count_once_without_foreign_consumption() {
+    use hanautomata_core::{LearningConfirmation, PreparedLearning, SnapshotInstall};
+    let p = WordPreferences::new(); p.defer_learning(true); let other = WordPreferences::new(); other.defer_learning(true);
+    let batch = propose(&p);
+    assert_eq!(other.confirm_learning_with_status(&batch), LearningConfirmation::ConsumedOrForeign);
+    let mut prepared = PreparedLearning::new(&[]);
+    assert_eq!(p.try_install_snapshot(p.version(), &mut prepared), SnapshotInstall::Applied);
+    assert_eq!(p.confirm_learning_with_status(&batch), LearningConfirmation::Invalidated(1));
+    assert_eq!(p.confirm_learning_with_status(&batch.clone()), LearningConfirmation::ConsumedOrForeign);
+    assert_eq!(p.count(), 0);
+    assert!(matches!(p.confirm_learning_with_status(&propose(&p)), LearningConfirmation::Confirmed(choices) if choices.len() == 1));
 }
 
 #[test]

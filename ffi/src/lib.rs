@@ -193,10 +193,17 @@ impl Engine {
     pub fn try_install_learning(&self, version: i32, prepared: &mut hanautomata_core::PreparedLearning) -> hanautomata_core::SnapshotInstall {
         self.preferences.try_install_snapshot(version, prepared)
     }
+    pub fn try_install_learning_with_local(&self, version: i32, prepared: &mut hanautomata_core::PreparedLearning,
+        local: &[hanautomata_core::LearningChoice]) -> hanautomata_core::SnapshotInstall {
+        self.preferences.try_install_snapshot_with_local(version, prepared, local)
+    }
     pub fn defer_learning(&self) { self.preferences.defer_learning(true); }
     pub fn take_learning(&self) -> Option<hanautomata_core::LearningBatch> { self.preferences.take_learning() }
     pub fn confirm_learning(&self, batch: &hanautomata_core::LearningBatch) -> Vec<hanautomata_core::LearningChoice> {
         self.preferences.confirm_learning(batch)
+    }
+    pub fn confirm_learning_with_status(&self, batch: &hanautomata_core::LearningBatch) -> hanautomata_core::LearningConfirmation {
+        self.preferences.confirm_learning_with_status(batch)
     }
 
     fn run(&self, action: impl FnOnce(&mut Session) -> Response) -> KeyResult {

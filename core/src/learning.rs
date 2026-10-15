@@ -63,7 +63,31 @@ pub struct Reply {
     pub version: Version, pub committed_revision: u64, pub sequence: u64, pub changed: bool, pub duplicate: bool,
 }
 #[derive(Clone, Serialize, Deserialize)]
-pub struct Snapshot { pub version: Version, pub entries: Vec<LearnedWord>, pub recovery: Recovery }
+pub struct Snapshot { pub version: Version, pub entries: Vec<LearnedWord>, pub recovery: Recovery,
+    /// Bounded deletion history for local-only recovery. Older producers omit it: fail closed then.
+    #[serde(default)]
+    fences: Option<Vec<Fence>>,
+}
+impl Snapshot {
+    /// A local overlay is never a storage request. Unknown origins are safe only before any deletion;
+    /// known origins must pass the same per-word barriers as the authority. Missing history is not permission.
+    pub fn permits_local(&self, origin: Option<&Version>, choice: &crate::LearningChoice) -> bool {
+        let Some(fences) = &self.fences else { return false; };
+        let version = &self.version;
+        if !valid_id(&version.store_id) || version.generation == 0 || version.revision < version.generation
+            || fences.len() > MAX_FENCES || fences.len() as u64 != (version.generation - 1).min(MAX_FENCES as u64)
+            || fences.iter().enumerate().any(|(index, fence)| fence.generation != version.generation - fences.len() as u64 + index as u64 + 1
+                || fence.word.as_ref().is_some_and(|word| !valid_hex(word, 64))) { return false; }
+        let Some(origin) = origin else { return version.generation == 1; };
+        if origin.store_id != version.store_id || origin.generation == 0 || origin.generation > origin.revision
+            || origin.revision > version.revision || origin.generation > version.generation { return false; }
+        if origin.generation == version.generation { return true; }
+        let Ok(word) = word_fingerprint(&choice.raw, &choice.keys) else { return false; };
+        let Some(first) = fences.first() else { return false; };
+        origin.generation >= first.generation - 1 && fences.iter().filter(|f| f.generation > origin.generation)
+            .all(|f| f.word.as_ref().is_some_and(|deleted| *deleted != word))
+    }
+}
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
 pub struct Recovery { pub retained_pending: usize, pub removed_pending: usize }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -338,7 +362,8 @@ impl Authority {
     }
     fn ready(&self) -> Result<()> { if self.faulted { Err(Error::Faulted) } else { Ok(()) } }
     pub fn snapshot(&self) -> Result<Snapshot> {
-        self.ready()?; Ok(Snapshot { version: self.state.version.clone(), entries: self.state.entries.clone(), recovery: self.recovery })
+        self.ready()?; Ok(Snapshot { version: self.state.version.clone(), entries: self.state.entries.clone(), recovery: self.recovery,
+            fences: Some(self.state.fences.clone()) })
     }
     /// The broker registers a fresh, authenticated client before accepting requests. It must retire known-disconnected
     /// clients explicitly when capacity is reached. A repeated ID recovers that same lease after an uncertain reply;

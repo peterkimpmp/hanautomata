@@ -86,6 +86,10 @@ internal static class ImeLearningTests
             Application.EnableVisualStyles(); Application.SetCompatibleTextRenderingDefault(false);
             var reply = LearningReply.Parse(Json(Reply(ulong.MaxValue)));
             Check(reply.snapshot.version.revision == ulong.MaxValue, "64-bit version remains exact");
+            var wire = new JavaScriptSerializer().Deserialize<Dictionary<string, object>>(Json(Reply()));
+            ((Dictionary<string, object>)wire["snapshot"])["fences"] = new[] { new { generation = 2, word = new string('a', 64) } };
+            Check(LearningReply.Parse(Json(wire)).snapshot.entries.Length == Reply().snapshot.entries.Length,
+                "additional native deletion history does not invalidate the management list");
             Check(LearningClient.Encode(new { version = reply.snapshot.version }).Contains(ulong.MaxValue.ToString()), "version round trip remains exact");
             Check(LearningClient.Encode(new { raw = "한글" }).All(c => c < 128), "Unicode request is ASCII escaped");
             Rejected(() => LearningClient.Encode(new { raw = new string('한', 4096) }), "escaped request is bounded");

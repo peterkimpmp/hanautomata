@@ -1,10 +1,28 @@
 //! In-process queue/stop signal plus exact child exit. No per-keystroke timers, polling, or inherited handles.
-use std::{os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle}, sync::Arc, task::Wake, time::Duration};
+use std::{os::windows::{io::{AsRawHandle, FromRawHandle, OwnedHandle}, ffi::OsStrExt}, path::Path, sync::Arc, task::Wake, time::Duration};
 use windows::{core::PCWSTR, Win32::{Foundation::{HANDLE, WAIT_OBJECT_0, WAIT_TIMEOUT},
-    System::Threading::{CreateEventW, SetEvent, WaitForMultipleObjects}}};
+    System::Threading::{CreateEventW, SetEvent, WaitForMultipleObjects},
+    Storage::FileSystem::{FindFirstChangeNotificationW, FindNextChangeNotification, FindCloseChangeNotification,
+        FILE_NOTIFY_CHANGE_FILE_NAME, FILE_NOTIFY_CHANGE_LAST_WRITE, FILE_NOTIFY_CHANGE_SIZE}}};
 pub(super) struct Signal(OwnedHandle);
 #[derive(Debug, PartialEq, Eq)]
-pub(super) enum Reason { Work, ChildExit, Timeout }
+pub(super) enum Reason { Work, StoreChanged, ChildExit, Timeout }
+/// Worker-local notification only. The directory event is a hint; authoritative data still comes from the child.
+pub(super) struct ChangeWatch(HANDLE);
+impl ChangeWatch {
+    pub fn new(directory: &Path) -> std::io::Result<Self> {
+        let mut path: Vec<_> = directory.as_os_str().encode_wide().collect();
+        if !directory.is_absolute() || path.contains(&0) { return Err(std::io::ErrorKind::InvalidInput.into()); }
+        path.push(0);
+        unsafe { FindFirstChangeNotificationW(PCWSTR(path.as_ptr()), false,
+            FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_LAST_WRITE | FILE_NOTIFY_CHANGE_SIZE) }
+            .map(Self).map_err(std::io::Error::from)
+    }
+    pub fn rearm(&self) -> std::io::Result<()> {
+        unsafe { FindNextChangeNotification(self.0) }.map_err(std::io::Error::from)
+    }
+}
+impl Drop for ChangeWatch { fn drop(&mut self) { unsafe { let _ = FindCloseChangeNotification(self.0); } } }
 impl Signal {
     pub fn new() -> std::io::Result<Self> {
         let handle = unsafe { CreateEventW(None, false, false, PCWSTR::null()) }.map_err(std::io::Error::from)?;
@@ -14,11 +32,19 @@ impl Signal {
     pub fn wait(&self, child: &crate::learning_process::Child, timeout: Duration) -> std::io::Result<Reason> {
         self.wait_handle(child.handle(), timeout)
     }
+    pub fn wait_with_store(&self, child: &crate::learning_process::Child, watch: &ChangeWatch, timeout: Duration) -> std::io::Result<Reason> {
+        self.wait_handles(child.handle(), Some(watch.0), timeout)
+    }
     fn wait_handle(&self, child: HANDLE, timeout: Duration) -> std::io::Result<Reason> {
-        let handles = [child, HANDLE(self.0.as_raw_handle())];
-        match unsafe { WaitForMultipleObjects(&handles, false, timeout.as_millis().min(u32::MAX as u128 - 1) as u32) } {
+        self.wait_handles(child, None, timeout)
+    }
+    fn wait_handles(&self, child: HANDLE, store: Option<HANDLE>, timeout: Duration) -> std::io::Result<Reason> {
+        let handles = [child, HANDLE(self.0.as_raw_handle()), store.unwrap_or_default()];
+        let handles = &handles[..if store.is_some() { 3 } else { 2 }];
+        match unsafe { WaitForMultipleObjects(handles, false, timeout.as_millis().min(u32::MAX as u128 - 1) as u32) } {
             WAIT_OBJECT_0 => Ok(Reason::ChildExit),
             result if result.0 == WAIT_OBJECT_0.0 + 1 => Ok(Reason::Work),
+            result if store.is_some() && result.0 == WAIT_OBJECT_0.0 + 2 => Ok(Reason::StoreChanged),
             WAIT_TIMEOUT => Ok(Reason::Timeout),
             _ => Err(std::io::Error::last_os_error()),
         }

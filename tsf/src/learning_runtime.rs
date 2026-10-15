@@ -2,8 +2,8 @@
 //! One exact child per active service, random endpoint, no discovery or shared PID file. Companions serialize
 //! short file transactions, so apps cannot overwrite each other's stale dictionaries. Restricted hosts fail closed.
 use crate::learning_pipe::{self, call, Command as WireCommand, Endpoint, Envelope, Peer};
-use hanautomata_core::learning::{client::{channel_with_waker, Producer, Progress, QueueError}, Error as StoreError, Lease, Snapshot};
-use crate::learning_wake::{Signal, Reason};
+use hanautomata_core::learning::{client::{channel_for_snapshots, InstalledOrigin, Producer, Progress, QueueError, SnapshotTicket}, Error as StoreError, Lease, Snapshot};
+use crate::learning_wake::{Signal, Reason, ChangeWatch};
 use std::{os::windows::fs::MetadataExt, path::PathBuf,
     sync::{Arc, mpsc, atomic::{AtomicBool, AtomicU64, AtomicU8, AtomicUsize, Ordering}},
     thread, time::{Duration, Instant}};
@@ -24,7 +24,16 @@ pub enum Phase { Starting, Running, Stopped, Failed }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Status { pub phase: Phase, pub committed: u64, pub failures: u64, pub idle_waits: u64 }
 struct Shared { stop: AtomicBool, phase: AtomicU8, committed: AtomicU64, failures: AtomicU64, idle_waits: AtomicU64, signal: Arc<Signal> }
-pub struct Ready { pub producer: Producer, pub snapshot: Snapshot, pub prepared: hanautomata_core::PreparedLearning }
+pub struct Ready { pub producer: Producer, pub snapshot: Snapshot, pub prepared: hanautomata_core::PreparedLearning,
+    pub origin: Option<InstalledOrigin>, ticket: SnapshotTicket, applied: bool }
+impl Ready {
+    pub fn install(&mut self, install: impl FnOnce(&mut hanautomata_core::PreparedLearning) -> hanautomata_core::SnapshotInstall)
+        -> Result<hanautomata_core::SnapshotInstall, QueueError> {
+        let (result, origin) = self.producer.install_snapshot_with_origin(&self.ticket, &self.snapshot.version, || install(&mut self.prepared))?;
+        if origin.is_some() { self.origin = origin; }
+        self.applied |= result == hanautomata_core::SnapshotInstall::Applied; Ok(result)
+    }
+}
 pub struct Runtime { shared: Arc<Shared>, ready: mpsc::Receiver<Ready>, producer: Option<Producer>,
     recycle: mpsc::SyncSender<Ready> }
 struct Slot;
@@ -61,8 +70,8 @@ impl Runtime {
     pub fn try_ready(&mut self) -> Option<Ready> {
         let ready = self.ready.try_recv().ok()?; self.producer = Some(ready.producer.clone()); Some(ready)
     }
-    /// The old dictionary after a swap is normally dropped off the key thread. At most one initial snapshot.
-    pub fn recycle(&self, ready: Ready) { let _ = self.recycle.try_send(ready); }
+    /// Return the old dictionary and acceptance result off the key thread. Only one snapshot may be outstanding.
+    pub fn recycle(&self, ready: Ready) { let _ = self.recycle.try_send(ready); self.shared.signal.notify(); }
     pub fn stop(&self) {
         if let Some(producer) = &self.producer { producer.set_recording(false); }
         self.shared.stop.store(true, Ordering::Release);
@@ -100,6 +109,7 @@ fn run(executable: PathBuf, store: PathBuf, legacy: Vec<hanautomata_core::Learne
     if !crate::system::desktop_settings_allowed() || spawn_denied() { return Err(StoreError::InvalidRequest); }
     let parent = Peer::process(std::process::id()).map_err(|_| StoreError::InvalidRequest)?;
     if !executable.is_absolute() || !store.is_absolute() { return Err(StoreError::InvalidRequest); }
+    let directory = store.parent().ok_or(StoreError::InvalidRequest)?.to_path_buf();
     let metadata = std::fs::symlink_metadata(&executable).map_err(|_| StoreError::Io)?;
     if !metadata.is_file() || metadata.file_attributes() & 0x400 != 0 { return Err(StoreError::InvalidRequest); }
     let endpoint = Endpoint::random().map_err(|_| StoreError::Io)?;
@@ -113,34 +123,67 @@ fn run(executable: PathBuf, store: PathBuf, legacy: Vec<hanautomata_core::Learne
     let result = (|| {
         let lease: Lease = serde_json::from_value(retry(|| request(&endpoint, &peer, nonce.token(), WireCommand::RegisterSeeded { entries: legacy.clone() }), shared, &peer)?["lease"].clone())
             .map_err(|_| StoreError::InvalidState)?;
+        // Arm before reading the first snapshot so changes during startup remain observable.
+        let watch = ChangeWatch::new(&directory).map_err(|_| StoreError::Io)?;
+        let (producer, mut worker) = channel_for_snapshots(lease.clone(), std::task::Waker::from(shared.signal.clone())).map_err(|_| StoreError::InvalidState)?;
+        let ticket = worker.snapshot_ticket().map_err(|_| StoreError::InvalidState)?;
         let snapshot: Snapshot = serde_json::from_value(retry(|| request(&endpoint, &peer, nonce.token(), WireCommand::Snapshot {}), shared, &peer)?["snapshot"].clone())
             .map_err(|_| StoreError::InvalidState)?;
-        let (producer, mut worker) = channel_with_waker(lease.clone(), std::task::Waker::from(shared.signal.clone())).map_err(|_| StoreError::InvalidState)?;
         worker.observe(snapshot.version.clone()).map_err(|_| StoreError::InvalidState)?;
         let prepared = hanautomata_core::PreparedLearning::new(&snapshot.entries);
-        send.try_send(Ready { producer, snapshot, prepared }).map_err(|_| StoreError::Io)?;
+        send.try_send(Ready { producer: producer.clone(), snapshot, prepared, origin: None, ticket, applied: false }).map_err(|_| StoreError::Io)?;
         shared.phase.store(Phase::Running as u8, Ordering::Release);
         let mut stopping = None; let mut consecutive_errors = 0;
+        let mut outstanding = true; let mut installed_revision = 0; let mut dirty = false;
         loop {
-            drop(disposal.try_recv());
+            if let Ok(retired) = disposal.try_recv() {
+                outstanding = false;
+                if retired.applied { installed_revision = installed_revision.max(retired.snapshot.version.revision); }
+                else { dirty = true; }
+                drop(retired);
+            }
             if shared.stop.load(Ordering::Acquire) { stopping.get_or_insert_with(Instant::now); }
             if stopping.is_some_and(|at: Instant| at.elapsed() >= Duration::from_secs(3)) { return Err(StoreError::Io); }
+            if dirty && !outstanding && stopping.is_none() {
+                match worker.snapshot_ticket() {
+                    Ok(ticket) => {
+                        let value = match request(&endpoint, &peer, nonce.token(), WireCommand::Snapshot {}) {
+                            Err(StoreError::Io | StoreError::Busy | StoreError::Faulted) if peer.is_alive() => {
+                                shared.failures.fetch_add(1, Ordering::Relaxed); consecutive_errors = (consecutive_errors + 1).min(8);
+                                wait_for_signal(shared, &child, retry_delay(consecutive_errors))?; continue;
+                            },
+                            result => result?,
+                        };
+                        let snapshot: Snapshot = serde_json::from_value(value["snapshot"].clone()).map_err(|_| StoreError::InvalidState)?;
+                        worker.observe(snapshot.version.clone()).map_err(|_| StoreError::InvalidState)?;
+                        if snapshot.version.revision > installed_revision {
+                            let prepared = hanautomata_core::PreparedLearning::new(&snapshot.entries);
+                            send.try_send(Ready { producer: producer.clone(), snapshot, prepared, origin: None, ticket, applied: false }).map_err(|_| StoreError::Io)?;
+                            outstanding = true;
+                        }
+                        dirty = false; consecutive_errors = 0;
+                    },
+                    Err(QueueError::Busy) => {}, // Drain accepted local choices before taking a checkpoint.
+                    Err(_) => return Err(StoreError::InvalidState),
+                }
+            }
             match worker.next() {
                 Ok(Some(dispatch)) => {
                     let result = request(&endpoint, &peer, nonce.token(), WireCommand::Apply { request: dispatch.request().clone() })
                         .and_then(|v| serde_json::from_value(v["reply"].clone()).map_err(|_| StoreError::InvalidState));
                     match worker.finish(&dispatch, result).map_err(|_| StoreError::InvalidState)? {
-                        Progress::Committed => { shared.committed.fetch_add(1, Ordering::Relaxed); consecutive_errors = 0; },
+                        Progress::Committed => { shared.committed.fetch_add(1, Ordering::Relaxed); consecutive_errors = 0; dirty = true; },
                         Progress::Retry => { shared.failures.fetch_add(1, Ordering::Relaxed); consecutive_errors = (consecutive_errors + 1).min(8);
                             if !peer.is_alive() { return Err(StoreError::Io); }
                             wait_for_signal(shared, &child, retry_delay(consecutive_errors))?; },
-                        Progress::DroppedStale => { shared.failures.fetch_add(1, Ordering::Relaxed); },
+                        Progress::DroppedStale => { shared.failures.fetch_add(1, Ordering::Relaxed); dirty = true; },
                         Progress::Stopped => return Err(StoreError::InvalidState),
                     }
                 },
                 Ok(None) if stopping.is_some() => break,
                 Ok(None) => { if !peer.is_alive() { return Err(StoreError::Io); }
-                    shared.idle_waits.fetch_add(1, Ordering::Relaxed); wait_for_signal(shared, &child, Duration::from_secs(30))?; },
+                    shared.idle_waits.fetch_add(1, Ordering::Relaxed);
+                    dirty |= wait_for_store(shared, &child, &watch, Duration::from_secs(30))?; },
                 Err(QueueError::NeedsRefresh) => {
                     let value = match request(&endpoint, &peer, nonce.token(), WireCommand::Snapshot {}) {
                         Err(StoreError::Io | StoreError::Busy | StoreError::Faulted) if peer.is_alive() => {
@@ -151,7 +194,7 @@ fn run(executable: PathBuf, store: PathBuf, legacy: Vec<hanautomata_core::Learne
                     };
                     let snapshot: Snapshot = serde_json::from_value(value["snapshot"].clone()).map_err(|_| StoreError::InvalidState)?;
                     worker.observe(snapshot.version).map_err(|_| StoreError::InvalidState)?;
-                    consecutive_errors = 0;
+                    consecutive_errors = 0; dirty = true;
                 },
                 Err(_) => return Err(StoreError::InvalidState),
             }
@@ -175,7 +218,13 @@ fn retry_delay(failures: u32) -> Duration { Duration::from_millis((25u64 << fail
 fn wait_for_signal(shared: &Shared, child: &crate::learning_process::Child, timeout: Duration) -> Result<(), StoreError> {
     let timeout = if shared.stop.load(Ordering::Acquire) { timeout.min(Duration::from_millis(250)) } else { timeout };
     match shared.signal.wait(child, timeout).map_err(|_| StoreError::Io)? {
-        Reason::ChildExit => Err(StoreError::Io), Reason::Work | Reason::Timeout => Ok(()),
+        Reason::ChildExit => Err(StoreError::Io), Reason::Work | Reason::Timeout => Ok(()), Reason::StoreChanged => Err(StoreError::InvalidState),
+    }
+}
+fn wait_for_store(shared: &Shared, child: &crate::learning_process::Child, watch: &ChangeWatch, timeout: Duration) -> Result<bool, StoreError> {
+    match shared.signal.wait_with_store(child, watch, timeout).map_err(|_| StoreError::Io)? {
+        Reason::ChildExit => Err(StoreError::Io), Reason::Work => Ok(false), Reason::Timeout => Ok(true),
+        Reason::StoreChanged => { watch.rearm().map_err(|_| StoreError::Io)?; Ok(true) },
     }
 }
 

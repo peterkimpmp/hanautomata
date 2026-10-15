@@ -32,7 +32,55 @@ fn start(files: &Files) -> Runtime {
 }
 fn ready(runtime: &mut Runtime) -> hanautomata_tsf::learning_runtime::Ready {
     let mut result = None;
-    wait(|| { result = runtime.try_ready(); result.is_some() }); result.unwrap()
+    wait(|| { result = runtime.try_ready(); result.is_some() });
+    let mut result = result.unwrap(); result.install(|_| hanautomata_core::SnapshotInstall::Applied).unwrap(); result
+}
+
+fn update(runtime: &mut Runtime) -> Option<hanautomata_tsf::learning_runtime::Ready> {
+    let end = Instant::now() + Duration::from_secs(3);
+    loop {
+        if let Some(ready) = runtime.try_ready() { return Some(ready); }
+        if Instant::now() >= end { return None; }
+        thread::sleep(Duration::from_millis(10));
+    }
+}
+
+#[test]
+fn live_snapshots_follow_another_companions_choice_then_reset_without_restart() {
+    use hanautomata_core::{SnapshotInstall, learning::Operation};
+    let files = Files::new(); let mut first = start(&files); let first_ready = ready(&mut first);
+    let old_producer = first_ready.producer.clone(); first.recycle(first_ready);
+    let mut second = start(&files); let second_ready = ready(&mut second);
+    let second_producer = second_ready.producer.clone(); second.recycle(second_ready);
+    second_producer.submit(second_producer.begin().unwrap(), &[LearningChoice {
+        raw: "hello".into(), keys: "hello".into(), korean: false, context: String::new(),
+    }]).unwrap();
+    wait(|| second.status().committed == 1);
+    let mut imported = update(&mut first);
+    // Registration itself changes the version. Consume any earlier snapshot before looking for the word.
+    let end = Instant::now() + Duration::from_secs(3);
+    while imported.as_ref().is_some_and(|r| r.snapshot.entries.is_empty()) && Instant::now() < end {
+        let mut previous = imported.take().unwrap(); let _ = previous.install(|_| SnapshotInstall::Applied);
+        first.recycle(previous); imported = update(&mut first);
+    }
+    let imported_word = imported.as_ref().is_some_and(|r| r.snapshot.entries.iter().any(|w| w.raw == "hello"));
+    if let Some(mut result) = imported { let _ = result.install(|_| SnapshotInstall::Applied); first.recycle(result); }
+    let mut owner = Authority::open_existing(files.store()).unwrap();
+    owner.manage(&owner.snapshot().unwrap().version, Operation::Reset {}).unwrap(); drop(owner);
+    let mut cleared = update(&mut first);
+    let reset_seen = cleared.as_ref().is_some_and(|r| r.snapshot.entries.is_empty() && r.snapshot.version.generation > 1);
+    if let Some(ref mut result) = cleared { let _ = result.install(|_| SnapshotInstall::Applied); }
+    if let Some(result) = cleared { first.recycle(result); }
+    if reset_seen {
+        old_producer.submit(old_producer.begin().unwrap(), &[LearningChoice {
+            raw: "fresh".into(), keys: "fresh".into(), korean: true, context: String::new(),
+        }]).unwrap(); wait(|| first.status().committed == 1);
+    }
+    first.stop(); second.stop(); wait(|| first.status().phase == Phase::Stopped && second.status().phase == Phase::Stopped);
+    assert!(imported_word, "an already-running service must receive another companion's stored choice");
+    assert!(reset_seen, "Reset must reach an already-running service without reselecting the input method");
+    let owner = Authority::open_existing(files.store()).unwrap();
+    assert_eq!(owner.snapshot().unwrap().entries.len(), 1); assert_eq!(owner.snapshot().unwrap().entries[0].raw, "fresh");
 }
 
 fn registered_child(files: &Files) -> (ChildGuard, hanautomata_core::learning::Lease) {

@@ -82,6 +82,22 @@ fn deferred_finish_keeps_its_word_stamp_and_duplicate_callbacks_cannot_queue_twi
 }
 
 #[test]
+fn snapshot_invalidated_document_confirmation_is_reported_once() {
+    let (service, host, _, mut worker) = queued_choice_fixture(); host.defer.set(true);
+    unsafe { service.to_interface::<ITfKeyEventSink>().OnSetFocus(false).unwrap(); }
+    let pending = std::mem::take(&mut *host.pending.borrow_mut()); assert_eq!(pending.len(), 1);
+    let document_before = host.text.borrow().clone();
+    let engine = service.state.borrow().shell.as_ref().unwrap().engine().clone();
+    let mut snapshot = hanautomata_core::PreparedLearning::new(&[]);
+    assert_eq!(engine.try_install_learning(engine.learning_version(), &mut snapshot), hanautomata_core::SnapshotInstall::Applied);
+    unsafe { pending[0].DoEditSession(1).unwrap(); pending[0].DoEditSession(1).unwrap(); }
+    assert_eq!(service.state.borrow().learning.report().invalidated, 1,
+        "a successful delayed document edit must not silently lose its learning ticket");
+    assert_eq!(service.state.borrow().learning.report().queued, 0); assert!(worker.next().unwrap().is_none());
+    assert_eq!(&*host.text.borrow(), &document_before);
+}
+
+#[test]
 fn private_pause_reset_and_host_changes_discard_pending_choices_before_handoff() {
     for change in 0..4 {
         let (service, host, _, mut worker) = queued_choice_fixture(); host.defer.set(true);
@@ -155,6 +171,24 @@ fn full_or_closed_queue_preserves_text_and_reports_the_unsaved_choice() {
 }
 
 #[test]
+fn a_full_queue_recovers_the_original_choice_and_keeps_rejection_evidence() {
+    let (service, host, context, producer, mut worker) = connected_fixture();
+    for _ in 0..MAX_QUEUED_CHOICES {
+        producer.submit(producer.begin().unwrap(), &[LearningChoice { raw: "filler".into(), keys: "filler".into(), korean: false, context: String::new() }]).unwrap();
+    }
+    type_choice(&service, &context, b"DKSSUD"); commit(&service, &context);
+    assert_eq!(service.state.borrow().learning.report().recovery_pending, 1);
+    for _ in 0..MAX_QUEUED_CHOICES { ack(&mut worker); }
+    service.state.borrow().learning.retry();
+    let recovered = ack(&mut worker); assert_eq!(recovered.generation, 1);
+    assert!(matches!(recovered.operation, Operation::Learn { ref raw, .. } if raw == "dkssud"));
+    service.state.borrow().learning.retry(); assert!(worker.next().unwrap().is_none());
+    let report = service.state.borrow().learning.report();
+    assert_eq!(report.rejected, 1); assert_eq!(report.recovery_queued, 1); assert_eq!(report.recovery_pending, 0);
+    assert_eq!(&*host.text.borrow(), "dkssud ");
+}
+
+#[test]
 fn attaching_after_a_word_started_does_not_relabel_it_with_the_new_lease() {
     let (service, host, context) = fixture(); host.caret_selection.set(true);
     service.state.borrow_mut().sink = Some(TestCompositionSink.into());
@@ -167,4 +201,83 @@ fn attaching_after_a_word_started_does_not_relabel_it_with_the_new_lease() {
     assert!(worker.next().unwrap().is_some());
     let report = service.state.borrow().learning.report(); assert_eq!(report.queued, 1); assert_eq!(report.rejected, 1);
     assert_eq!(report.last_failure, Some(learning::Failure::Disconnected), "later success must not hide a lost choice");
+}
+
+#[test]
+fn older_local_recovery_cannot_reverse_a_newer_confirmed_choice_for_the_same_word() {
+    let (service, host, context) = fixture(); host.caret_selection.set(true);
+    service.state.borrow_mut().sink = Some(TestCompositionSink.into());
+    type_choice(&service, &context, b"DKSSUD"); commit(&service, &context);
+    assert_eq!(service.state.borrow().learning.report().recovery_pending, 1);
+    let (producer, mut worker) = queue_pair(); service.state.borrow_mut().learning.connect(producer);
+    type_choice(&service, &context, b"DKSSUD"); commit(&service, &context);
+    let saved = ack(&mut worker);
+    // This is the same-Link confirmation-order guard; the two-service test covers authority precedence.
+    assert_eq!(service.state.borrow().learning.report().recovery_pending, 0);
+    assert_eq!(service.state.borrow().learning.report().recovery_superseded, 1);
+    let Operation::Learn { raw, keys, korean, context: preceding } = saved.operation else { panic!("expected choice"); };
+    assert!(korean, "the later explicit choice is Korean, unlike the startup English choice");
+    let stored = hanautomata_core::WordPreferences::new(); stored.remember(&raw, &keys, korean, &preceding);
+    let snapshot: hanautomata_core::learning::Snapshot = serde_json::from_value(serde_json::json!({
+        "version": newer(1), "entries": stored.export().0, "recovery": { "retained_pending": 0, "removed_pending": 0 }, "fences": []
+    })).unwrap();
+    let local = service.state.borrow().learning.local_choices(&snapshot);
+    let engine = service.state.borrow().shell.as_ref().unwrap().engine().clone();
+    let mut prepared = hanautomata_core::PreparedLearning::new(&snapshot.entries);
+    assert_eq!(engine.try_install_learning_with_local(engine.learning_version(), &mut prepared, &local), hanautomata_core::SnapshotInstall::Applied);
+    let entries = engine.learning_entries(); let global = entries.iter().find(|word| word.context.is_empty()).unwrap();
+    assert!(global.korean, "recovery must not reverse the later confirmed user choice");
+    assert_eq!(global.english_weight, 0.0, "the superseded startup delta must not be reapplied over the newer snapshot");
+}
+
+#[test]
+fn a_retryable_choice_is_not_discarded_just_because_the_word_is_already_stored() {
+    let (service, host, context, producer, mut worker) = connected_fixture();
+    for _ in 0..MAX_QUEUED_CHOICES {
+        producer.submit(producer.begin().unwrap(), &[LearningChoice { raw: "filler".into(), keys: "filler".into(), korean: false, context: String::new() }]).unwrap();
+    }
+    type_choice(&service, &context, b"DKSSUD"); commit(&service, &context);
+    let stored = hanautomata_core::WordPreferences::new(); stored.remember_global("dkssud", "dkssud", true);
+    let snapshot: hanautomata_core::learning::Snapshot = serde_json::from_value(serde_json::json!({
+        "version": newer(1), "entries": stored.export().0, "recovery": { "retained_pending": 0, "removed_pending": 0 }, "fences": []
+    })).unwrap();
+    assert_eq!(service.state.borrow().learning.local_choices(&snapshot).len(), 1);
+    service.state.borrow_mut().learning.snapshot_applied(&snapshot, None);
+    assert_eq!(service.state.borrow().learning.report().recovery_pending, 1);
+    assert_eq!(service.state.borrow().learning.report().recovery_superseded, 0);
+    for _ in 0..MAX_QUEUED_CHOICES { ack(&mut worker); }
+    service.state.borrow().learning.retry(); let recovered = ack(&mut worker);
+    assert!(matches!(recovered.operation, Operation::Learn { korean: false, .. }));
+    assert_eq!(recovered.generation, 1); assert_eq!(&*host.text.borrow(), "dkssud ");
+}
+
+#[test]
+fn closed_queue_fallback_yields_to_a_stored_word_without_rewriting_its_document() {
+    let (service, host, context, _, worker) = connected_fixture(); drop(worker);
+    type_choice(&service, &context, b"DKSSUD"); commit(&service, &context);
+    let stored = hanautomata_core::WordPreferences::new(); stored.remember("dkssud", "dkssud", true, &hanautomata_core::context_key("other"));
+    let snapshot: hanautomata_core::learning::Snapshot = serde_json::from_value(serde_json::json!({
+        "version": newer(1), "entries": stored.export().0, "recovery": { "retained_pending": 0, "removed_pending": 0 }, "fences": []
+    })).unwrap();
+    assert!(service.state.borrow().learning.local_choices(&snapshot).is_empty());
+    service.state.borrow_mut().learning.snapshot_applied(&snapshot, None);
+    assert_eq!(service.state.borrow().learning.report().recovery_pending, 0);
+    assert_eq!(service.state.borrow().learning.report().recovery_yielded_to_store, 1);
+    assert_eq!(&*host.text.borrow(), "dkssud ");
+}
+
+#[test]
+fn deletion_invalidation_takes_precedence_over_yielding_to_a_stored_word() {
+    let (service, _, context, _, worker) = connected_fixture(); drop(worker);
+    type_choice(&service, &context, b"DKSSUD"); commit(&service, &context);
+    let stored = hanautomata_core::WordPreferences::new(); stored.remember_global("dkssud", "dkssud", true);
+    let snapshot: hanautomata_core::learning::Snapshot = serde_json::from_value(serde_json::json!({
+        "version": newer(2), "entries": stored.export().0, "recovery": { "retained_pending": 0, "removed_pending": 0 },
+        "fences": [{ "generation": 2, "word": null }]
+    })).unwrap();
+    assert!(service.state.borrow().learning.local_choices(&snapshot).is_empty());
+    service.state.borrow_mut().learning.snapshot_applied(&snapshot, None);
+    let report = service.state.borrow().learning.report();
+    assert_eq!(report.recovery_invalidated, 1); assert_eq!(report.recovery_yielded_to_store, 0);
+    assert_eq!(report.recovery_superseded, 0); assert_eq!(report.recovery_pending, 0);
 }

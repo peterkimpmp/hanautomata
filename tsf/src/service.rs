@@ -194,7 +194,6 @@ struct State {
     word_learning: Option<learning::Stamp>,
     learning_runtime: Option<crate::learning_runtime::Runtime>,
     learning_ready: Option<crate::learning_runtime::Ready>,
-    learning_version: i32,
     shell: Option<Shell>,
     attribute_atom: u32,
     /// Password/private scope or a failed field query. Never trace these contexts.
@@ -229,27 +228,46 @@ pub struct TextService {
 
 impl TextService {
     /// A bounded mailbox poll. No IPC, file access, process creation, waiting, or COM calls on the key path.
-    /// Install the worker-prepared initial dictionary only at a clean word boundary and only if local learning
-    /// did not change during startup. Older words retain their original disconnected/generation stamp.
-    fn poll_learning(&self) {
+    /// Install worker-prepared dictionaries at clean word boundaries. Older words retain their original stamps.
+    #[cfg(test)]
+    fn poll_learning(&self) { self.poll_learning_for(None); }
+    fn poll_learning_for(&self, context: Option<&ITfContext>) {
         let mut st = self.state.borrow_mut();
+        let waiting = st.learning_ready.is_some();
         let Some(runtime) = st.learning_runtime.as_mut() else { return; };
         let status = runtime.status();
-        let arrived = runtime.try_ready();
+        let arrived = if waiting { None } else { runtime.try_ready() };
         st.learning.storage_status(status, None);
         if status.phase == crate::learning_runtime::Phase::Failed {
             st.learning.disconnect(); return;
         }
-        if let Some(ready) = arrived { st.learning.connect(ready.producer.clone()); st.learning_ready = Some(ready); }
+        if let Some(ready) = arrived {
+            // Reconnecting the same queue would invalidate live word stamps and pause its producer.
+            if !st.learning.report().connected { st.learning.connect(ready.producer.clone()); }
+            st.learning_ready = Some(ready);
+        }
         let Some(engine) = st.shell.as_ref().map(|shell| shell.engine().clone()) else { return; };
-        // An abandoned old-context callback can defer the initial snapshot, but never block new queue submissions.
-        let changed = engine.learning_version() != st.learning_version;
-        if !changed && (st.word_learning.is_some() || st.pending_finishes.iter().any(|f| !f.done.get())
-            || st.shell.as_ref().is_none_or(|shell| shell.is_composing() || shell.private_context())) { return; }
+        // An old context may retain a deferred document callback. Only its text remains pending; it cannot
+        // block a clean new context forever. Snapshot installation invalidates its old unconfirmed learning.
+        if st.word_learning.is_some() || st.pending_finishes.iter().any(|f| !f.done.get()
+                && context.is_none_or(|current| f.context.as_ref() == Some(current)))
+            || st.shell.as_ref().is_none_or(|shell| shell.is_composing() || shell.private_context()) { return; }
+        // Historical rejection is evidence, not a permanent gate. Retry only unaccepted original actions;
+        // the checkpoint prevents replacing choices while their newly accepted writes are still in flight.
+        st.learning.retry();
         let Some(mut ready) = st.learning_ready.take() else { return; };
-        let installed = engine.try_install_learning(st.learning_version, &mut ready.prepared);
-        if installed == hanautomata_core::SnapshotInstall::Busy { st.learning_ready = Some(ready); return; }
-        st.learning.storage_status(status, Some(installed == hanautomata_core::SnapshotInstall::Applied));
+        let version = engine.learning_version();
+        let local = st.learning.local_choices(&ready.snapshot);
+        let installed = ready.install(|prepared| engine.try_install_learning_with_local(version, prepared, &local));
+        if matches!(installed, Ok(hanautomata_core::SnapshotInstall::Busy) | Err(hanautomata_core::learning::client::QueueError::Busy)) {
+            st.learning_ready = Some(ready); return;
+        }
+        if let Ok(installed) = installed {
+            if installed == hanautomata_core::SnapshotInstall::Applied {
+                st.learning.snapshot_applied(&ready.snapshot, ready.origin.take()); st.learning.retry();
+            }
+            st.learning.storage_status(status, Some(installed == hanautomata_core::SnapshotInstall::Applied));
+        }
         if let Some(runtime) = &st.learning_runtime { runtime.recycle(ready); }
     }
 
@@ -432,7 +450,7 @@ impl TextService_Impl {
     /// The engine must not accept a key until the application grants the write lock.
     fn key_in_session(&self, context: &ITfContext, access: edit::FieldAccess, tray: bool,
         key: impl FnOnce(&mut Shell) -> Outcome + 'static) -> Result<BOOL> {
-        self.poll_learning();
+        self.poll_learning_for(Some(context));
         // Capture before external callbacks/write-lock acquisition. An existing word keeps its older stamp;
         // this new stamp is for a new word or an F2 reconversion, never a re-stamp of delayed old learning.
         let incoming_learning = self.state.borrow().learning.capture();
@@ -1016,9 +1034,9 @@ impl ITfTextInputProcessorEx_Impl for TextService_Impl {
             st.thread_mgr = Some(thread_mgr.clone());
             st.client = tid;
             st.learning.disconnect();
+            st.learning = learning::Link::default();
             st.learning_runtime = None;
             st.learning_ready = None;
-            st.learning_version = shell.engine().learning_version();
             st.word_learning = None;
             st.shell = Some(shell);
             st.tray_running = tray;

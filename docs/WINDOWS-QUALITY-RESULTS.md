@@ -10,9 +10,9 @@ disposition: local-reusable
 
 # 개발 회귀를 보강했으며 Windows 전체 동작 승인은 남아 있다
 
-- 보존 후보 12종, 시스템 갱신 5회이며 최신 후보는 미설치다.
-- 최신 개발 소스의 고유 Rust 검사 315개가 통과했다.
-- 학습 목록·삭제·초기화·최초 이전은 개발 검증을 마쳤다.
+- 보존 후보 14종, 시스템 갱신 5회이며 최신 후보는 미설치다.
+- 최신 개발 소스의 고유 Rust 검사 341개가 통과했다.
+- 앱 간 학습 충돌은 재현 후 보강했고 화면 시험은 남았다.
 - Word F2·공백 포함 Shift+F2 왕복은 자동 고침 ON에서 성공했다.
 
 ## 판정과 검증 경로
@@ -963,3 +963,73 @@ Program Files의 `update-result.json`이 남은 시스템 갱신은 **5회**다.
 **실행 중 학습 갱신은 아직 미구현**이다. 초기 스냅샷 준비 중 로컬 학습이 먼저 변하면 이를 덮어쓰지 않는다. 관리 후 입력기 재선택은 안내하지만 모든 실제 앱에서 반영된다고 승인하지 않는다. 남은 범위는 실행 중 갱신·저장 상태 표시·제한 호스트, 6개 앱 전체 명령/보호 필드, 설치/복구/제거·실제 로그인·DPI 확대 검증·10,000키/30분 성능이다. **전체 앱 승인 0/6·WQ-07 미완료·목표 진행 중**을 유지한다.
 
 `learning-management-final-payload-build.log`의 기본 제품 x64/x86 빌드와 양쪽 DLL selftest가 통과했다. `build/tsf/wq-learning-management-20261015`에 setup·DLL·UI 6개와 SHA256을 복사한 뒤 다시 대조했다. `learning-management-final-freeze.json` 기준 보존 후보는 **12종**, 시스템 갱신 receipt는 **5회**다. 현재 HKLM의 양쪽 DLL 경로는 기존 `wq-5971010-20261015`이며 이번 후보는 설치하지 않았다. 후보 수는 동일 소스의 재컴파일·아키텍처·빈 디렉터리를 중복 합산하지 않고, 실패한 가설의 진단 후보도 포함한다. 전체 개발 기간의 모든 컴파일 횟수나 12번의 제품 승인이라는 뜻이 아니다.
+
+## 실행 중 학습 반영의 개발과 회복 결함 재현 — 2026-10-15
+
+기준 커밋 `7c8bd5f` 이후 미커밋 개발 변경이다. 저장 세대의 관측과 메모리 사전의 실제 설치를 분리하고, 사전 교체가 성공할 때만 새 단어의 세대를 올리는 대기열을 추가했다. worker는 저장 대기열이 빈 시점의 체크포인트를 스냅샷에 연결하며, 이후 수락된 선택이 하나라도 있으면 이미 저장까지 끝났더라도 낡은 스냅샷을 거부한다. 기존 일반 큐 API는 유지하고 제품 runtime에만 이 설치 조건을 적용한다.
+
+worker의 디렉터리 변경 알림 뒤 인증된 자식에게 최신 사전을 요청한다. 전송 중 스냅샷은 한 개로 제한하며, 입력 콜백은 메모리 우편함과 즉시 실패 가능한 잠금만 다룬다. 현재 조합과 같은 문서의 지연 확정이 있으면 적용을 미루고, 새 세대를 이유로 옛 단어의 Stamp를 다시 찍지 않는다. 이 구현은 아직 새 동결 후보나 실제 앱 승인으로 승격하지 않았다.
+
+| 근거 (`build/windows-quality/`) | 관측 |
+|---|---|
+| `learning-live-gate-red.log` → `learning-live-gate-core-green.log` | 4개 assertion 실패 후 세대/사전 결합과 체크포인트 보강. red는 기존 채널 동작을 연결한 임시 API 골격을 포함하며, 기존 제품에 동일한 새 API가 있었다는 뜻은 아님 |
+| `learning-live-runtime-red.log` → `learning-live-runtime-green.log` | 실행 중인 서비스로 다른 자식의 선택이 전달되지 않는 실패 후, 두 실제 자식의 학습과 관리 Reset 전달을 포함한 runtime 11개 통과 |
+| `learning-live-service-red.log` → `learning-live-service-green-4.log` | 조합 중 Reset 보관·확정 뒤 적용, 연결 전에 저장하지 못한 로컬 선택 보존, 다음 서비스 복원, 오래된 문서 분리의 4개 합성 COM 통합 시험 통과 |
+| `learning-live-final-core.log`, `learning-live-final-x64.log`, `learning-live-final-x64-<test>.log` | core 123 + TSF 162 + shell 19 + stdio 1 + pipe 4 + runtime 11 + 명시적 서비스 4 = **324개 정상 경로 검사**가 x64에서 통과. 진단 도구 14개는 별도. 이후 추가한 H1 회귀는 실패하므로 전체 최신 소스의 승인 수치로 쓰지 않음 |
+| `learning-live-review.json` | opposite-vendor 읽기 전용 소스 검토: H1 1건, M1 1건, M2 시간 경합 가설과 후속 확인 항목. 검토자의 실제 실행·제품 승인은 없음 |
+| `learning-live-startup-recovery-red.log` | 연결 전 단어 하나가 거부된 뒤 새로운 단어도 저장되지 않는 H1을 실제 저장 자식과 합성 문서로 재현. **1개 실패, 미해결** |
+
+서비스 검사의 첫 green 이름 로그는 괄호 오류로 컴파일에 실패했다. `green-2`는 새 단어의 공통/문맥 두 항목을 하나로 기대한 시험 오류였고, `green-3`은 활성 worker의 정상적인 짧은 파일 잠금 경합을 시험 코드가 기다리지 않은 실패였다. 문맥 fingerprint와 단어·가중치를 함께 검사하도록 기대값을 고쳤고, 시험 파일의 `Busy`만 4초 한도에서 재조회했다. 이 대기는 제품 입력 코드에 추가하지 않았다. `green-4`와 뒤의 final 로그를 정상 경로 근거로 사용한다.
+
+H1의 원인은 `rejected > 0`을 세션 전체의 영구적인 사전 적용 차단 조건으로 사용한 것이다. 준비 중 입력·순간적인 큐 잠금·가득 참이 한 번만 발생해도 최초 사전을 설치하지 못하거나 이후 Reset을 반영하지 못할 수 있다. 누적 실패 통계를 초기화해 감추는 방식으로 고치지 않는다. 제한된 미저장 선택/원래 Action 보존과 새 단어의 저장 회복을 함께 구현하고, 연결 전 선택을 새 세대로 다시 찍지 않는 검사를 유지한다. 명시적 Reset은 오래된 학습 기억에 우선하며 문서 문자열은 보존한다.
+
+M1은 다른 문서의 지연 학습 확정이 사전 교환으로 무효화될 때 `queued`와 `rejected` 어느 쪽에도 집계되지 않는 소스 경로다. 별도 무효화 상태와 검사가 필요하다. M2는 연속 입력 중 체크포인트가 매번 낡아 Reset 적용이 계속 밀리는 시간 경합 가설이며 아직 재현하지 않았다. H1·M1 보강과 M2의 재현/판정 전에는 x86 전체 검사와 새 후보 동결로 진행하지 않는다.
+
+현재 최신 보존 후보는 여전히 `wq-learning-management-20261015`(**12종·고유 Rust 315개**)이며 실제 시스템 갱신은 **5회**, 전체 앱 승인은 **0/6**이다. 이번 개발 변경은 설치·공개 릴리즈·목표 완료로 표시하지 않는다.
+
+## 로컬 학습 회복·초기화 반영·선택 순서 보강 — 2026-10-15
+
+앞 절 H1의 실패 조건을 수정했다. 과거 거부 횟수 대신 최대 64개 미저장 선택을 따로 보존하고 새 단어의 저장을 계속한다. 원래 Action이 있는 거부만 같은 세대·연결로 재시도하며, 연결 전에 시작한 선택을 최신 세대로 다시 찍어 저장하지 않는다. 스냅샷에 삭제 이력을 포함해 메모리 합성에도 Forget/Reset 경계를 적용한다. 상한 초과·삭제로 무효화·같은 단어의 이후 확정으로 대체된 선택은 각각 메모리 집계에 남긴다. 사용자 상태 UI를 완성했다는 뜻은 아니다.
+
+M1은 사전 교환으로 무효화된 지연 학습을 `Invalidated(count)`로 한 번만 소비해 집계한다. 외부 엔진은 다른 엔진의 batch를 소비하지 못하며, 중복 문서 콜백은 두 번 집계하지 않는다. M2는 새 삭제 세대를 관측한 동안 **원래 Action 캡처는 유지하고 큐 수락만 보류**해 해결했다. 스냅샷 반영 후 무관한 단어는 원래 Action으로 재시도하고 초기화/삭제 대상은 제거한다. 성공한 사전 적용 때만 발급하는 `InstalledOrigin`으로 작업자 잠금 경합 중에도 원래 입력 시점 정보를 캡처한다. 세대·소유자·pause 검사는 제출 때 다시 적용한다.
+
+| 증거 (`build/windows-quality/`) | 관측·범위 |
+|---|---|
+| `learning-live-startup-recovery-red.log` → `learning-recovery-origin-x64-startup_choice_does_not_disable_later_persistence_or_live_reset.log` | 시작 전 선택 보존→이후 단어 저장→무관한 단어 Forget→Reset→새 단어 저장 통과. 문서 문자열 보존 |
+| `learning-live-invalidation-red.log` → `learning-recovery-origin-x64.log` | 무효화 집계 0≠1 실패 후 정확히 한 번 집계 통과 |
+| `learning-live-reset-starvation-red.log` → `learning-recovery-origin-core.log` 및 `...continuous_words_do_not_starve_an_observed_live_reset.log` | 삭제 대기 중 새 수락이 체크포인트를 계속 무효화하는 조건 재현. 수정 후 원래 Action 보존·수락 보류, 쉬지 않고 입력하는 합성 COM 문서에서 Reset 반영 통과 |
+| `learning-recovery-order-red.log` → `learning-recovery-origin-x64.log` | 오래된 미저장 영문 선택이 같은 서비스의 최신 한글 선택을 뒤집는 실패 재현 후 수정. 순서는 타이핑 시각이 아니라 문서 반영 확정 순서 |
+| `learning-recovery-origin-core.log` | 고유 core **130개** 통과. 미저장 선택 덮어쓰기·상한·원래 Action 재시도·삭제 이력·경합 중 캡처·무효화 집계 포함 |
+| `learning-recovery-origin-x64.log` 및 명시적 서비스 6개 로그 | TSF **165**, shell 19, stdio 1, pipe 4, runtime 11, 명시적 서비스 6개 통과. core 포함 **336개**이며 진단 도구 14개·수동 성능 probe는 별도 |
+| `learning-recovery-csharp.log`, `learning-recovery-csharp-ps51.log` | PowerShell 7/5.1 각 **107개** 통과. 추가된 삭제 이력 필드와 기존 관리 UI 프로토콜의 호환 포함 |
+| `learning-recovery-timing-x64.log`, `learning-recovery-timing-x86.log` | 1,024항목+64개 문맥 델타, 각 128회 메모리 합성. x64 p95 **1,601μs**·max 1,865μs, x86 p95 **1,650μs**·max 2,343μs. 사전 준비·파일 접근·전체 키 처리·실제 앱 지연은 측정 범위 밖 |
+
+`learning-recovery-x64-startup_choice_does_not_disable_later_persistence_or_live_reset.log`는 이전 테스트 실행 파일 이름을 재사용해 구형 바이너리를 실행한 실패다. 수정본의 실패로 집계하지 않고 이후 빌드 로그의 실행 파일 경로를 추출해 실행한 `learning-recovery-current-x64-*`와 최종 `learning-recovery-origin-*`를 근거로 쓴다. 최초 후속 검토 입력 생성의 PowerShell 따옴표 오류는 실행 전에 실패했고 수정 후 다시 생성했다.
+
+읽기 전용 opposite-vendor 검토 `learning-recovery-review.json`은 H1/M1 수정과 삭제 지연 차단을 확인하면서 캡처 거부로 무관한 단어가 저장되지 않는 Medium을 지적했다. 큐 수락 보류·원래 Action 보존과 `InstalledOrigin`을 반영한 `learning-recovery-followup-review.json`은 제공한 수정 범위에서 **확정 High/Medium 회귀 없음**으로 판정했다. 검토자는 소스만 읽었으며 실제 실행·설치·앱 승인이 아니다. 다른 서비스/프로세스의 최신 선택이 같은 단어의 로컬 미저장 선택보다 우선해야 하는 경계는 추가 재현·설계가 남는다. 런타임 재활성화 시 `learning_runtime`과 `learning_ready`를 함께 비우는 경로, 저장 완료/거부 뒤 `dirty`를 설정하는 경로는 소스에서 확인했지만 모든 시간 경합의 앱 시험으로 확대하지 않는다.
+
+후속 `learning-recovery-origin-core-x86.log`·`learning-recovery-origin-x86.log`와 명시적 서비스 6개도 통과했다. `learning-live-payload-build.log`에서 최종 x64/x86 제품 빌드·양쪽 DLL selftest를 통과하고 `wq-learning-live-20261015`의 6개 파일을 SHA256으로 대조했다. `learning-live-final-freeze.json` 기준 후보는 **13종**, 시스템 갱신은 **5회**다. 고유 Rust 검사는 **336개**, C# 관리 검사는 **107개**이며 아키텍처·반복 실행은 중복 합산하지 않는다. 시스템은 기존 `wq-5971010-20261015`를 유지한다. **전체 앱 승인 0/6·목표 진행 중**이며 이 개발 후보는 시스템 설치나 공개 릴리즈 승인이 아니다.
+
+## 앱 간 임시 학습 충돌 보강 — 2026-10-15
+
+`learning-cross-service-red.log`에서 첫 서비스의 연결 전 영문 선택이 두 번째 서비스가 저장한 같은 단어의 한글 선택을 뒤집는 실패를 재현했다. 두 TextService의 합성 COM 문서와 각각의 실제 저장 자식 프로세스가 같은 소유 시험 파일을 사용했다. 두 실제 데스크톱 앱에서 실행한 시험은 아니다.
+
+새 정책은 저장 정본 우선이다. 재시도 가능한 원래 Action은 보존하고 저장소가 커밋한 순서를 따른다. Action이 없어 저장할 수 없는 임시 기억은 같은 raw/keys의 저장 항목이 있으면 문맥과 무관하게 물러난다. 다른 단어의 임시 기억과 이미 입력한 문서 문자열은 유지한다. 저장되지 않은 선택의 실제 시각 순서를 추정하지 않으며, 따라서 연결 전의 새 선택도 이전 세션에 저장된 같은 단어가 있으면 다음 사전 반영에서 양보한다. 기존 문서를 바꾸거나 뒤늦게 새 Action을 발급하는 방식으로 처리하지 않는다.
+
+| 근거 (`build/windows-quality/`) | 확인 범위 |
+|---|---|
+| `learning-cross-service-verified-x64.log`, `learning-cross-service-verified-x86.log` | 각 TSF lib **168**, shell 19, stdio 1, pipe 4, runtime 11 통과. 진단 도구 14개 별도 |
+| `learning-cross-service-verified-<arch>-<test>.log` | 양쪽에서 명시적 서비스 **8개** 통과. 앱 간 충돌, 초기 저장값, 문맥 선택, 조합 중 Reset, 연속 입력, 이후 저장 회복, 오래된 문서 분리 포함 |
+| `another_services_committed_choice_supersedes_local_only_fallback_for_that_word` | 다른 서비스의 저장 선택 반영·무관한 임시 단어 보존·기존 문서 문자열 보존 |
+| `preconnection_fallback_yields_to_existing_store_and_preserves_its_document` | 연결 전 문맥 선택이 기존 저장된 전역 항목을 뒤집지 않음. 임시 선택을 저장하지 않고 문서는 보존 |
+| 기본 회귀 3개 | 가득 찬 큐의 원래 Action 재시도 보존, 닫힌 큐의 임시 선택 정리, Reset 무효화와 저장 정본 양보 집계 구분 |
+
+고유 Rust 합계는 **341 = 변경 없는 core 130 + TSF 168 + shell 19 + stdio 1 + pipe 4 + runtime 11 + 명시적 서비스 8**이다. core는 `learning-recovery-origin-core.log`·`learning-recovery-origin-core-x86.log`의 같은 소스 검사를 재사용한다. C# 관리 107개도 변경 없는 소스의 기존 근거를 유지하며 이번에 재실행한 것으로 세지 않는다.
+
+`learning-cross-service-review.json`은 opposite-vendor 읽기 전용 소스 검토이며 확정 제품 결함은 없었다. 같은 서비스의 이전 회귀를 새 앱 간 규칙의 증거로 오해하지 않도록 전제 assertion을 추가했다. `recovery_superseded`는 같은 서비스의 이후 확정, `recovery_yielded_to_store`는 저장 정본 우선으로 구분했다. 기존 저장값과 시작 전 선택의 충돌을 명시적으로 시험했고, 삭제 이력의 무효화는 두 집계보다 먼저 처리한다. 검토자의 실행·앱 승인으로 확대하지 않는다. 검토의 체크포인트 가설은 `snapshot_install_rejects_choices_queued_or_committed_after_capture`가 이전 ticket으로 큐 수락 후·저장 완료 후 설치를 모두 거부하는 근거와 연결한다. 정규화와 0 가중치 거부는 `prefs::remember`와 `State::validate`에서 확인했다.
+
+초기 추가 시험은 앞 단어 HELLO에 F2를 적용해 의도한 영어 문맥을 만들지 못했다(`learning-cross-service-final-x64-preconnection_fallback_yields_to_existing_store_and_preserves_its_document.log`). 일반 영어 입력과 실제 앞 문서 `hello ` assertion으로 fixture를 수정했다. 최종 `verified-*`가 통과 근거이며 이 중간 실패를 제품 결함으로 집계하지 않는다.
+
+실제 화면 준비는 두 번 모두 `GetCursorPos failed: Access denied (0x80070005)`였고 Windows 사용자 세션 2는 `Disc`였다. `learning-cross-service-ui-readiness.json`에 기록했다. 새 UI 입력·사용자 COM 등록·트레이 종료는 실행하지 않았으며 기존 문서와 설치를 유지했다. Aside 가이드의 브라우저 DOM/키 입력 API는 실제 Windows TSF 경유 증거를 대신하지 않는다. 전체 앱 **0/6**, 상태 UI·제한 호스트·실제 로그인·복구/제거·DPI 확대·10,000키/30분 시험을 계속 미완료로 유지한다.
+
+`learning-cross-service-payload-build.log`의 x64/x86 기본 제품 빌드·DLL selftest가 통과했다. `build/tsf/wq-learning-conflict-20261015`의 setup·DLL·UI 6개를 새 폴더에 복사한 뒤 각 SHA256을 대조했다. `learning-cross-service-final-freeze.json` 기준 보존 후보 **14종**, 시스템 갱신 **5회**이며 설치된 양쪽 DLL은 기존 `wq-5971010-20261015`다. 이번 후보는 미설치·공개 릴리즈 미승인이다. 이전 `learning-live-checkpoint.json`의 H1 미해결 상태는 당시 기록이며, 현재 판정은 `learning-cross-service-checkpoint.json`과 이 절을 따른다.
