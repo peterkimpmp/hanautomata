@@ -18,6 +18,7 @@
   <ItemGroup>
     <Compile Include="../../../src/Core.cs" />
     <Compile Include="../../../src/Spacing.cs" />
+    <Compile Include="../../../src/OutputSegments.cs" />
     <Compile Include="../../../src/PreferenceStore.cs" />
     <Compile Include="../../CoreTests.cs" />
     <EmbeddedResource Include="../../../data/english.txt" LogicalName="Hanautomata.English.txt" />

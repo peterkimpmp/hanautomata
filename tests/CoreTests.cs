@@ -278,6 +278,15 @@ static class CoreTests
         var readme = new Detector();
         foreach (string[] pair in new[] { new[] { "gkftndlTek", "할 수 있다" }, new[] { "gksmsrjt", "하는 것" }, new[] { "gkfrjdi", "할 거야" }, new[] { "godigksek", "해야 한다" } })
             Equal(pair[1], Spacing.Correct(readme.Decide(pair[0]).Text), "documented spacing example " + pair[0]);
+        // Paced output parts: split after every boundary that more text follows (Notepad drops text right after one in a burst).
+        foreach (string[] pair in new[] {
+            new[] { "할 수 있다 ", "할 |수 |있다 " }, new[] { "e.g. 끝.", "e.|g.| |끝." }, new[] { "hello!", "hello!" }, new[] { "안녕하세요", "안녕하세요" },
+            new[] { "a\r\nb", "a\r\n|b" }, new[] { "", "" }, new[] { "mail@example.com", "mail@|example.|com" } })
+            Equal(pair[1], string.Join("|", OutputSegments.Split(pair[0]).ToArray()), "output parts " + pair[0]);
+        foreach (string[] pair in new[] { new[] { "할 거야 ", "1,3,1" }, new[] { "할수있다 ", "1,4" }, new[] { "hello", "5" }, new[] { " ", "1" }, new[] { "", "" }, new[] { "a. b", "2,1,1" } })
+            Equal(pair[1], string.Join(",", OutputSegments.EraseSteps(pair[0]).ConvertAll(n => n.ToString()).ToArray()), "erase steps " + pair[0]);
+        True(OutputSegments.HasLatinLetter("e.") && OutputSegments.HasLatinLetter("Peter@") && !OutputSegments.HasLatinLetter("할 ") &&
+            !OutputSegments.HasLatinLetter("3.") && !OutputSegments.HasLatinLetter("") && !OutputSegments.HasLatinLetter("Ａ"), "Latin letters set the longer settle");
         var rules = new System.Collections.Generic.List<string>();
         Equal("할 수 있다 하는 것", Spacing.Correct("할수있다 하는것", rules), "spacing works per run");
         Equal("ko-space-su,ko-space-su,ko-space-geot", string.Join(",", rules.ToArray()), "spacing reports one rule per inserted space");

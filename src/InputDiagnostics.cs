@@ -63,6 +63,7 @@ namespace Hanautomata
                 samples.Add(new { timestamp = DateTimeOffset.Now.ToString("o"), input.Enabled, input.HookHealthy, input.HookRestarts,
                     input.Commits, input.CapturedKeys, input.BypassedKeys, input.HardwareKeys, input.InjectedKeys, input.FilteredKeys,
                     input.SentinelActive, input.SentinelFallback, input.HookCallbacks, input.RawHardwareKeys, input.SentinelAlarms, input.AutoConversions, input.SwapsAfterSpace, input.SelectionFlips,
+                    input.Respacings, input.RespacingReverts, input.PacedOutputs, input.HeldKeys, input.OutputFailures, input.SettleTimeouts,
                     input.LastBypass, input.LastError, process=s.ProcessName, s.Reason, s.Diagnostic, s.Known, s.Writable, s.Password, s.Elevated, s.Focused, s.Pending,
                     safe=monitor.IsSafe(s), fresh=monitor.IsFresh(s), ageMs=(DateTime.UtcNow.Ticks-s.Ticks)/TimeSpan.TicksPerMillisecond,
                     ctrl=Native.IsDown(0x11), alt=Native.IsDown(0x12), win=Native.IsDown(0x5b)||Native.IsDown(0x5c) });

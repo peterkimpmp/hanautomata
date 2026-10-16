@@ -63,12 +63,34 @@ namespace Hanautomata
         internal int RawHardwareKeys, SentinelAlarms, AutoConversions, SwapsAfterSpace, SelectionFlips, Respacings, RespacingReverts;
         // Words whose automatic spacing the writer undid with F2 stay as typed until the app exits. Memory only, bounded.
         readonly HashSet<string> respacingDeclined = new HashSet<string>(StringComparer.Ordinal);
+        // Paced output (see OutputSegments). Windows 11 Notepad defers keys while it checks the word a boundary just ended, then
+        // turns deferred Unicode keys into copies of the newest one: text sent right after a boundary, after backspaces in the same
+        // batch, or keys replayed in one batch came out lost or garbled. Output that would follow a boundary too soon is queued and a
+        // pacer thread sends each step once the target has settled. Until the queue is empty every other key event is held in
+        // arrival order, then replayed one at a time with ReplayTag; the hook processes each (queueing any output it makes) first.
+        internal const int SettleMs = 60, CheckSettleMs = 150, SettleMaxMs = 400, SettleFallbackMs = 100, QuietWindowMs = 15, ReplayAckMs = 1000;
+        internal const int PaceSegmentLimit = 64;
+        const ulong QuietCyclesPerMs = 200000;
+        sealed class OutputStep
+        {
+            internal List<Native.Input> Prefix, Suffix; internal string Text = ""; internal FocusSnapshot Target;
+            internal bool Aborted, Failed;
+        }
+        readonly Queue<OutputStep> outputs = new Queue<OutputStep>();
+        readonly Queue<Native.Input> held = new Queue<Native.Input>();
+        bool pacerRunning; long replaySent, replayAcked;
+        // The last output ended at a word boundary at settleAt (clock ms, -1 once settled) in settleWindow. Only Notepad, which
+        // spell-checks the word meanwhile, is also waited on until its process goes quiet: Word stays busy and would always take the
+        // full SettleMaxMs, so other targets get the plain SettleMs gap.
+        long settleAt = -1; int settleMin; IntPtr settleWindow; bool settleQuiet;
+        internal int PacedOutputs, HeldKeys, OutputFailures, SettleTimeouts;
+        internal bool OutputIdle { get { lock (Sync) return !pacerRunning; } }
 
         internal InputController(FocusMonitor focus, Detector detector)
         {
             this.focus = focus; Composition = new Composition(detector);
             keyboardProc = Keyboard; mouseProc = Mouse;
-            focusProc = delegate { PreservePending(); focus.Invalidate("foreground-event"); };
+            focusProc = delegate { AbortPacing(); PreservePending(); focus.Invalidate("foreground-event"); };
             hookThread = new Thread(HookLoop) { IsBackground = true, Name = "Hanautomata keyboard hook" };
             hookThread.Start();
             ready.WaitOne();
@@ -153,15 +175,15 @@ namespace Hanautomata
                 if (selected.Length > SelectionReader.MaxLength) { LastError = "선택 영역이 너무 깁니다 (4,096자 이내)."; return; }
                 string flipped = Hangul.Flip(selected);
                 if (flipped == selected) { LastError = "선택 영역에 바꿀 글자가 없습니다."; return; }
-                var batch = new List<Native.Input>();
-                foreach (char c in flipped)
-                {
-                    if (c == '\r') continue;
-                    if (c == '\n') { batch.Add(Native.Key(0x0d, false, Native.OutputTag, false)); batch.Add(Native.Key(0x0d, true, Native.OutputTag, false)); }
-                    else batch.AddRange(Native.Unicode(c.ToString()));
-                }
-                if (!Native.Inject(batch)) { LastError = "선택 영역 변환 전송에 실패했습니다."; return; }
-                lock (Sync) { SelectionFlips++; Composition.Clear(); owner = null; lastCommit = null; LastError = ""; }
+                List<string> parts = Parts(flipped); OutputStep last = null;
+                lock (Sync)
+                    if (!pacerRunning) { pacerRunning = true; last = QueueOutput(null, parts, null, target); Composition.Clear(); owner = null; lastCommit = null; }
+                if (last == null) { LastError = "선택 영역 변환: 앞의 입력을 보내는 중이라 취소했습니다. 다시 누르세요."; return; }
+                // Sent on this worker thread like paced output; keys typed meanwhile are held and replayed after it.
+                Drain();
+                if (last.Failed) return;
+                // Composition was cleared before pacing: keys replayed after the flip may already be composing.
+                lock (Sync) { SelectionFlips++; LastError = ""; }
                 focus.Invalidate("selection-flip");
             }
             catch { LastError = "선택 영역 변환 중 오류가 났습니다."; }
@@ -185,6 +207,167 @@ namespace Hanautomata
                 if (keyboardHook == IntPtr.Zero) LastError = "키 입력 연결 실패 · 잠시 후 다시 연결합니다.";
             }
         }
+        // Hook thread, under Sync (as Commit). Sends the text now when nothing is queued and the target has settled; otherwise
+        // queues it for the pacer. False when nothing could be sent.
+        bool Emit(string erase, string text, List<Native.Input> suffix, FocusSnapshot target)
+        {
+            List<string> parts = Parts(text);
+            if (!pacerRunning && erase == null && parts.Count == 1 && (suffix == null || !EndsAtBoundary(parts[0])) && !Unsettled())
+            {
+                var batch = Native.Text(parts[0]);
+                if (suffix != null) batch.AddRange(suffix);
+                if (!Native.Inject(batch)) return false;
+                Sent(parts[0], suffix != null, target);
+                return true;
+            }
+            QueueOutput(erase, parts, suffix, target);
+            if (!pacerRunning)
+            {
+                pacerRunning = true;
+                new Thread(Drain) { IsBackground = true, Name = "Hanautomata paced output" }.Start();
+            }
+            return true;
+        }
+        // Under Sync. Returns the last step queued; a failure marks it and every step queued behind the one that failed.
+        OutputStep QueueOutput(string erase, List<string> parts, List<Native.Input> suffix, FocusSnapshot target)
+        {
+            if (erase != null || parts.Count > 1) PacedOutputs++;
+            // Backspaces go out apart from the text, split after each erased boundary: Notepad garbled Unicode keys that followed
+            // backspaces in the same batch and once lost two of five backspaces that followed an erased space.
+            if (erase != null)
+                foreach (int count in OutputSegments.EraseSteps(erase))
+                {
+                    var keys = new List<Native.Input>();
+                    for (int i = 0; i < count; i++) { keys.Add(Native.Key(0x08, false, Native.OutputTag, false)); keys.Add(Native.Key(0x08, true, Native.OutputTag, false)); }
+                    outputs.Enqueue(new OutputStep { Prefix = keys, Target = target });
+                }
+            OutputStep last = null;
+            for (int i = 0; i < parts.Count; i++)
+                outputs.Enqueue(last = new OutputStep { Text = parts[i], Suffix = i == parts.Count - 1 ? suffix : null, Target = target });
+            // A trailing key (Enter, a modifier) after a boundary is text after a boundary too: Notepad once dropped "!" + Enter's Enter.
+            if (suffix != null && EndsAtBoundary(last.Text)) { last.Suffix = null; outputs.Enqueue(last = new OutputStep { Suffix = suffix, Target = target }); }
+            return last;
+        }
+        static bool EndsAtBoundary(string text) { return text.Length > 0 && OutputSegments.Boundary(text[text.Length - 1]); }
+        // More parts than PaceSegmentLimit (a long selection) go out as one batch, as before 0.6.0.
+        static List<string> Parts(string text)
+        {
+            List<string> parts = OutputSegments.Split(text);
+            return parts.Count > PaceSegmentLimit ? new List<string> { text } : parts;
+        }
+        // Under Sync, after a batch reached the target. Text ending at a word boundary, a trailing key or an erase starts a settle.
+        void Sent(string text, bool key, FocusSnapshot target, bool erase = false)
+        {
+            if (!key && text.Length > 0 && !EndsAtBoundary(text)) { settleAt = -1; return; }
+            settleAt = clock.ElapsedMilliseconds; settleWindow = target != null ? target.Window : Native.GetForegroundWindow();
+            string process = (target ?? focus.Snapshot).ProcessName;
+            settleQuiet = string.Equals(process, "Notepad", StringComparison.OrdinalIgnoreCase);
+            // Notepad re-checks longer after Latin words and after backspaces: one of ten erases lost a backspace 60 ms later, none at 100-250 ms.
+            settleMin = settleQuiet && (erase || OutputSegments.HasLatinLetter(text)) ? CheckSettleMs : SettleMs;
+        }
+        bool Unsettled() { return settleAt >= 0 && clock.ElapsedMilliseconds - settleAt < (settleQuiet ? SettleMaxMs : settleMin); }
+        // Pacer thread (or the selection flip worker that reserved it). SendInput is never called here while Sync is held: the hook
+        // thread waits on Sync for every key, and Windows removes a low-level hook whose callback overruns LowLevelHooksTimeout.
+        void Drain()
+        {
+            while (true)
+            {
+                OutputStep step = null; Native.Input key;
+                lock (Sync)
+                {
+                    if (outputs.Count > 0) { step = outputs.Peek(); key = default(Native.Input); }
+                    else if (held.Count > 0) key = held.Dequeue();
+                    else { pacerRunning = false; return; }
+                }
+                Settle();
+                if (step != null) Send(step); else Replay(key);
+            }
+        }
+        void Send(OutputStep step)
+        {
+            var batch = new List<Native.Input>();
+            if (step.Prefix != null) batch.AddRange(step.Prefix);
+            batch.AddRange(Native.Text(step.Text));
+            if (step.Suffix != null) batch.AddRange(step.Suffix);
+            bool moved;
+            lock (Sync)
+            {
+                // Never finish the output in another field or at a caret the writer moved with the mouse.
+                var now = focus.Snapshot;
+                moved = disposed || step.Aborted || !focus.IsSafe(now) || now.Window != step.Target.Window || now.NativeFocus != step.Target.NativeFocus;
+                outputs.Dequeue();
+            }
+            bool failed = !moved && !Native.Inject(batch);
+            lock (Sync)
+            {
+                if (!moved && !failed) { Sent(step.Text, step.Prefix != null || step.Suffix != null, step.Target, step.Prefix != null); return; }
+                // The failed step and everything queued behind it go to Recovery; keys typed meanwhile are still replayed.
+                step.Failed = true; var rest = new System.Text.StringBuilder(step.Text);
+                while (outputs.Count > 0) { OutputStep next = outputs.Dequeue(); next.Failed = true; rest.Append(next.Text); }
+                Recovery = rest.ToString(); lastCommit = null; OutputFailures++;
+                LastError = moved ? "입력 칸이 바뀌어 나머지 글자를 보내지 않았습니다. 트레이 메뉴에서 복사할 수 있습니다." :
+                    "입력 전송을 마치지 못했습니다. 남은 글자는 트레이 메뉴에서 복사할 수 있습니다.";
+            }
+        }
+        // One held key event; the hook acknowledges it under Sync once processed, so output it makes is queued before the next key.
+        void Replay(Native.Input key)
+        {
+            long ticket;
+            lock (Sync) ticket = ++replaySent;
+            if (!Native.Inject(new List<Native.Input> { key }))
+            { lock (Sync) { replayAcked = Math.Max(replayAcked, ticket); LastError = "보관한 키 입력을 다시 보내지 못했습니다."; } return; }
+            lock (Sync)
+            {
+                long deadline = clock.ElapsedMilliseconds + ReplayAckMs;
+                while (replayAcked < ticket)
+                {
+                    long left = deadline - clock.ElapsedMilliseconds;
+                    if (left <= 0) { replayAcked = ticket; break; } // hook gone: the key reached the application unprocessed
+                    Monitor.Wait(Sync, (int)left);
+                }
+            }
+        }
+        // Pacer thread, Sync not held. After a word boundary, waits at least settleMin and, in Notepad, then until its process has
+        // gone quiet (it spell-checks the word meanwhile), at most SettleMaxMs after the boundary.
+        void Settle()
+        {
+            long at; int min; IntPtr window; bool quiet;
+            lock (Sync) { at = settleAt; min = settleMin; window = settleWindow; quiet = settleQuiet; }
+            if (at < 0) return;
+            long elapsed = clock.ElapsedMilliseconds - at;
+            if (elapsed < min) Thread.Sleep((int)(min - elapsed));
+            if (quiet && elapsed < SettleMaxMs)
+            {
+                uint pid; Native.GetWindowThreadProcessId(window, out pid);
+                IntPtr process = pid == 0 ? IntPtr.Zero : Native.OpenProcess(0x1000, false, pid);
+                try
+                {
+                    ulong last, now;
+                    if (process == IntPtr.Zero || !Native.QueryProcessCycleTime(process, out last))
+                    {
+                        long rest = Math.Min(at + min + SettleFallbackMs, at + SettleMaxMs) - clock.ElapsedMilliseconds;
+                        if (rest > 0) Thread.Sleep((int)rest);
+                    }
+                    else
+                        while (true)
+                        {
+                            if (clock.ElapsedMilliseconds - at >= SettleMaxMs) { lock (Sync) SettleTimeouts++; break; }
+                            long started = clock.ElapsedMilliseconds;
+                            Thread.Sleep(QuietWindowMs);
+                            long span = Math.Max(1, clock.ElapsedMilliseconds - started);
+                            if (!Native.QueryProcessCycleTime(process, out now) || now - last < QuietCyclesPerMs * (ulong)span) break;
+                            last = now;
+                        }
+                }
+                finally { if (process != IntPtr.Zero) Native.CloseHandle(process); }
+            }
+            lock (Sync) if (settleAt == at) settleAt = -1;
+        }
+        // Called under Sync for every key event before it is processed. Our own output, replays and lower-integrity injections pass.
+        bool Holding(Native.KeyboardData data)
+        { return pacerRunning && data.Extra != Native.ReplayTag && !Native.BypassKeyboard(data); }
+        // A click or a foreground change cancels the output queued so far; keys typed meanwhile are still replayed.
+        void AbortPacing() { lock (Sync) foreach (OutputStep step in outputs) step.Aborted = true; }
         internal void PreservePending()
         {
             lock (Sync)
@@ -251,7 +434,7 @@ namespace Hanautomata
         IntPtr Mouse(int code, IntPtr message, IntPtr data)
         {
             if (code >= 0 && (message.ToInt32() == 0x201 || message.ToInt32() == 0x204 || message.ToInt32() == 0x207 || message.ToInt32() == 0x20b || message.ToInt32() == 0x20a))
-            { PreservePending(); focus.Invalidate("mouse"); }
+            { if (message.ToInt32() != 0x20a) AbortPacing(); PreservePending(); focus.Invalidate("mouse"); }
             return Native.CallNextHookEx(mouseHook, code, message, data);
         }
         IntPtr Pass(int code, IntPtr message, IntPtr data)
@@ -266,15 +449,14 @@ namespace Hanautomata
             Decision current = Composition.Current;
             string text = current.Text, typed = Spaced(text);
             bool respaced = typed != text;
-            var batch = Native.Unicode(typed + (literalSuffix ?? ""));
-            if (trailingKey == 0x20) batch.AddRange(Native.Unicode(" "));
-            else if (trailingKey > 0)
+            var suffix = new List<Native.Input>();
+            if (trailingKey > 0 && trailingKey != 0x20)
             {
-                batch.Add(Native.Key((ushort)trailingKey, false, Native.OutputTag, extended));
-                if (!keyDownOnly) batch.Add(Native.Key((ushort)trailingKey, true, Native.OutputTag, extended));
+                suffix.Add(Native.Key((ushort)trailingKey, false, Native.OutputTag, extended));
+                if (!keyDownOnly) suffix.Add(Native.Key((ushort)trailingKey, true, Native.OutputTag, extended));
             }
             // The physical modifier's down event has not reached the target yet when called from its hook.
-            if (!Native.Inject(batch))
+            if (!Emit(null, typed + (literalSuffix ?? "") + (trailingKey == 0x20 ? " " : ""), suffix, owner))
             {
                 Recovery = text; LastError = "입력 전송을 완료하지 못해 일시정지했습니다. 보관된 조합을 확인하세요.";
                 Enabled = false; Composition.Clear(); owner = null; lastCommit = null; return false;
@@ -304,14 +486,7 @@ namespace Hanautomata
             if (clock.ElapsedMilliseconds - word.Time > SwapWindowMs || word.Owner == null || !focus.IsSafe(now) ||
                 word.Owner.Window != now.Window || word.Owner.NativeFocus != now.NativeFocus || word.Owner.Identity != now.Identity)
             { lastCommit = null; return false; }
-            var batch = new List<Native.Input>();
-            for (int i = 0; i < word.Text.Length + word.Trailing.Length; i++)
-            {
-                batch.Add(Native.Key(0x08, false, Native.OutputTag, false));
-                batch.Add(Native.Key(0x08, true, Native.OutputTag, false));
-            }
-            batch.AddRange(Native.Unicode((word.Unspaced ?? word.Alternative) + word.Trailing));
-            if (!Native.Inject(batch)) { lastCommit = null; LastError = "직전 단어를 바꾸지 못했습니다."; return false; }
+            if (!Emit(word.Text + word.Trailing, (word.Unspaced ?? word.Alternative) + word.Trailing, null, now)) { lastCommit = null; LastError = "직전 단어를 바꾸지 못했습니다."; return false; }
             if (word.Unspaced != null)
             {
                 // Undo only the spacing: the language decision stands, so nothing is learned and the context is unchanged.
@@ -336,7 +511,14 @@ namespace Hanautomata
             {
                 // Stamp every hardware key-down before any filtering so the Raw Input sentinel can tell a live hook from a removed one.
                 if (down && (keyData.Flags & 0x10) == 0) lastHardwareTick = clock.ElapsedMilliseconds;
-                return Process(code, message, data, keyData);
+                IntPtr result = Process(code, message, data, keyData);
+                if (keyData.Extra == Native.ReplayTag)
+                {
+                    // A replayed key that went on to the application settles like our own output before the next step.
+                    if (down && result == IntPtr.Zero) Sent("", true, null);
+                    replayAcked++; Monitor.PulseAll(Sync);
+                }
+                return result;
             }
         }
         IntPtr Process(int code, IntPtr message, IntPtr data, Native.KeyboardData keyData)
@@ -350,6 +532,7 @@ namespace Hanautomata
             bool down = message.ToInt32() == 0x100 || message.ToInt32() == 0x104;
             if (keyData.Extra == Native.ProbeTag && key == Native.ProbeKey && !down && (keyData.Flags & 0x10) != 0)
             { probePending = false; HookHealthy = true; return new IntPtr(1); }
+            if (Holding(keyData)) { held.Enqueue(Native.Replay(keyData, !down)); HeldKeys++; return new IntPtr(1); }
             InputDiagnostics diagnostics = Diagnostics;
             if (down && keyData.Extra != Native.OutputTag && diagnostics != null) diagnostics.Key(keyData, focus, Enabled);
             if (Native.BypassKeyboard(keyData))
@@ -407,14 +590,14 @@ namespace Hanautomata
                     // Passing them directly would let a batch's Hangul/emoji overtake our queued output.
                     if (!Composition.IsEmpty)
                     { if (Commit(0, false, false, packetText.ToString())) return Eat(releaseKey); }
-                    else if (Native.Inject(Native.Unicode(packetText.ToString())))
+                    else if (Emit(null, packetText.ToString(), null, snapshot))
                     { Composition.Clear(); owner = null; lastCommit = null; return Eat(releaseKey); }
                     else { Enabled = false; LastError = "문자 입력 전송에 실패했습니다."; }
                     return Pass(code, message, data);
                 }
                 if (key == 0x20 && Composition.IsEmpty)
                 {
-                    if (!Native.Inject(Native.Unicode(" "))) { Enabled = false; LastError = "공백 입력 전송에 실패했습니다."; }
+                    if (!Emit(null, " ", null, snapshot)) { Enabled = false; LastError = "공백 입력 전송에 실패했습니다."; }
                     lastCommit = null; return Eat(releaseKey);
                 }
                 char raw, hangul;

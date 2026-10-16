@@ -10,6 +10,8 @@ namespace Hanautomata
         internal static readonly UIntPtr OutputTag = new UIntPtr(0x48464f55);
         internal static readonly UIntPtr TestTag = new UIntPtr(0x48465453);
         internal static readonly UIntPtr ProbeTag = new UIntPtr(0x48465052);
+        // Keys held while paced output was sent are re-injected one at a time with ReplayTag.
+        internal static readonly UIntPtr ReplayTag = new UIntPtr(0x48465259);
         internal const ushort ProbeKey = 0xe8; // Unassigned VK; key-up only, no character or modifier state.
         internal static bool BypassKeyboard(KeyboardData input)
         {
@@ -72,6 +74,7 @@ namespace Hanautomata
         [DllImport("imm32.dll")] internal static extern bool ImmGetOpenStatus(IntPtr context);
         [DllImport("kernel32.dll", SetLastError = true)] internal static extern IntPtr OpenProcess(uint access, bool inherit, uint id);
         [DllImport("kernel32.dll")] internal static extern bool CloseHandle(IntPtr handle);
+        [DllImport("kernel32.dll")] internal static extern bool QueryProcessCycleTime(IntPtr process, out ulong cycles);
         [DllImport("advapi32.dll", SetLastError = true)] internal static extern bool OpenProcessToken(IntPtr process, uint access, out IntPtr token);
         [DllImport("advapi32.dll", SetLastError = true)] internal static extern bool GetTokenInformation(IntPtr token, int cls, IntPtr info, int length, out int needed);
         [DllImport("advapi32.dll")] internal static extern IntPtr GetSidSubAuthorityCount(IntPtr sid);
@@ -180,6 +183,26 @@ namespace Hanautomata
         {
             return new Input { Type = 1, Value = new InputUnion { Keyboard = new KeyboardInput {
                 Key = key, Flags = (up ? 2u : 0u) | (extended ? 1u : 0u), Extra = tag } } };
+        }
+        // A held key event as it was typed: packets keep their character, other keys their VK, scan code and extended flag.
+        internal static Input Replay(KeyboardData data, bool up)
+        {
+            bool packet = data.Key == 0xe7;
+            uint flags = (up ? 2u : 0u) | (packet ? 4u : 0u) | (!packet && (data.Flags & 1) != 0 ? 1u : 0u);
+            return new Input { Type = 1, Value = new InputUnion { Keyboard = new KeyboardInput {
+                Key = packet ? (ushort)0 : (ushort)data.Key, Scan = (ushort)data.Scan, Flags = flags, Extra = ReplayTag } } };
+        }
+        // Output text as key events: '\n' becomes Enter and '\r' is dropped, as a pasted line break is typed.
+        internal static List<Input> Text(string text)
+        {
+            var result = new List<Input>();
+            foreach (char c in text)
+            {
+                if (c == '\r') continue;
+                if (c == '\n') { result.Add(Key(0x0d, false, OutputTag, false)); result.Add(Key(0x0d, true, OutputTag, false)); }
+                else result.AddRange(Unicode(c.ToString()));
+            }
+            return result;
         }
         internal static List<Input> Unicode(string text)
         {

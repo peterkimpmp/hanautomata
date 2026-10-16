@@ -69,6 +69,13 @@ namespace Hanautomata
             Thread.Sleep(7);
         }
         static void Tap(int key) { Key(key, false); Key(key, true); }
+        // Output after a word boundary waits for the target to settle; read the field only once the controller has sent everything.
+        static void WaitIdle(int before)
+        {
+            Thread.Sleep(before);
+            for (int waited = 0; waited < 3000 && !app.Input.OutputIdle; waited += 25) Thread.Sleep(25);
+            Thread.Sleep(80);
+        }
         static string WaitForText(TextBoxBase target, string expected, int timeoutMs)
         {
             string actual = "";
@@ -105,7 +112,7 @@ namespace Hanautomata
         }
         static void TextCase(string name, TextBoxBase target, string keys, string expected)
         {
-            Ui(delegate { app.Words.Clear(); target.Clear(); }); Focus(target); Type(keys); Thread.Sleep(240);
+            Ui(delegate { app.Words.Clear(); target.Clear(); }); Focus(target); Type(keys); WaitIdle(240);
             string actual = Ui(delegate { return target.Text; });
             Assert(name, actual == expected, new { expected, actual, focus = app.Focus.Snapshot.Reason, diagnostic = app.Focus.Snapshot.Diagnostic,
                 targetFocused = Ui(delegate { return target.Focused; }), captured = Ui(delegate { return app.Input.CapturedKeys; }), commits = Ui(delegate { return app.Input.Commits; }),
@@ -119,7 +126,7 @@ namespace Hanautomata
             var packets = Native.Unicode(text);
             for (int i = 0; i < packets.Count; i++)
             { var item = packets[i]; item.Value.Keyboard.Extra = UIntPtr.Zero; packets[i] = item; }
-            Native.Inject(packets); Thread.Sleep(250);
+            Native.Inject(packets); WaitIdle(250);
             string actual = Ui(delegate { return target.Text; });
             Assert(name, actual == expected, new { expected, actual });
         }
@@ -277,6 +284,17 @@ namespace Hanautomata
                 Ui(delegate { app.Input.AutoSpacing = false; plain.Clear(); }); Type("gksmsrjt "); string unspaced = WaitForText(plain, "하는것 ", 3000);
                 Ui(delegate { app.Input.AutoSpacing = true; });
                 Assert("Spacing off types the decided word unchanged", unspaced == "하는것 ", new { actual = unspaced });
+                // Paced output: the rest of a spaced word arrives in parts; keys typed meanwhile are held and replayed behind it, in order.
+                int paced = app.Input.PacedOutputs, heldBefore = app.Input.HeldKeys;
+                Ui(delegate { plain.Clear(); }); Type("gksmsrjt godigksek gkfrjdi "); string burst = WaitForText(plain, "하는 것 해야 한다 할 거야 ", 4000);
+                Assert("Keys typed during paced output keep their order", burst == "하는 것 해야 한다 할 거야 ",
+                    new { actual = burst, paced = app.Input.PacedOutputs - paced, held = app.Input.HeldKeys - heldBefore });
+                Ui(delegate { plain.Clear(); }); Type("godigksek "); Tap(0x71); string early = WaitForText(plain, "해야한다 ", 4000);
+                Assert("F2 pressed during paced output restores the whole word", early == "해야한다 ", new { actual = early, reverts = app.Input.RespacingReverts });
+                Ui(delegate { plain.Clear(); }); Type("gksmsrjt"); Key(0xa2, false); Tap(0x41); Key(0xa2, true);
+                string modified = WaitForText(plain, "하는 것", 4000); Thread.Sleep(300);
+                Assert("A shortcut that commits a paced word applies after the whole word", modified == "하는 것" && Ui(delegate { return plain.SelectionLength; }) == 4,
+                    new { actual = modified, selection = Ui(delegate { return plain.SelectionLength; }), ctrl = Native.IsDown(0x11) });
                 Ui(delegate { app.Words.Clear(); plain.Clear(); }); Focus(plain); Type("dkssud "); Tap(0x25); Thread.Sleep(120); Tap(0x71); Thread.Sleep(240);
                 Assert("F2 after navigation does not rewrite the previous word", Ui(delegate { return plain.Text; }) == "안녕 ", new { actual = Ui(delegate { return plain.Text; }) });
                 Assert("Raw Input sentinel is active or its compatibility fallback has a healthy hook",
