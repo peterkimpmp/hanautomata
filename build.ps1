@@ -21,7 +21,7 @@ $testResources = @(
     ("/resource:" + (Join-Path $appRoot 'tests/corpora/heldout-korean-1000.tsv') + ",Hanautomata.HeldoutKorean.tsv"),
     ("/resource:" + (Join-Path $appRoot 'tests/corpora/heldout-english-1000.tsv') + ",Hanautomata.HeldoutEnglish.tsv"))
 if ($Test) {
-    & $compiler /nologo /utf8output /target:exe /optimize+ /define:HANAUTOMATA_TESTS /reference:System.Web.Extensions.dll "/out:$OutputDirectory/Hanautomata.Tests.exe" @modelResources @testResources $core (Join-Path $appRoot 'src/PreferenceStore.cs') (Join-Path $appRoot 'tests/CoreTests.cs')
+    & $compiler /nologo /utf8output /target:exe /optimize+ /define:HANAUTOMATA_TESTS /reference:System.Web.Extensions.dll "/out:$OutputDirectory/Hanautomata.Tests.exe" @modelResources @testResources $core (Join-Path $appRoot 'src/Spacing.cs') (Join-Path $appRoot 'src/PreferenceStore.cs') (Join-Path $appRoot 'tests/CoreTests.cs')
     if ($LASTEXITCODE -ne 0) { throw 'Test compilation failed.' }
     & (Join-Path $OutputDirectory 'Hanautomata.Tests.exe')
     if ($LASTEXITCODE -ne 0) { throw 'Core tests failed.' }

@@ -263,6 +263,20 @@ namespace Hanautomata
                 Assert("F2 after Space learns the explicit choice", app.Words.Count == 1, new { count = app.Words.Count });
                 Type("wbs "); Thread.Sleep(200);
                 Assert("Learned swap applies to the next occurrence", Ui(delegate { return plain.Text; }) == "wbs wbs ", new { actual = Ui(delegate { return plain.Text; }) });
+                // Automatic spacing: Space types the corrected text, the first F2 restores the word as typed and nothing is learned.
+                Ui(delegate { app.Words.Clear(); plain.Clear(); }); Focus(plain); Type("gkftndlTek ");
+                string spaced = WaitForText(plain, "할 수 있다 ", 3000);
+                Assert("Space types dependent-noun spacing", spaced == "할 수 있다 ", new { actual = spaced, respacings = app.Input.Respacings });
+                Tap(0x71); string restored = WaitForText(plain, "할수있다 ", 3000);
+                Assert("F2 after automatic spacing restores the typed word", restored == "할수있다 ", new { actual = restored, reverts = app.Input.RespacingReverts });
+                Assert("Undoing automatic spacing learns nothing", app.Words.Count == 0, new { count = app.Words.Count });
+                Type("gkftndlTek "); string declined = WaitForText(plain, "할수있다 할수있다 ", 3000);
+                Assert("A word whose spacing was undone stays as typed", declined == "할수있다 할수있다 ", new { actual = declined });
+                Ui(delegate { plain.Clear(); }); Type("gksmsrjt "); string geot = WaitForText(plain, "하는 것 ", 3000);
+                Assert("Spacing applies to other dependent nouns", geot == "하는 것 ", new { actual = geot });
+                Ui(delegate { app.Input.AutoSpacing = false; plain.Clear(); }); Type("gksmsrjt "); string unspaced = WaitForText(plain, "하는것 ", 3000);
+                Ui(delegate { app.Input.AutoSpacing = true; });
+                Assert("Spacing off types the decided word unchanged", unspaced == "하는것 ", new { actual = unspaced });
                 Ui(delegate { app.Words.Clear(); plain.Clear(); }); Focus(plain); Type("dkssud "); Tap(0x25); Thread.Sleep(120); Tap(0x71); Thread.Sleep(240);
                 Assert("F2 after navigation does not rewrite the previous word", Ui(delegate { return plain.Text; }) == "안녕 ", new { actual = Ui(delegate { return plain.Text; }) });
                 Assert("Raw Input sentinel is active or its compatibility fallback has a healthy hook",

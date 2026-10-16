@@ -73,6 +73,8 @@ Windows에서는 Python·C++·libclang과 Rust 도구가 준비된 PowerShell에
 
 출력 폴더에는 `Hanautomata.Proofreading.exe`(TSF의 stdio UI), `Hanautomata.Proofreading.Preview.exe`(독립 편집기), `proofreading/`(검사기·사전·고지)이 함께 있다. TSF 개발 환경에서는 helper와 `proofreading/`를 해당 DLL과 같은 폴더에 둔다. helper는 AnyCPU이고 검사기는 별도 프로세스라 호스트 비트 수와 분리된다. 실제 x86 호스트 인수는 별도로 확인해야 한다. TSF 패키저와 설치·업데이트 스크립트는 `sha256.json`에 명시된 교정 payload를 지원하며, 기능을 포함할 때는 x64·x86 양쪽의 helper·검사기·사전·대응 소스·고지가 완비되어야 한다. 부분 payload와 목록 밖 파일은 거부한다. [TSF 배치 계약](../tsf/README.md), [개발판 설치 기록](PROOFREADING-INSTALLATION.md).
 
+트레이 앱 0.6.0의 **띄어쓰기 자동 교정**([SPACING.md](SPACING.md))은 이 검사기와 별개다. 검사기·사전 없이 C# 규칙으로 Space 확정 시점에 공백만 넣는다. 트레이는 설치 폴더에 `proofreading/hanautomata-proofread.exe`가 있을 때만 아래 단축키와 메뉴를 켠다. 기본 배포 zip에는 이 묶음이 없다.
+
 Windows 트레이와 TSF는 선택문에 **Ctrl+Shift+F7**을 사용한다. 트레이는 제안을 확인하고 **복사**하는 기능이다. 복사 버튼을 누를 때만 클립보드를 변경하며 원래 앱에서 사용자가 붙여넣는다. UIA 선택에는 원자적 교체 기능이 없어 합성 키로 문서를 덮어쓰지 않는다. TSF는 동일 문서·리비전·범위·원문·보안 상태를 읽기/쓰기 edit session 안에서 확인한 뒤 한 번 적용한다.
 
 ### 장기 실행 프로토콜

@@ -35,6 +35,7 @@ namespace Hanautomata
         internal readonly Composition Composition;
         internal volatile bool Enabled = true;
         internal volatile bool SemicolonShortcut = true;
+        internal volatile bool AutoSpacing = true;
         internal IntPtr TestWindow;
         internal volatile string Recovery = "", LastError = "";
         internal int Commits, CapturedKeys, BypassedKeys;
@@ -46,6 +47,7 @@ namespace Hanautomata
         sealed class CommittedWord
         {
             internal string Raw, Keys, Text, Alternative, Trailing, Context;
+            internal string Unspaced; // the decided text before automatic spacing; F2 restores it once
             internal bool Korean; internal FocusSnapshot Owner; internal long Time;
         }
         CommittedWord lastCommit;
@@ -58,7 +60,9 @@ namespace Hanautomata
         internal volatile bool SentinelActive;
         internal volatile bool SentinelFallback;
         internal volatile int HookCallbacks;
-        internal int RawHardwareKeys, SentinelAlarms, AutoConversions, SwapsAfterSpace, SelectionFlips;
+        internal int RawHardwareKeys, SentinelAlarms, AutoConversions, SwapsAfterSpace, SelectionFlips, Respacings, RespacingReverts;
+        // Words whose automatic spacing the writer undid with F2 stay as typed until the app exits. Memory only, bounded.
+        readonly HashSet<string> respacingDeclined = new HashSet<string>(StringComparer.Ordinal);
 
         internal InputController(FocusMonitor focus, Detector detector)
         {
@@ -253,12 +257,16 @@ namespace Hanautomata
         IntPtr Pass(int code, IntPtr message, IntPtr data)
         { BypassedKeys++; return Native.CallNextHookEx(keyboardHook, code, message, data); }
         IntPtr Eat(int key) { swallowed.Add(key); CapturedKeys++; return new IntPtr(1); }
+        // The text a commit of this decision types: Korean dependent-noun spacing applied unless the writer turned it off or undid it.
+        internal string Spaced(string text)
+        { lock (Sync) return AutoSpacing && !respacingDeclined.Contains(text) ? Spacing.Correct(text) : text; }
         bool Commit(int trailingKey, bool extended, bool keyDownOnly, string literalSuffix = null)
         {
             if (!SameOwner()) { PreservePending(); return false; }
             Decision current = Composition.Current;
-            string text = current.Text;
-            var batch = Native.Unicode(text + (literalSuffix ?? ""));
+            string text = current.Text, typed = Spaced(text);
+            bool respaced = typed != text;
+            var batch = Native.Unicode(typed + (literalSuffix ?? ""));
             if (trailingKey == 0x20) batch.AddRange(Native.Unicode(" "));
             else if (trailingKey > 0)
             {
@@ -273,18 +281,21 @@ namespace Hanautomata
             }
             string raw = Composition.Raw, keys = Composition.Keys, context = Composition.Context;
             string trailing = trailingKey == 0x20 ? " " : (literalSuffix ?? "");
-            bool swappable = current.Text != current.Alternative && (trailingKey == 0x20 || trailingKey == 0) &&
+            bool swappable = (current.Text != current.Alternative || respaced) && (trailingKey == 0x20 || trailingKey == 0) &&
                 (trailing.Length == 0 || !char.IsSurrogate(trailing[0]));
+            // Context and learning keep the decided word; spacing is presentation of that word, not a new choice.
             Composition.AcceptCommit(trailingKey == 0x20);
             Commits++;
+            if (respaced) Respacings++;
             if (current.IsKorean && current.Confidence != ConfidenceLevel.Explicit) AutoConversions++;
-            lastCommit = swappable ? new CommittedWord { Raw = raw, Keys = keys, Text = text, Alternative = current.Alternative, Korean = current.IsKorean,
-                Trailing = trailing, Context = context, Owner = owner, Time = clock.ElapsedMilliseconds } : null;
+            lastCommit = swappable ? new CommittedWord { Raw = raw, Keys = keys, Text = typed, Alternative = current.Alternative, Korean = current.IsKorean,
+                Unspaced = respaced ? text : null, Trailing = trailing, Context = context, Owner = owner, Time = clock.ElapsedMilliseconds } : null;
             if (Composition.Context.Length == 0) owner = null;
             return true;
         }
         // F2 with no live composition: delete the word just committed (plus its trailing space) and insert the other
         // candidate. Only in the same target, within a short window, and only after Space or a literal echo.
+        // After automatic spacing the first F2 restores the word as typed ("할 수 있다" → "할수있다"); the next F2 swaps language as usual.
         bool SwapLastCommit()
         {
             CommittedWord word = lastCommit;
@@ -299,8 +310,16 @@ namespace Hanautomata
                 batch.Add(Native.Key(0x08, false, Native.OutputTag, false));
                 batch.Add(Native.Key(0x08, true, Native.OutputTag, false));
             }
-            batch.AddRange(Native.Unicode(word.Alternative + word.Trailing));
+            batch.AddRange(Native.Unicode((word.Unspaced ?? word.Alternative) + word.Trailing));
             if (!Native.Inject(batch)) { lastCommit = null; LastError = "직전 단어를 바꾸지 못했습니다."; return false; }
+            if (word.Unspaced != null)
+            {
+                // Undo only the spacing: the language decision stands, so nothing is learned and the context is unchanged.
+                if (respacingDeclined.Count < 256) respacingDeclined.Add(word.Unspaced);
+                word.Text = word.Unspaced; word.Unspaced = null; word.Time = clock.ElapsedMilliseconds; RespacingReverts++;
+                if (word.Text == word.Alternative) lastCommit = null;
+                return true;
+            }
             string previous = word.Text; SwapsAfterSpace++;
             word.Text = word.Alternative; word.Alternative = previous; word.Korean = !word.Korean; word.Time = clock.ElapsedMilliseconds;
             Composition.RememberExplicit(word.Raw, word.Keys, word.Korean, word.Context);

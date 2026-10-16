@@ -15,6 +15,7 @@ namespace Hanautomata
         public string[] ExcludedApps { get; set; }
         public bool? LearnChoices { get; set; }
         public bool? SemicolonShortcut { get; set; }
+        public bool? AutoSpacing { get; set; }
         public string Sensitivity { get; set; }
         internal static readonly string DirectoryPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Hanautomata");
         internal static string FilePath { get { return Path.Combine(DirectoryPath, "settings.json"); } }
@@ -77,14 +78,16 @@ namespace Hanautomata
         {
             get { var p = base.CreateParams; p.ExStyle |= 0x08000000 | 0x80 | 0x20; return p; }
         }
-        internal void UpdateCandidate(Decision decision, Point position, bool semicolon)
+        // shown is what Space will type: the decision after automatic spacing.
+        internal void UpdateCandidate(Decision decision, string shown, Point position, bool semicolon)
         {
-            string identity = decision.Text + "|" + decision.Alternative + "|" + decision.Reason + "|" + semicolon;
+            string identity = shown + "|" + decision.Text + "|" + decision.Alternative + "|" + decision.Reason + "|" + semicolon;
             if (last != identity)
             {
-                last = identity; candidate.Text = decision.Text;
+                last = identity; candidate.Text = shown;
                 string evidence = decision.Confidence == ConfidenceLevel.Personal ? (decision.Reason.StartsWith("앞 단어") ? "문맥 학습 · " : "개인 학습 · ") :
                     decision.NeedsConfirmation ? "확인 필요 · " : decision.Confidence == ConfidenceLevel.Pattern ? "음절 추정 · " : "";
+                if (shown != decision.Text) evidence = "띄어쓰기 교정 · " + evidence;
                 hint.Text = evidence + (semicolon ? "; / F2 → " : "F2 → ") + decision.Alternative + "   Space 확정";
             }
             Rectangle screen = Screen.FromPoint(position).WorkingArea;
@@ -97,7 +100,7 @@ namespace Hanautomata
     internal sealed class Dashboard : Form
     {
         internal readonly TextBox Practice;
-        internal readonly Label State, Detail, Recovery, Instructions;
+        internal readonly Label State, Detail, Recovery, Instructions, Hint;
         internal readonly Button Toggle, Reconnect;
         internal bool ClosingPermanently;
         internal Dashboard()
@@ -117,7 +120,7 @@ namespace Hanautomata
                 Location = new Point(32, 264), Size = new Size(694, 122), Font = new Font("Malgun Gothic", 20, FontStyle.Regular, GraphicsUnit.Pixel), BorderStyle = BorderStyle.FixedSingle, ScrollBars = ScrollBars.Vertical };
             Controls.Add(Practice);
             Instructions = AddLabel("", 32, 399, 700, 23, 10, false, Color.FromArgb(55, 70, 94));
-            AddLabel("직접 선택하면 앞 단어와 함께 기억합니다. ‘확인 필요’일 때 ; 또는 F2로 선택하세요.", 32, 430, 700, 23, 9, false, Color.DimGray);
+            Hint = AddLabel("직접 선택하면 앞 단어와 함께 기억합니다. ‘확인 필요’일 때 ; 또는 F2로 선택하세요.", 32, 430, 700, 23, 9, false, Color.DimGray);
             Recovery = AddLabel("", 32, 458, 700, 23, 9, false, Color.FromArgb(138, 81, 18));
             Toggle = new Button { Text = "일시정지  F12", Location = new Point(32, 506), Size = new Size(175, 36), FlatStyle = FlatStyle.Flat, BackColor = Color.White };
             Controls.Add(Toggle);
@@ -194,7 +197,7 @@ namespace Hanautomata
         internal PreeditWindow Preview { get { return preview; } }
         readonly NotifyIcon tray;
         readonly System.Windows.Forms.Timer timer;
-        readonly ToolStripMenuItem enabled, startup, excluded, recovery, learn, semicolon, undoLearning, clearLearning, sensitivity;
+        readonly ToolStripMenuItem enabled, startup, excluded, recovery, learn, semicolon, spacing, undoLearning, clearLearning, sensitivity;
         readonly Icon icon;
         readonly EventWaitHandle stopEvent;
         readonly bool testing;
@@ -212,16 +215,19 @@ namespace Hanautomata
             Words = new WordPreferences { Enabled = settings.LearnChoices ?? true };
             personalStore = testing ? null : new PreferenceStore(Path.Combine(Settings.DirectoryPath, "learned-words.json"), Words);
             Focus = new FocusMonitor(); Engine = new Detector(Words); Input = new InputController(Focus, Engine);
-            Input.ProofreadRequested = delegate { Dashboard.BeginInvoke((Action)delegate { ProofreadingHost.Show(Input, Focus); }); };
+            // The experimental checker is a separate payload (docs/PROOFREADING.md). Without it Ctrl+Shift+F7 reaches the app untouched.
+            bool proofreading = File.Exists(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "proofreading", "hanautomata-proofread.exe"));
+            if (proofreading) Input.ProofreadRequested = delegate { Dashboard.BeginInvoke((Action)delegate { ProofreadingHost.Show(Input, Focus); }); };
             ApplySensitivity(settings.Sensitivity);
             Input.SemicolonShortcut = settings.SemicolonShortcut ?? true;
+            Input.AutoSpacing = settings.AutoSpacing ?? true;
             if (!testing) foreach (string name in settings.ExcludedApps ?? new string[0]) Input.Excluded.Add(name);
             icon = MakeIcon(); Dashboard.Icon = icon;
             var menu = new ContextMenuStrip { Font = new Font("Malgun Gothic", 10) };
             enabled = new ToolStripMenuItem("자동 판별 켜짐", null, delegate { Toggle(); });
             menu.Items.Add(enabled);
             menu.Items.Add("입력 연습 및 상태", null, delegate { ShowDashboard(); });
-            menu.Items.Add("한국어 표기 검사 · Ctrl+Shift+F7 (실험)", null, delegate {
+            if (proofreading) menu.Items.Add("한국어 표기 검사 · Ctrl+Shift+F7 (실험)", null, delegate {
                 MessageBox.Show("검사할 글을 선택한 뒤 Ctrl+Shift+F7을 누르세요. 제안은 직접 선택해서 적용합니다.", "로컬 맞춤법 검사"); });
             excluded = new ToolStripMenuItem("현재 앱에서 사용 안 함", null, delegate { ExcludeCurrent(); }); menu.Items.Add(excluded);
             recovery = new ToolStripMenuItem("미확정 조합 복사", null, delegate { if (Input.Recovery.Length > 0) Clipboard.SetText(Input.Recovery); }); menu.Items.Add(recovery);
@@ -229,6 +235,10 @@ namespace Hanautomata
             semicolon = new ToolStripMenuItem("단어 뒤 ; 로 후보 전환", null, delegate
             { Input.PreservePending(); Input.SemicolonShortcut = !Input.SemicolonShortcut; settings.SemicolonShortcut = Input.SemicolonShortcut; SaveSettings(); });
             menu.Items.Add(semicolon);
+            spacing = new ToolStripMenuItem("띄어쓰기 자동 교정 (할 수 있다 · 하는 것)", null, delegate
+            { Input.AutoSpacing = !Input.AutoSpacing; settings.AutoSpacing = Input.AutoSpacing; SaveSettings(); });
+            spacing.ToolTipText = "Space로 확정할 때 의존 명사와 '-야 하다'를 띄어 씁니다. 확정 직후 F2를 누르면 입력한 그대로 되돌립니다.";
+            menu.Items.Add(spacing);
             learn = new ToolStripMenuItem("개인 선택 기억 사용", null, delegate
             { Input.PreservePending(); Words.Enabled = !Words.Enabled; settings.LearnChoices = Words.Enabled; SaveSettings(); });
             menu.Items.Add(learn);
@@ -257,7 +267,7 @@ namespace Hanautomata
                 StartupStatus state = ReadStartup(); startup.Checked = state.Enabled;
                 startup.Text = state.Healthy ? "Windows 로그인 시 실행" : "Windows 로그인 시 실행 (등록 확인 필요)";
                 startup.ToolTipText = state.Detail; recovery.Enabled = Input.Recovery.Length > 0;
-                semicolon.Checked = Input.SemicolonShortcut; learn.Checked = Words.Enabled;
+                semicolon.Checked = Input.SemicolonShortcut; spacing.Checked = Input.AutoSpacing; learn.Checked = Words.Enabled;
                 foreach (ToolStripMenuItem option in sensitivity.DropDownItems) option.Checked = (string)option.Tag == currentSensitivity;
                 undoLearning.Enabled = Words.CanUndo; clearLearning.Enabled = Words.Count > 0; clearLearning.Text = "개인 학습 초기화 (" + Words.Count + "개)";
                 excluded.Enabled = lastOtherProcess.Length > 0; excluded.Text = (Input.Excluded.Contains(lastOtherProcess) ? "다시 사용: " : "사용 안 함: ") + lastOtherProcess; };
@@ -299,16 +309,17 @@ namespace Hanautomata
             Dashboard.State.Text = !Input.Enabled ? "일시정지 · 기본 입력기를 사용합니다" : active ?
                 (Input.HookHealthy ? "자동 판별 중 · " + snapshot.ProcessName : "키 입력 연결 확인 중 · 자동 복구 대기") : snapshot.Reason;
             Dashboard.Detail.Text = "입력 " + (Input.HardwareKeys + Input.InjectedKeys) + "키 · 확정 " + Input.Commits + "회 · 자동 한글 " + Input.AutoConversions + " · 되돌림 " + Input.SwapsAfterSpace +
-                " · 선택 변환 " + Input.SelectionFlips + " · 개인 학습 " + Words.Count + "개 · 연결 복구 " + Input.HookRestarts + "회" + (Input.SentinelActive ? " · 감시 켜짐" : Input.SentinelFallback ? " · 감시 호환모드" : " · 감시 없음") +
+                " · 선택 변환 " + Input.SelectionFlips + " · 띄어쓰기 " + Input.Respacings + (Input.RespacingReverts > 0 ? "(되돌림 " + Input.RespacingReverts + ")" : "") + " · 개인 학습 " + Words.Count + "개 · 연결 복구 " + Input.HookRestarts + "회" + (Input.SentinelActive ? " · 감시 켜짐" : Input.SentinelFallback ? " · 감시 호환모드" : " · 감시 없음") +
                 " · 민감도 " + (currentSensitivity == "conservative" ? "보수" : currentSensitivity == "aggressive" ? "적극" : "표준") + (Words.Enabled ? " (학습 켜짐)" : " (학습 꺼짐)");
             Dashboard.Instructions.Text = Input.SemicolonShortcut ? "Space 확정 · ; / F2 후보 · 확정 직후 F2 = 직전 단어 바꾸기 · Shift+F2 = 선택 영역 한↔영 · ;; 문자 ; · Esc 취소 · F12 일시정지" : "Space 확정 · F2 후보 바꾸기 · 확정 직후 F2 = 직전 단어 바꾸기 · Shift+F2 = 선택 영역 한↔영 · Esc 조합 취소 · F12 일시정지";
+            Dashboard.Hint.Text = Input.AutoSpacing ? "‘확인 필요’면 ; 또는 F2로 고르세요(기억함). 띄어쓰기 교정 직후 F2 = 입력한 그대로" : "직접 선택하면 앞 단어와 함께 기억합니다. ‘확인 필요’일 때 ; 또는 F2로 선택하세요.";
             Dashboard.Toggle.Text = Input.Enabled ? "일시정지  F12" : "다시 시작  F12";
             Dashboard.Recovery.Text = Input.LastError.Length > 0 ? Input.LastError : Input.Recovery.Length > 0 ? "이동 전 조합이 보관되었습니다. 트레이 메뉴에서 복사할 수 있습니다." : "";
             if (personalStore != null && personalStore.LastError.Length > 0) Dashboard.Recovery.Text = personalStore.LastError;
             tray.Text = Input.Enabled ? "Hanautomata · 자동 판별" : "Hanautomata · 일시정지";
-            Decision candidate = null;
-            lock (Input.Sync) { if (!Input.Composition.IsEmpty) candidate = Input.Composition.Current; }
-            if (fresh && candidate != null) preview.UpdateCandidate(candidate, snapshot.Position, Input.SemicolonShortcut);
+            Decision candidate = null; string shown = null;
+            lock (Input.Sync) { if (!Input.Composition.IsEmpty) { candidate = Input.Composition.Current; shown = Input.Spaced(candidate.Text); } }
+            if (fresh && candidate != null) preview.UpdateCandidate(candidate, shown, snapshot.Position, Input.SemicolonShortcut);
             else preview.HidePreview();
         }
         void ExcludeCurrent()
