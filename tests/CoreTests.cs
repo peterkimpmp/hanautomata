@@ -237,6 +237,84 @@ static class CoreTests
         }
         return rows;
     }
+    static void SpacingTests()
+    {
+        foreach (string[] pair in new[] {
+            // ㄹ 수 있다/없다 — the request that started this rule set, and the evaluation set's holdout cases.
+            new[] { "할수있다", "할 수 있다" }, new[] { "할수있어요", "할 수 있어요" }, new[] { "할수없다", "할 수 없다" },
+            new[] { "할수없어요", "할 수 없어요" }, new[] { "갈수있다", "갈 수 있다" }, new[] { "알수없는", "알 수 없는" },
+            new[] { "먹을수있다", "먹을 수 있다" }, new[] { "될수있으면", "될 수 있으면" }, new[] { "할수밖에없다", "할 수밖에 없다" },
+            new[] { "할수도있다", "할 수도 있다" }, new[] { "할수가없다", "할 수가 없다" }, new[] { "할수는없지만", "할 수는 없지만" },
+            new[] { "그럴수도", "그럴 수도" }, new[] { "할수", "할 수" }, new[] { "수있다", "수 있다" }, new[] { "학생일수있다", "학생일 수 있다" },
+            new[] { "할수있다.", "할 수 있다." }, new[] { "(할수있다)", "(할 수 있다)" }, new[] { "나는 할수있다", "나는 할 수 있다" },
+            new[] { "AI도할수있다", "AI도할 수 있다" }, new[] { "할수있는것", "할 수 있는 것" }, new[] { "할수있을거야", "할 수 있을 거야" },
+            // ㄴ/ㄹ 것 · 거
+            new[] { "하는것", "하는 것" }, new[] { "할것이다", "할 것이다" }, new[] { "먹은것을", "먹은 것을" }, new[] { "할것같다", "할 것 같다" },
+            new[] { "하는것같아요", "하는 것 같아요" }, new[] { "그것같아", "그것 같아" }, new[] { "할것이없다", "할 것이 없다" },
+            new[] { "그런것들", "그런 것들" }, new[] { "만들것", "만들 것" }, new[] { "아닌것이아니다", "아닌 것이 아니다" },
+            new[] { "할거야", "할 거야" }, new[] { "하는거야", "하는 거야" }, new[] { "할거예요", "할 거예요" }, new[] { "할거같아", "할 거 같아" },
+            new[] { "있을거야", "있을 거야" }, new[] { "그런거", "그런 거" }, new[] { "할거", "할 거" }, new[] { "옛날거", "옛날 거" },
+            // ㄹ 때 · 때문 · ㄹ 줄 · ㄴ 적 · 듯
+            new[] { "할때", "할 때" }, new[] { "할때마다", "할 때마다" }, new[] { "어릴때부터", "어릴 때부터" }, new[] { "그것때문에", "그것 때문에" },
+            new[] { "너때문이야", "너 때문이야" }, new[] { "할줄알아", "할 줄 알아" }, new[] { "할줄몰라", "할 줄 몰라" },
+            new[] { "할줄은알지만", "할 줄은 알지만" }, new[] { "본적있어", "본 적 있어" }, new[] { "먹어본적이없다", "먹어본 적이 없다" },
+            new[] { "할듯", "할 듯" }, new[] { "올듯하다", "올 듯하다" }, new[] { "하는듯이", "하는 듯이" },
+            // -어야 하다/되다 · ㄹ 테니 · ㄹ 리 · ㄹ 뻔 · 는 중 · 는 게
+            new[] { "해야한다", "해야 한다" }, new[] { "가야해", "가야 해" }, new[] { "해야돼", "해야 돼" }, new[] { "먹어야할", "먹어야 할" },
+            new[] { "할테니까", "할 테니까" }, new[] { "할텐데", "할 텐데" }, new[] { "할리가없다", "할 리가 없다" }, new[] { "할뻔했다", "할 뻔했다" },
+            new[] { "하는중이다", "하는 중이다" }, new[] { "하는게좋아", "하는 게 좋아" }, new[] { "하는게", "하는 게" }
+        })
+        {
+            Equal(pair[1], Spacing.Correct(pair[0]), "spacing " + pair[0]);
+            Equal(pair[1], Spacing.Correct(pair[1]), "spacing is idempotent " + pair[1]);
+        }
+        // Words that are spelled joined and must never gain a space: endings, nouns that end in an anchor, adverbs.
+        foreach (string word in new[] { "공부할수록", "할수록", "실수없이", "실수가", "말수가없다", "별수없다", "홀수", "수없이", "수없다", "밀수", "열수", "살수",
+            "선거", "선거야", "근거", "자전거", "자전거를", "설거지", "열거", "윤거", "날것", "탈것", "들것", "별것", "군것질", "그것", "이것", "아무것",
+            "먹을거리", "볼거리", "이를테면", "볼때기", "물때", "그때", "이때", "흔적이없다", "인적이없다", "해야겠다", "해야지", "듯하다", "듯이",
+            "나는게임을", "그럴듯한", "반듯이", "번듯한", "불현듯", "준거", "수행준거", "논거를", "실거래", "기술거래", "코드줄수를", "할게요", "할걸", "하는데", "친척", "알거든", "살거라", "조야한", "그것같이", "꽃같이", "멀리가있다", "할", "수", "ㅋㅋ", "" })
+            Equal(word, Spacing.Correct(word), "spacing keeps " + word);
+        // The README and docs/SPACING.md examples: what Space actually types for these keys.
+        var readme = new Detector();
+        foreach (string[] pair in new[] { new[] { "gkftndlTek", "할 수 있다" }, new[] { "gksmsrjt", "하는 것" }, new[] { "gkfrjdi", "할 거야" }, new[] { "godigksek", "해야 한다" } })
+            Equal(pair[1], Spacing.Correct(readme.Decide(pair[0]).Text), "documented spacing example " + pair[0]);
+        // Paced output parts: split after every boundary that more text follows (Notepad drops text right after one in a burst).
+        foreach (string[] pair in new[] {
+            new[] { "할 수 있다 ", "할 |수 |있다 " }, new[] { "e.g. 끝.", "e.|g.| |끝." }, new[] { "hello!", "hello!" }, new[] { "안녕하세요", "안녕하세요" },
+            new[] { "a\r\nb", "a\r\n|b" }, new[] { "", "" }, new[] { "mail@example.com", "mail@|example.|com" } })
+            Equal(pair[1], string.Join("|", OutputSegments.Split(pair[0]).ToArray()), "output parts " + pair[0]);
+        foreach (string[] pair in new[] { new[] { "할 거야 ", "1,3,1" }, new[] { "할수있다 ", "1,4" }, new[] { "hello", "5" }, new[] { " ", "1" }, new[] { "", "" }, new[] { "a. b", "2,1,1" } })
+            Equal(pair[1], string.Join(",", OutputSegments.EraseSteps(pair[0]).ConvertAll(n => n.ToString()).ToArray()), "erase steps " + pair[0]);
+        True(OutputSegments.HasLatinLetter("e.") && OutputSegments.HasLatinLetter("Peter@") && !OutputSegments.HasLatinLetter("할 ") &&
+            !OutputSegments.HasLatinLetter("3.") && !OutputSegments.HasLatinLetter("") && !OutputSegments.HasLatinLetter("Ａ"), "Latin letters set the longer settle");
+        var rules = new System.Collections.Generic.List<string>();
+        Equal("할 수 있다 하는 것", Spacing.Correct("할수있다 하는것", rules), "spacing works per run");
+        Equal("ko-space-su,ko-space-su,ko-space-geot", string.Join(",", rules.ToArray()), "spacing reports one rule per inserted space");
+        string longText = new string('가', Spacing.MaxLength) + "할수있다";
+        Equal(longText, Spacing.Correct(longText), "spacing leaves over-long input untouched");
+        // Precision gate over every embedded Korean Wikipedia word: the reviewed corrections only, and never anything but inserted spaces.
+        var expected = new System.Collections.Generic.Dictionary<string, string> {
+            { "해야한다", "해야 한다" }, { "수있다", "수 있다" }, { "수있는", "수 있는" }, { "살때", "살 때" }, { "볼때", "볼 때" }, { "이때문에", "이 때문에" } };
+        int words = 0, unexpected = 0;
+        using (var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("Hanautomata.KoreanWords.txt.gz"))
+        using (var gzip = new System.IO.Compression.GZipStream(stream, System.IO.Compression.CompressionMode.Decompress))
+        using (var reader = new StreamReader(gzip, Encoding.UTF8))
+        {
+            string word;
+            while ((word = reader.ReadLine()) != null)
+            {
+                if (word.Length == 0 || word[0] == '#') continue;
+                words++;
+                string corrected = Spacing.Correct(word), want;
+                if (corrected.Replace(" ", "") != word) Equal(word, corrected, "spacing only inserts spaces");
+                if (!expected.TryGetValue(word, out want)) want = word;
+                if (corrected != want && unexpected++ < 20) Equal(want, corrected, "spacing over Wikipedia word " + word);
+            }
+        }
+        True(words > 60000, "spacing precision gate read the Korean word list");
+        Equal("0", unexpected.ToString(), "spacing changes no unreviewed Wikipedia word");
+        ReadResourceRows("Hanautomata.HeldoutKorean.tsv", delegate(string[] row) { Equal(row[1], Spacing.Correct(row[1]), "spacing keeps held-out word " + row[1]); });
+    }
     static void ScorerTests()
     {
         var detector = new Detector(); var scorer = detector.Scorer;
@@ -606,6 +684,7 @@ static class CoreTests
             DeveloperAndChatTests();
             ScorerTests();
             FlipTests();
+            SpacingTests();
             True(FocusPolicy.CanCapture(true, false, true, false, true, 100, true), "safe target");
             True(!FocusPolicy.CanCapture(true, true, true, false, true, 100, true), "password bypass");
             True(!FocusPolicy.CanCapture(true, false, false, false, true, 100, true), "read only bypass");
