@@ -80,7 +80,7 @@ jobs:
       - name: Proofreading WinExe pipes without an attached console
         shell: pwsh
         run: |
-          & "$env:WINDIR/Microsoft.NET/Framework64/v4.0.30319/csc.exe" /nologo /target:winexe /main:Hanautomata.ProofreadingProgram /platform:anycpu /optimize+ /out:build/Hanautomata.Proofreading.exe /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Core.dll /reference:System.Web.Extensions.dll src/ProofreadingContract.cs src/ProofreadingWindow.cs
+          & "$env:WINDIR/Microsoft.NET/Framework64/v4.0.30319/csc.exe" /nologo /target:winexe /main:Hanautomata.ProofreadingProgram /platform:anycpu /optimize+ /out:build/Hanautomata.Proofreading.exe /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Core.dll /reference:System.Web.Extensions.dll src\ProofreadingContract.cs src\ProofreadingWindow.cs
           if ($LASTEXITCODE -ne 0) { throw 'Proofreading helper compilation failed' }
           .\tests\TsfProofreadingHelperTests.ps1 -HelperExecutable .\build\Hanautomata.Proofreading.exe
       - name: Portable installation and packaging regression tests
