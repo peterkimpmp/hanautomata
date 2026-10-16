@@ -215,6 +215,7 @@ final class HanautomataInputController: IMKInputController {
         menu.addItem(item("선택한 글자 한↔영 바꾸기  \(Settings.binding(.flip)?.label ?? "")", #selector(flipSelection(_:))))
         menu.addItem(item("최근 세 단어 한↔영 바꾸기  \(Settings.binding(.recent)?.label ?? "")", #selector(flipRecent(_:))))
         menu.addItem(item("클립보드 글자 한↔영 바꾸기", #selector(flipClipboard(_:))))
+        menu.addItem(item("선택 영역 한국어 표기 검사 (실험)", #selector(proofreadSelection(_:))))
         menu.addItem(.separator())
         menu.addItem(item("선택을 기억", #selector(toggleLearning(_:)), on: engine.learningEnabled()))
         menu.addItem(item("학습 일시 중지(기억한 선택은 계속 적용)", #selector(toggleLearningPause(_:)), on: Settings.learningPaused,
@@ -263,6 +264,24 @@ final class HanautomataInputController: IMKInputController {
     }
     @objc func flipRecent(_ sender: Any?) {
         if let client = IMKClient(client()) { Shell.core.run(command: .recent, client: client) }
+    }
+    @objc func proofreadSelection(_ sender: Any?) {
+        guard let original = IMKClient(client()), Shell.core.proofreadingAllowed, !Shell.core.isExcluded(original) else { return }
+        let epoch = Shell.core.proofreadingEpoch
+        let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier
+        let identity = String(describing: ObjectIdentifier(original.base))
+        let read: () -> ProofreadingSelection? = { [weak self] in
+            guard let self, let current = IMKClient(self.client()), current.base === original.base,
+                  Shell.core.proofreadingEpoch == epoch, Shell.core.proofreadingAllowed, !Shell.core.isExcluded(current),
+                  NSWorkspace.shared.frontmostApplication?.processIdentifier == pid,
+                  let range = current.selectedRange(), range.length > 0, range.length <= 4096,
+                  let text = current.text(in: range), text.utf16.count == range.length else { return nil }
+            return ProofreadingSelection(text: text, document: identity, revision: String(epoch), range: range)
+        }
+        ProofreadingPanel.show(target: ProofreadingTarget(read: read, replace: { old, new in
+            guard read() == old else { return false }
+            original.insert(new, replacing: old.range); return true
+        }))
     }
     /// C-COR-06: the clipboard's text flipped between Hangul and QWERTY keys, written back (the user asked for it).
     @objc func flipClipboard(_ sender: Any?) {

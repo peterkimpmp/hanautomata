@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net48</TargetFramework><OutputType>WinExe</OutputType><StartupObject>Hanautomata.ProofreadingPreview</StartupObject><LangVersion>5</LangVersion><AssemblyName>Hanautomata.Proofreading.Preview</AssemblyName><EnableDefaultItems>false</EnableDefaultItems><GenerateAssemblyInfo>false</GenerateAssemblyInfo></PropertyGroup>
+  <ItemGroup><Compile Include="../../../src/ProofreadingContract.cs" /><Compile Include="../../../src/ProofreadingWindow.cs" /><Compile Include="../../ProofreadingPreview.cs" /></ItemGroup>
+  <ItemGroup><Reference Include="System.Windows.Forms" /><Reference Include="System.Drawing" /><Reference Include="System.Web.Extensions" /><PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" /></ItemGroup>
+</Project>

@@ -21,6 +21,9 @@ rust_target() { [ "$1" = arm64 ] && echo aarch64-apple-darwin || echo x86_64-app
 if [ "${1:-}" = "--test" ]; then
     (cd "$root/core" && cargo test --release --quiet)
     mkdir -p "$out"
+    swiftc -swift-version 5 -target "$host-apple-macos14.0" "$here/Sources/ProofreadingModel.swift" \
+        "$here/Tests/Proofreading/main.swift" -o "$out/proofreading-tests"
+    "$out/proofreading-tests"
     swiftc -swift-version 5 -target "$host-apple-macos14.0" "$here/Sources/KeyMap.swift" "$here/Tests/KeyMap/main.swift" \
         -o "$out/keymap-tests"
     "$out/keymap-tests"

@@ -13,7 +13,7 @@ use crate::{edit, shell::Preview};
 #[path = "candidate_window.rs"]
 mod window;
 #[path = "candidate_dispatch.rs"]
-mod dispatch;
+pub(crate) mod dispatch;
 
 const ID: GUID = GUID::from_u128(0x6d194788_a43b_4ee4_b64e_d1ff8e76e81c);
 const ALL_CHANGED: u32 = TF_CLUIE_DOCUMENTMGR | TF_CLUIE_COUNT | TF_CLUIE_SELECTION

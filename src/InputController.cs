@@ -17,6 +17,7 @@ namespace Hanautomata
         const uint ReconnectMessage = 0x8001, QuitMessage = 0x12;
         const long SwapWindowMs = 15000;
         internal readonly object Sync = new object();
+        internal Action ProofreadRequested;
         readonly FocusMonitor focus;
         readonly Native.HookProc keyboardProc, mouseProc;
         readonly Native.WinEventProc focusProc;
@@ -366,6 +367,8 @@ namespace Hanautomata
                     }
                     lastCommit = null; focus.Invalidate(); return Pass(code, message, data);
                 }
+                if (key == 0x76 && ctrl && Native.IsDown(0x10) && !alt && !win && Composition.IsEmpty && ProofreadRequested != null)
+                { if (!swallowed.Contains(releaseKey)) ProofreadRequested(); return Eat(releaseKey); }
                 if (ctrl || alt || win) { LastBypass = "shortcut-modifier"; PreservePending(); focus.Invalidate(); return Pass(code, message, data); }
                 if (key == 0x10 || key == 0xa0 || key == 0xa1) return Pass(code, message, data);
                 if (key == 0x71)

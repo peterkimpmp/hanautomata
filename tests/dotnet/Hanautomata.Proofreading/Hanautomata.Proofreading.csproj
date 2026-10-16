@@ -1,0 +1,4 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net9.0</TargetFramework><OutputType>Exe</OutputType><LangVersion>5</LangVersion><EnableDefaultItems>false</EnableDefaultItems><GenerateAssemblyInfo>false</GenerateAssemblyInfo></PropertyGroup>
+  <ItemGroup><Compile Include="../../../src/ProofreadingContract.cs" /><Compile Include="Program.cs" /></ItemGroup>
+</Project>

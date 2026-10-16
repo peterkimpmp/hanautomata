@@ -146,6 +146,27 @@ final class Harness {
     }
 }
 
+// Proofreading is only allowed on committed text and is invalidated by focus epochs.
+let proof = Harness("proofreading")
+let proofBuffer = proof.client()
+let proofEpoch = proof.core.proofreadingEpoch
+check(proof.core.proofreadingAllowed, "committed field permits explicit proofreading")
+proof.type("gks", proofBuffer)
+check(!proof.core.proofreadingAllowed, "active composition excludes proofreading")
+proof.key(Code.space, [], proofBuffer)
+check(proof.core.proofreadingAllowed, "commit permits proofreading again")
+proof.core.secureInput = { true }
+check(!proof.core.proofreadingAllowed, "secure input excludes proofreading")
+proof.core.secureInput = { false }
+proof.core.setPaused(true, client: proofBuffer)
+check(!proof.core.proofreadingAllowed, "paused input method excludes proofreading")
+proof.core.setPaused(false, client: proofBuffer)
+proof.core.deactivate(proofBuffer)
+check(proof.core.proofreadingEpoch != proofEpoch, "focus leave invalidates proofreading snapshot")
+let deactivatedEpoch = proof.core.proofreadingEpoch
+proof.core.activate(proofBuffer, capsLocked: false)
+check(proof.core.proofreadingEpoch != deactivatedEpoch, "reactivation never revives an old snapshot")
+
 // Composition and Space commit.
 let h = Harness("main")
 var b = h.client()

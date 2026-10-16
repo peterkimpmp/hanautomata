@@ -248,6 +248,20 @@ Microsoft의 [파이프 권한](https://learn.microsoft.com/en-us/windows/win32/
 
 W-14의 권한 상승 정책은 입력 자체를 차단하지 않고 새 선택 학습과 진단 기록을 끕니다. 비밀번호·읽기 전용·트레이 공존 등의 별도 키 통과 정책은 계속 적용합니다. 권한 토큰 조회 실패도 기록 허용으로 해석하지 않습니다. 비학습 상태는 서비스 활성화 때 정하고, 비공개 필드에서 일반 필드로 이동해도 해제하지 않습니다. 공통 로그는 경로 조회·파일 쓰기 전에 차단합니다. 설정의 학습 옵션이나 개인 학습 파일을 수정하지 않습니다. 일반/AppContainer 호스트를 권한 상승 호스트로 일괄 취급하지 않으며, AppContainer 영속 학습의 별도 제약은 유지합니다. 이는 개발 구현이며 실제 관리자 앱의 활성화·입력과 보안 데스크톱의 별도 정책/시험을 통과했다는 뜻은 아닙니다.
 
+### 맞춤법 개발 payload 포함
+
+맞춤법 개발판은 각 `x64/`·`x86/` DLL 옆에 `Hanautomata.Proofreading.exe`와 완전한 `proofreading/` 폴더가 필요하다. 검사기는 별도 x64 프로세스이므로 x64 Windows에서 같은 검사기 묶음을 두 경로에 둔다. 기존 여섯 파일의 기본 설치 형식도 유지한다.
+
+설치 source를 새 폴더에 준비할 때 기존 DLL·setup·설정 UI 여섯 파일과 두 비트수의 helper·검사기·사전·대응 소스·고지를 복사하고, **모든 배포 파일**의 상대 경로와 SHA-256을 `sha256.json`에 기록한다. 독립 Preview 편집기는 설치하지 않는다. `payload.ps1`은 두 경로의 필수 파일, 해시, 안전한 상대 경로와 디렉터리 junction 여부를 검사한 뒤 목록에 있는 파일만 복사한다. 사전·helper 일부가 빠지거나 새 파일을 manifest에 등록하지 않으면 거부한다. `package.ps1`과 두 설치 경로가 같은 검증을 사용한다.
+
+```powershell
+.\tests\TsfProofreadingPayloadTests.ps1
+.\tsf\update-machine.ps1 -Source <검증한-source-폴더> -Revision <새-revision> -CheckOnly
+# 위 검사 후 일반적인 관리자 PowerShell에서 같은 명령의 -CheckOnly를 빼고 실행한다.
+```
+
+로드된 이전 DLL을 덮어쓰지 않고 새 revision을 등록한다. 사용자 계정의 `enable-user` 및 `selftest-registered`는 해당 revision의 setup으로 확인한다. 기존 앱은 이전 DLL을 계속 사용할 수 있어 저장 후 다시 열어야 하며, 설치 검증은 실제 문서 교정·Undo 인수를 대신하지 않는다.
+
 ### D2 런타임 수정본 적용
 
 2026-10-12 실제 Word 시험에서 서비스가 추가 활성화될 때 첫 글자가 사라지는 결함을 확인했다. Windows는 한 프로세스에 여러 TSF 서비스를 만들 수 있으므로 조합 엔진을 서비스별로 분리했다. 회귀 검사와 실제 앱 재시험의 범위는 [D2 검증 기록](D2-VALIDATION.md)에 남긴다. S0의 학습 파일 저장은 아직 없으며, 같은 파일을 읽는 것과 조합 상태를 공유하는 것은 구분한다.

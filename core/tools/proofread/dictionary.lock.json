@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "id": "hunspell-ko-0.7.94-c7252e2f6bf4",
+  "version": "0.7.94",
+  "license": "GPL-3.0-or-later; preserve upstream per-file notices",
+  "upstream": "https://github.com/spellcheck-ko/hunspell-dict-ko",
+  "source_commit": "07c339220d92ce06ccbae62a345c7314a7e724ce",
+  "source_url": "https://github.com/spellcheck-ko/hunspell-dict-ko/tree/07c339220d92ce06ccbae62a345c7314a7e724ce",
+  "source_archive": {
+    "url": "https://codeload.github.com/spellcheck-ko/hunspell-dict-ko/zip/07c339220d92ce06ccbae62a345c7314a7e724ce",
+    "size": 16367801,
+    "sha256": "935cdf0a0db5b83a83fac9a2d2fada66770f7e5933c31d242989f151be2b88d3"
+  },
+  "archive": {
+    "url": "https://github.com/spellcheck-ko/hunspell-dict-ko/releases/download/0.7.94/ko-aff-dic-0.7.94.zip",
+    "size": 897723,
+    "sha256": "c7252e2f6bf421e081a457ca007cd8a304ee2045947edba47b367db780e63c48",
+    "prefix": "ko-aff-dic-0.7.94/"
+  },
+  "files": [
+    {"name":"ko.aff","size":11094418,"sha256":"7b8930ce1357691591a3c38afc9cba787ec6dce0e30d0438bd156c4b4c94dbdf"},
+    {"name":"ko.dic","size":2864524,"sha256":"14117a72811ed6a083ed374ceb728b0846a689da6f4dbfe0a84d3b3bce124e80"},
+    {"name":"LICENSE.md","size":2598,"sha256":"3e81dd90f6d8877ccb2ed2b262ce72ee8a6ccf3a21179a8949abf0d85ac7fda0"},
+    {"name":"LICENSE.GPL-3","size":35147,"sha256":"8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903"}
+  ]
+}

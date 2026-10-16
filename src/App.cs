@@ -212,6 +212,7 @@ namespace Hanautomata
             Words = new WordPreferences { Enabled = settings.LearnChoices ?? true };
             personalStore = testing ? null : new PreferenceStore(Path.Combine(Settings.DirectoryPath, "learned-words.json"), Words);
             Focus = new FocusMonitor(); Engine = new Detector(Words); Input = new InputController(Focus, Engine);
+            Input.ProofreadRequested = delegate { Dashboard.BeginInvoke((Action)delegate { ProofreadingHost.Show(Input, Focus); }); };
             ApplySensitivity(settings.Sensitivity);
             Input.SemicolonShortcut = settings.SemicolonShortcut ?? true;
             if (!testing) foreach (string name in settings.ExcludedApps ?? new string[0]) Input.Excluded.Add(name);
@@ -220,6 +221,8 @@ namespace Hanautomata
             enabled = new ToolStripMenuItem("자동 판별 켜짐", null, delegate { Toggle(); });
             menu.Items.Add(enabled);
             menu.Items.Add("입력 연습 및 상태", null, delegate { ShowDashboard(); });
+            menu.Items.Add("한국어 표기 검사 · Ctrl+Shift+F7 (실험)", null, delegate {
+                MessageBox.Show("검사할 글을 선택한 뒤 Ctrl+Shift+F7을 누르세요. 제안은 직접 선택해서 적용합니다.", "로컬 맞춤법 검사"); });
             excluded = new ToolStripMenuItem("현재 앱에서 사용 안 함", null, delegate { ExcludeCurrent(); }); menu.Items.Add(excluded);
             recovery = new ToolStripMenuItem("미확정 조합 복사", null, delegate { if (Input.Recovery.Length > 0) Clipboard.SetText(Input.Recovery); }); menu.Items.Add(recovery);
             menu.Items.Add(new ToolStripSeparator());

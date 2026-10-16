@@ -2,6 +2,10 @@ import Carbon
 import Cocoa
 import InputMethodKit
 
+if CommandLine.arguments.contains("--proofreading-demo") || Bundle.main.object(forInfoDictionaryKey: "HanautomataProofreadingDemo") as? Bool == true {
+    let demo = ProofreadingDemo(); withExtendedLifetime(demo) { demo.run() }; exit(0)
+}
+
 // `Hanautomata --register` (run by install.sh) registers the bundle with the input-source database and enables the
 // automatic mode, so it appears in the input menu without opening System Settings. `--unregister` disables every mode
 // (run by uninstall.sh).

@@ -41,6 +41,8 @@ pub mod registration;
 #[cfg(windows)]
 mod service;
 #[cfg(windows)]
+mod proofreading;
+#[cfg(windows)]
 pub mod system;
 
 #[cfg(all(windows, test))]

@@ -1,0 +1,284 @@
+{
+  "date": "2026-10-16",
+  "host": {
+    "cpu": "Apple M5",
+    "os": "macOS 26.6.2",
+    "target": "aarch64-apple-darwin",
+    "rustc": "1.96.0"
+  },
+  "dictionary_lock": "../dictionary.lock.json",
+  "before_request_cache": {
+    "cases": [
+      {
+        "diagnostics": [],
+        "ms": 0.028583,
+        "text": "안녕하세요"
+      },
+      {
+        "diagnostics": [],
+        "ms": 0.001958,
+        "text": "돼요"
+      },
+      {
+        "diagnostics": [],
+        "ms": 0.006917,
+        "text": "됐다"
+      },
+      {
+        "diagnostics": [],
+        "ms": 0.002041,
+        "text": "학교에"
+      },
+      {
+        "diagnostics": [],
+        "ms": 0.023041,
+        "text": "먹었습니다"
+      },
+      {
+        "diagnostics": [],
+        "ms": 0.001958,
+        "text": "되요"
+      },
+      {
+        "diagnostics": [
+          {
+            "kind": "unknown_word",
+            "normalized": "됬다",
+            "original": "됬다",
+            "suggestions": [
+              "됐다",
+              "되다",
+              "뎄다"
+            ],
+            "utf16": {
+              "end": 2,
+              "start": 0
+            },
+            "utf8": {
+              "end": 6,
+              "start": 0
+            }
+          }
+        ],
+        "ms": 1.18075,
+        "text": "됬다"
+      },
+      {
+        "diagnostics": [
+          {
+            "kind": "unknown_word",
+            "normalized": "웬지",
+            "original": "웬지",
+            "suggestions": [
+              "왠지",
+              "웨지",
+              "웨진"
+            ],
+            "utf16": {
+              "end": 2,
+              "start": 0
+            },
+            "utf8": {
+              "end": 6,
+              "start": 0
+            }
+          }
+        ],
+        "ms": 0.874041,
+        "text": "웬지"
+      },
+      {
+        "diagnostics": [
+          {
+            "kind": "unknown_word",
+            "normalized": "할수있다",
+            "original": "할수있다",
+            "suggestions": [
+              "밀수입하다"
+            ],
+            "utf16": {
+              "end": 4,
+              "start": 0
+            },
+            "utf8": {
+              "end": 12,
+              "start": 0
+            }
+          }
+        ],
+        "ms": 40.961,
+        "text": "할수있다"
+      },
+      {
+        "diagnostics": [
+          {
+            "kind": "unknown_word",
+            "normalized": "개발됬다",
+            "original": "개발됬다",
+            "suggestions": [
+              "개발됐다",
+              "계발됐다",
+              "개발되다"
+            ],
+            "utf16": {
+              "end": 4,
+              "start": 0
+            },
+            "utf8": {
+              "end": 12,
+              "start": 0
+            }
+          }
+        ],
+        "ms": 52.173249999999996,
+        "text": "개발됬다"
+      }
+    ],
+    "label": "synthetic observation; not general accuracy or device comparison",
+    "load_ms": 183.611833,
+    "warm": {
+      "chars": 280,
+      "max_ms": 538.9765,
+      "p50_ms": 534.266417,
+      "p95_ms": 538.253667,
+      "runs": 30
+    }
+  },
+  "after_request_cache": {
+    "cases": [
+      {
+        "diagnostics": [],
+        "ms": 0.042459000000000004,
+        "text": "안녕하세요"
+      },
+      {
+        "diagnostics": [],
+        "ms": 0.002,
+        "text": "돼요"
+      },
+      {
+        "diagnostics": [],
+        "ms": 0.00575,
+        "text": "됐다"
+      },
+      {
+        "diagnostics": [],
+        "ms": 0.0022500000000000003,
+        "text": "학교에"
+      },
+      {
+        "diagnostics": [],
+        "ms": 0.012958,
+        "text": "먹었습니다"
+      },
+      {
+        "diagnostics": [],
+        "ms": 0.0020829999999999998,
+        "text": "되요"
+      },
+      {
+        "diagnostics": [
+          {
+            "kind": "unknown_word",
+            "normalized": "됬다",
+            "original": "됬다",
+            "suggestions": [
+              "됐다",
+              "되다",
+              "뎄다"
+            ],
+            "utf16": {
+              "end": 2,
+              "start": 0
+            },
+            "utf8": {
+              "end": 6,
+              "start": 0
+            }
+          }
+        ],
+        "ms": 0.953083,
+        "text": "됬다"
+      },
+      {
+        "diagnostics": [
+          {
+            "kind": "unknown_word",
+            "normalized": "웬지",
+            "original": "웬지",
+            "suggestions": [
+              "왠지",
+              "웨지",
+              "웨진"
+            ],
+            "utf16": {
+              "end": 2,
+              "start": 0
+            },
+            "utf8": {
+              "end": 6,
+              "start": 0
+            }
+          }
+        ],
+        "ms": 0.727292,
+        "text": "웬지"
+      },
+      {
+        "diagnostics": [
+          {
+            "kind": "unknown_word",
+            "normalized": "할수있다",
+            "original": "할수있다",
+            "suggestions": [
+              "밀수입하다"
+            ],
+            "utf16": {
+              "end": 4,
+              "start": 0
+            },
+            "utf8": {
+              "end": 12,
+              "start": 0
+            }
+          }
+        ],
+        "ms": 35.158792,
+        "text": "할수있다"
+      },
+      {
+        "diagnostics": [
+          {
+            "kind": "unknown_word",
+            "normalized": "개발됬다",
+            "original": "개발됬다",
+            "suggestions": [
+              "개발됐다",
+              "계발됐다",
+              "개발되다"
+            ],
+            "utf16": {
+              "end": 4,
+              "start": 0
+            },
+            "utf8": {
+              "end": 12,
+              "start": 0
+            }
+          }
+        ],
+        "ms": 51.767167,
+        "text": "개발됬다"
+      }
+    ],
+    "label": "synthetic observation; not general accuracy or device comparison",
+    "load_ms": 182.77933299999998,
+    "warm": {
+      "chars": 280,
+      "max_ms": 53.691625,
+      "p50_ms": 53.333999999999996,
+      "p95_ms": 53.503707999999996,
+      "runs": 30
+    }
+  }
+}

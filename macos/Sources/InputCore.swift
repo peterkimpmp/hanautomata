@@ -169,6 +169,8 @@ final class InputCore {
     private var recordingOff = false
     /// The app of the active client, for per-app modes and profiles.
     private(set) var activeApp = ""
+    private(set) var proofreadingEpoch: UInt64 = 0
+    var proofreadingAllowed: Bool { !secureInput() && !engine.paused() && !engine.isComposing() && !hasMarked && choice == nil }
     /// Esc switched to the English mode (vi mode); the switch key returns to this mode (C-MOD-07).
     private(set) var viReturn: InputMode?
     /// An app activation is setting its remembered or start mode: not a choice to save as the user's mode.
@@ -198,6 +200,7 @@ final class InputCore {
     // MARK: Client lifecycle
 
     func activate(_ client: TextClient, capsLocked: Bool) {
+        proofreadingEpoch &+= 1
         shiftSpace.reset()
         resetTaps()
         caps.sync(locked: capsLocked)
@@ -226,6 +229,7 @@ final class InputCore {
     }
 
     func deactivate(_ client: TextClient?) {
+        proofreadingEpoch &+= 1
         commitPending(client)
         choice = nil
         feedback?.hide()

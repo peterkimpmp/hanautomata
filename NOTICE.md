@@ -2,6 +2,8 @@
 
 이 저장소의 코드(`src/`·`core/`·`ffi/`·`tsf/`·`macos/`·`tests/`·스크립트)는 [MIT](LICENSE)입니다. 실행 파일에 들어가는 제3자 코드는 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)에 있습니다. 아래 데이터 파일은 출처별로 조건이 다릅니다.
 
+독립 맞춤법 CLI 개발판은 별도 구성입니다. `hunspell-rs`(Apache-2.0), `hunspell-sys`(MIT OR Apache-2.0)와 그 안의 Hunspell 1.7.1(MPL-1.1 선택), 추가 Rust 의존성을 사용합니다. 고지는 `core/tools/proofread/write_notices.py`로 해당 빌드에 맞게 생성합니다. 별도 다운로드하는 한국어 사전 0.7.94(`ko.aff`, `ko.dic`)은 GPL-3.0-or-later 고지와 원천별 조건을 따르며 MIT 데이터가 아닙니다. [버전·해시·원천](core/tools/proofread/dictionary.lock.json), [빌드·배포 경계](docs/PROOFREADING.md)를 참고하세요.
+
 | 파일 | 내용 | 출처 | 조건 |
 |---|---|---|---|
 | `data/korean-lm.txt.gz` | 한글 음절 unigram·bigram log10 확률표(집계만 · 문장·단어 없음) | 한국어 위키백과 덤프 `kowiki-latest-pages-articles.xml.bz2`(2026-10-01판) 압축 스트림 앞 250 MB → 문서 94,575개 · 음절 1억 2,503만 | 위키백과 본문은 [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). 이 집계표도 같은 조건으로 배포하며, 저작자 표시는 "Wikipedia contributors" |

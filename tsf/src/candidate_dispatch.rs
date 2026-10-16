@@ -12,8 +12,15 @@ struct Queue {
     tasks: RefCell<VecDeque<Task>>, nonce: usize, held: Cell<u32>, window: Cell<HWND>,
     failed: RefCell<Option<Rc<dyn Fn()>>>,
 }
-pub(super) struct Dispatcher { queue: Rc<Queue>, class: Vec<u16>, instance: HINSTANCE }
-pub(super) struct Hold(Rc<Queue>);
+pub(crate) struct Dispatcher { queue: Rc<Queue>, class: Vec<u16>, instance: HINSTANCE }
+pub(crate) struct Hold(Rc<Queue>);
+/// A numeric HWND/nonce only: no apartment interface or Rust pointer crosses threads.
+pub(crate) struct Wake { window: isize, nonce: usize }
+impl Wake {
+    pub fn wake(self) {
+        unsafe { let _ = PostMessageW(Some(HWND(self.window as *mut _)), RUN, WPARAM(self.nonce), LPARAM(0)); }
+    }
+}
 impl Drop for Hold {
     fn drop(&mut self) {
         self.0.held.set(self.0.held.get() - 1);
@@ -66,6 +73,10 @@ impl Dispatcher {
     pub fn enqueue(&self, task: impl FnOnce() + 'static) -> Result<()> {
         self.queue.tasks.borrow_mut().push_back(Box::new(task));
         self.wake()
+    }
+    pub fn defer(&self, task: impl FnOnce() + 'static) -> Wake {
+        self.queue.tasks.borrow_mut().push_back(Box::new(task));
+        Wake { window: self.queue.window.get().0 as isize, nonce: self.queue.nonce }
     }
     pub fn on_failure(&self, handler: impl Fn() + 'static) { *self.queue.failed.borrow_mut() = Some(Rc::new(handler)); }
     pub fn wake(&self) -> Result<()> {
@@ -150,6 +161,17 @@ unsafe extern "system" fn procedure(window: HWND, message: u32, wp: WPARAM, lp: 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn deferred_work_waits_for_cross_thread_wake_and_can_be_cancelled() {
+        let d = Dispatcher::new().unwrap(); let count = Rc::new(Cell::new(0)); let seen = count.clone();
+        let wake = d.defer(move || seen.set(1));
+        d.drain_for_test(); assert_eq!(count.get(), 0);
+        std::thread::spawn(move || wake.wake()).join().unwrap();
+        d.drain_for_test(); assert_eq!(count.get(), 1);
+        let seen = count.clone(); let wake = d.defer(move || seen.set(2));
+        d.cancel(); std::thread::spawn(move || wake.wake()).join().unwrap();
+        d.drain_for_test(); assert_eq!(count.get(), 1);
+    }
     #[test]
     fn candidate_dispatch_defers_while_held_and_cancellation_drops_work() {
         let d = Dispatcher::new().unwrap();

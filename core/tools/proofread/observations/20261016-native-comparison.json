@@ -1,0 +1,3616 @@
+{
+  "schema_version": 1,
+  "corpus_sha256": "0e0539306ce56d0da6abf0f95407cc27fe0262bc8d81208f50169b9b198a0197",
+  "platform": "macOS-26.6.2-arm64-arm-64bit",
+  "machine": "arm64",
+  "elapsed_seconds": 66.262015167,
+  "caveats": [
+    "Synthetic developer-labeled data; no independent human review.",
+    "Five rule-development positives excluded from holdout.",
+    "Precision/recall are sentence-level; top-k requires an exact accepted full sentence.",
+    "Top-k accepts any single-diagnostic candidate at rank <= k; not a global sentence ranking.",
+    "Kiwi is a raw spacing baseline, not a safety-equivalent replacement.",
+    "Native RSS is sampled at 5ms on macOS; Kiwi RSS is the OS process high-water mark, including Python/model. Not equivalent measurements."
+  ],
+  "engines": {
+    "hunspell": {
+      "cold_ms": 185.12245799999994,
+      "peak_sampled_worker_rss_bytes": 66813952,
+      "rows": [
+        {
+          "id": "normal-greeting",
+          "group": "greeting",
+          "split": "evaluation",
+          "text": "안녕하세요. 오늘도 좋은 하루 보내세요.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.337666999999936,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-thanks",
+          "group": "thanks",
+          "split": "evaluation",
+          "text": "도와주셔서 감사합니다.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.299708999999987,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-meeting",
+          "group": "meeting",
+          "split": "evaluation",
+          "text": "회의는 내일 오전에 시작합니다.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.2986670000000355,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-school",
+          "group": "school",
+          "split": "evaluation",
+          "text": "아이가 학교에 갔습니다.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.306665999999961,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-meal",
+          "group": "meal",
+          "split": "evaluation",
+          "text": "친구와 점심을 먹었습니다.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.295749999999933,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-weather",
+          "group": "weather",
+          "split": "evaluation",
+          "text": "오늘은 비가 많이 옵니다.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 5.287541000000062,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-request",
+          "group": "request",
+          "split": "evaluation",
+          "text": "자료를 확인해 주세요.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.3269999999999715,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-report",
+          "group": "report",
+          "split": "evaluation",
+          "text": "보고서를 작성했습니다.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.317750000000011,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-travel",
+          "group": "travel",
+          "split": "evaluation",
+          "text": "기차를 타고 부산에 갑니다.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 5.635708000000017,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-book",
+          "group": "book",
+          "split": "evaluation",
+          "text": "책을 읽는 시간이 즐겁습니다.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 5.234792000000099,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-family",
+          "group": "family",
+          "split": "evaluation",
+          "text": "주말에 가족을 만났습니다.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.377916000000039,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-time",
+          "group": "time",
+          "split": "evaluation",
+          "text": "아직 시간이 많이 남았습니다.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.342624999999935,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-permission",
+          "group": "permission",
+          "split": "evaluation",
+          "text": "여기에 앉아도 돼요.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.314083999999998,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-contraction",
+          "group": "contraction",
+          "split": "evaluation",
+          "text": "이제 준비가 됐다.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.3069169999999675,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-stem",
+          "group": "stem",
+          "split": "evaluation",
+          "text": "잘되면 다시 연락하겠습니다.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.2992499999999785,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-question",
+          "group": "question",
+          "split": "evaluation",
+          "text": "언제 다시 만나게 되나요?",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.28850000000003,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-ability",
+          "group": "ability",
+          "split": "evaluation",
+          "text": "나는 할 수 있다.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.298833999999975,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-inability",
+          "group": "inability",
+          "split": "evaluation",
+          "text": "지금은 할 수 없어요.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.292624999999941,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-gradual",
+          "group": "gradual",
+          "split": "evaluation",
+          "text": "공부할수록 재미있다.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.286499999999973,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-because",
+          "group": "because",
+          "split": "evaluation",
+          "text": "왠지 기분이 좋습니다.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 5.333334000000023,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-retrospective",
+          "group": "retrospective",
+          "split": "evaluation",
+          "text": "키가 얼마나 크던지 놀랐다.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 5.338999999999983,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-unexpected",
+          "group": "unexpected",
+          "split": "evaluation",
+          "text": "웬 일이 이렇게 많나요?",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.287708000000003,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-amount",
+          "group": "amount",
+          "split": "evaluation",
+          "text": "며칠 동안 기다렸습니다.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.293832999999971,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-decision",
+          "group": "decision",
+          "split": "evaluation",
+          "text": "이번 달에는 쉬기로 했어요.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.287083000000027,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-opinion",
+          "group": "opinion",
+          "split": "evaluation",
+          "text": "저는 그렇게 생각합니다.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 5.153583000000017,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-schedule",
+          "group": "schedule",
+          "split": "evaluation",
+          "text": "일정을 바꾸기 어렵습니다.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.298375000000078,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-warmth",
+          "group": "warmth",
+          "split": "evaluation",
+          "text": "따뜻한 물을 마셨습니다.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.000167000000056,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-help",
+          "group": "help",
+          "split": "evaluation",
+          "text": "무엇을 도와드릴까요?",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 5.6007089999999815,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-nature",
+          "group": "nature",
+          "split": "evaluation",
+          "text": "나뭇잎이 바람에 흔들립니다.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.192292000000044,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-quality",
+          "group": "quality",
+          "split": "evaluation",
+          "text": "정확한 내용을 확인해야 합니다.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.3433330000000065,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-boundary",
+          "group": "boundary",
+          "split": "evaluation",
+          "text": "할 수밖에 없는 일입니다.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.323666000000006,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-name",
+          "group": "name",
+          "split": "evaluation",
+          "text": "홍길동은 서울에 살고 있습니다.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.299916999999988,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-compound",
+          "group": "compound",
+          "split": "evaluation",
+          "text": "우리나라의 가을 하늘은 높다.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.296458000000005,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-counterexample",
+          "group": "counterexample",
+          "split": "evaluation",
+          "text": "그 일은 내가 할 일이 아니다.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.29258399999999,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-punctuation",
+          "group": "punctuation",
+          "split": "evaluation",
+          "text": "학교에, 집에, 도서관에 갔다.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.293875000000004,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-linebreak",
+          "group": "linebreak",
+          "split": "evaluation",
+          "text": "안녕하세요.\r\n확인해 주세요.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.2945840000000475,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-empty",
+          "group": "empty",
+          "split": "evaluation",
+          "text": "",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.291999999999964,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-emoji",
+          "group": "emoji",
+          "split": "evaluation",
+          "text": "😀 안녕하세요. 좋은 하루 보내세요.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": true,
+          "limited": false,
+          "ms": 6.291874999999947,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-jamo",
+          "group": "jamo",
+          "split": "evaluation",
+          "text": "ㅋㅋ ㅎㅎ ㄱ ㅏ",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": true,
+          "limited": false,
+          "ms": 5.846958000000013,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-mixed",
+          "group": "mixed",
+          "split": "evaluation",
+          "text": "API와 Rust를 함께 사용합니다.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": true,
+          "limited": false,
+          "ms": 6.316290999999974,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-code",
+          "group": "code",
+          "split": "evaluation",
+          "text": "`됬다`와 `되요`는 예제 문자열입니다.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": true,
+          "limited": false,
+          "ms": 6.315208000000072,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-url",
+          "group": "url",
+          "split": "evaluation",
+          "text": "https://example.org/됬다 user@example.org",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": true,
+          "limited": false,
+          "ms": 6.295584000000076,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-identifier",
+          "group": "identifier",
+          "split": "evaluation",
+          "text": "foo_됬다 v2.0 /tmp/됬다.txt",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": true,
+          "limited": false,
+          "ms": 6.2955829999999935,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-number",
+          "group": "number",
+          "split": "evaluation",
+          "text": "2026년 10월 16일 오후 3시",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": true,
+          "limited": false,
+          "ms": 6.292999999999993,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-english",
+          "group": "english",
+          "split": "evaluation",
+          "text": "Hello world. Please keep this unchanged.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": true,
+          "limited": false,
+          "ms": 5.582375000000028,
+          "diagnostics": []
+        },
+        {
+          "id": "error-doe-dev",
+          "group": "doe-dev",
+          "split": "rule-development",
+          "text": "이제 되요.",
+          "gold": [
+            "이제 돼요."
+          ],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.301167000000052,
+          "diagnostics": []
+        },
+        {
+          "id": "error-su-dev",
+          "group": "su-dev",
+          "split": "rule-development",
+          "text": "나는 할수있다.",
+          "gold": [
+            "나는 할 수 있다."
+          ],
+          "protected": [],
+          "flagged": true,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 48.620416999999975,
+          "diagnostics": [
+            {
+              "kind": "unknown_word",
+              "normalized": "할수있다",
+              "original": "할수있다",
+              "suggestions": [
+                "밀수입하다"
+              ],
+              "utf16": {
+                "end": 7,
+                "start": 3
+              },
+              "utf8": {
+                "end": 19,
+                "start": 7
+              }
+            }
+          ]
+        },
+        {
+          "id": "error-su-polite",
+          "group": "su-polite",
+          "split": "rule-development",
+          "text": "지금도 할수있어요.",
+          "gold": [
+            "지금도 할 수 있어요."
+          ],
+          "protected": [],
+          "flagged": true,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 56.26266700000004,
+          "diagnostics": [
+            {
+              "kind": "unknown_word",
+              "normalized": "할수있어요",
+              "original": "할수있어요",
+              "suggestions": [
+                "하루살이어요"
+              ],
+              "utf16": {
+                "end": 9,
+                "start": 4
+              },
+              "utf8": {
+                "end": 25,
+                "start": 10
+              }
+            }
+          ]
+        },
+        {
+          "id": "error-su-not",
+          "group": "su-not",
+          "split": "rule-development",
+          "text": "오늘은 할수없다.",
+          "gold": [
+            "오늘은 할 수 없다."
+          ],
+          "protected": [],
+          "flagged": true,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 43.89716700000002,
+          "diagnostics": [
+            {
+              "kind": "unknown_word",
+              "normalized": "할수없다",
+              "original": "할수없다",
+              "suggestions": [
+                "할 수없다",
+                "싹수없다"
+              ],
+              "utf16": {
+                "end": 8,
+                "start": 4
+              },
+              "utf8": {
+                "end": 22,
+                "start": 10
+              }
+            }
+          ]
+        },
+        {
+          "id": "error-su-not-polite",
+          "group": "su-not-polite",
+          "split": "rule-development",
+          "text": "혼자서는 할수없어요.",
+          "gold": [
+            "혼자서는 할 수 없어요."
+          ],
+          "protected": [],
+          "flagged": true,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 86.76079100000011,
+          "diagnostics": [
+            {
+              "kind": "unknown_word",
+              "normalized": "혼자서는",
+              "original": "혼자서는",
+              "suggestions": [
+                "혼자시는",
+                "혼나서는",
+                "혼 자서는"
+              ],
+              "utf16": {
+                "end": 4,
+                "start": 0
+              },
+              "utf8": {
+                "end": 12,
+                "start": 0
+              }
+            },
+            {
+              "kind": "unknown_word",
+              "normalized": "할수없어요",
+              "original": "할수없어요",
+              "suggestions": [
+                "할 수없어요",
+                "싹수없어요"
+              ],
+              "utf16": {
+                "end": 10,
+                "start": 5
+              },
+              "utf8": {
+                "end": 28,
+                "start": 13
+              }
+            }
+          ]
+        },
+        {
+          "id": "error-past",
+          "group": "past",
+          "split": "holdout",
+          "text": "모든 준비가 됬다.",
+          "gold": [
+            "모든 준비가 됐다."
+          ],
+          "protected": [],
+          "flagged": true,
+          "top1": true,
+          "top3": true,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.367249999999824,
+          "diagnostics": [
+            {
+              "kind": "unknown_word",
+              "normalized": "됬다",
+              "original": "됬다",
+              "suggestions": [
+                "됐다",
+                "되다",
+                "뎄다"
+              ],
+              "utf16": {
+                "end": 9,
+                "start": 7
+              },
+              "utf8": {
+                "end": 23,
+                "start": 17
+              }
+            }
+          ]
+        },
+        {
+          "id": "error-past-polite",
+          "group": "past-polite",
+          "split": "holdout",
+          "text": "잘 됬어요.",
+          "gold": [
+            "잘 됐어요."
+          ],
+          "protected": [],
+          "flagged": true,
+          "top1": true,
+          "top3": true,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.015292000000061,
+          "diagnostics": [
+            {
+              "kind": "unknown_word",
+              "normalized": "됬어요",
+              "original": "됬어요",
+              "suggestions": [
+                "됐어요",
+                "되어요",
+                "뎄어요"
+              ],
+              "utf16": {
+                "end": 5,
+                "start": 2
+              },
+              "utf8": {
+                "end": 13,
+                "start": 4
+              }
+            }
+          ]
+        },
+        {
+          "id": "error-developed",
+          "group": "developed",
+          "split": "holdout",
+          "text": "새 기술이 개발됬다.",
+          "gold": [
+            "새 기술이 개발됐다."
+          ],
+          "protected": [],
+          "flagged": true,
+          "top1": true,
+          "top3": true,
+          "skipped": false,
+          "limited": false,
+          "ms": 55.19633300000004,
+          "diagnostics": [
+            {
+              "kind": "unknown_word",
+              "normalized": "개발됬다",
+              "original": "개발됬다",
+              "suggestions": [
+                "개발됐다",
+                "계발됐다",
+                "개발되다"
+              ],
+              "utf16": {
+                "end": 10,
+                "start": 6
+              },
+              "utf8": {
+                "end": 26,
+                "start": 14
+              }
+            }
+          ]
+        },
+        {
+          "id": "error-why",
+          "group": "why",
+          "split": "holdout",
+          "text": "웬지 마음이 편하다.",
+          "gold": [
+            "왠지 마음이 편하다."
+          ],
+          "protected": [],
+          "flagged": true,
+          "top1": true,
+          "top3": true,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.381082999999954,
+          "diagnostics": [
+            {
+              "kind": "unknown_word",
+              "normalized": "웬지",
+              "original": "웬지",
+              "suggestions": [
+                "왠지",
+                "웨지",
+                "웨진"
+              ],
+              "utf16": {
+                "end": 2,
+                "start": 0
+              },
+              "utf8": {
+                "end": 6,
+                "start": 0
+              }
+            }
+          ]
+        },
+        {
+          "id": "error-days",
+          "group": "days",
+          "split": "holdout",
+          "text": "몇일 동안 기다렸다.",
+          "gold": [
+            "며칠 동안 기다렸다."
+          ],
+          "protected": [],
+          "flagged": true,
+          "top1": true,
+          "top3": true,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.4985840000000294,
+          "diagnostics": [
+            {
+              "kind": "unknown_word",
+              "normalized": "몇일",
+              "original": "몇일",
+              "suggestions": [
+                "며칠",
+                "몇이",
+                "몇을"
+              ],
+              "utf16": {
+                "end": 2,
+                "start": 0
+              },
+              "utf8": {
+                "end": 6,
+                "start": 0
+              }
+            }
+          ]
+        },
+        {
+          "id": "error-soon",
+          "group": "soon",
+          "split": "holdout",
+          "text": "금새 도착했다.",
+          "gold": [
+            "금세 도착했다."
+          ],
+          "protected": [],
+          "flagged": true,
+          "top1": true,
+          "top3": true,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.366832999999961,
+          "diagnostics": [
+            {
+              "kind": "unknown_word",
+              "normalized": "금새",
+              "original": "금새",
+              "suggestions": [
+                "금세",
+                "그새",
+                "금색"
+              ],
+              "utf16": {
+                "end": 2,
+                "start": 0
+              },
+              "utf8": {
+                "end": 6,
+                "start": 0
+              }
+            }
+          ]
+        },
+        {
+          "id": "error-role",
+          "group": "role",
+          "split": "holdout",
+          "text": "각자의 역활이 중요하다.",
+          "gold": [
+            "각자의 역할이 중요하다."
+          ],
+          "protected": [],
+          "flagged": true,
+          "top1": true,
+          "top3": true,
+          "skipped": false,
+          "limited": false,
+          "ms": 24.461666999999963,
+          "diagnostics": [
+            {
+              "kind": "unknown_word",
+              "normalized": "역활이",
+              "original": "역활이",
+              "suggestions": [
+                "역할이",
+                "역 활이"
+              ],
+              "utf16": {
+                "end": 7,
+                "start": 4
+              },
+              "utf8": {
+                "end": 19,
+                "start": 10
+              }
+            }
+          ]
+        },
+        {
+          "id": "error-development",
+          "group": "development",
+          "split": "holdout",
+          "text": "자기 계발을 위한 계획을 새웠다.",
+          "gold": [
+            "자기 계발을 위한 계획을 세웠다."
+          ],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.3377079999999975,
+          "diagnostics": []
+        },
+        {
+          "id": "error-indefinite",
+          "group": "indefinite",
+          "split": "holdout",
+          "text": "언제던지 연락하세요.",
+          "gold": [
+            "언제든지 연락하세요."
+          ],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.342625000000046,
+          "diagnostics": []
+        },
+        {
+          "id": "error-greeting-typo",
+          "group": "greeting-typo",
+          "split": "holdout",
+          "text": "안녕하새요.",
+          "gold": [
+            "안녕하세요."
+          ],
+          "protected": [],
+          "flagged": true,
+          "top1": true,
+          "top3": true,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.304083000000071,
+          "diagnostics": [
+            {
+              "kind": "unknown_word",
+              "normalized": "안녕하새요",
+              "original": "안녕하새요",
+              "suggestions": [
+                "안녕하세요",
+                "안녕하셔요"
+              ],
+              "utf16": {
+                "end": 5,
+                "start": 0
+              },
+              "utf8": {
+                "end": 15,
+                "start": 0
+              }
+            }
+          ]
+        },
+        {
+          "id": "error-thanks-typo",
+          "group": "thanks-typo",
+          "split": "holdout",
+          "text": "정말 감사함니다.",
+          "gold": [
+            "정말 감사합니다."
+          ],
+          "protected": [],
+          "flagged": true,
+          "top1": false,
+          "top3": true,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.298374999999856,
+          "diagnostics": [
+            {
+              "kind": "unknown_word",
+              "normalized": "감사함니다",
+              "original": "감사함니다",
+              "suggestions": [
+                "감사함이다",
+                "감사합니다"
+              ],
+              "utf16": {
+                "end": 8,
+                "start": 3
+              },
+              "utf8": {
+                "end": 22,
+                "start": 7
+              }
+            }
+          ]
+        },
+        {
+          "id": "error-missing",
+          "group": "missing",
+          "split": "holdout",
+          "text": "이유를 모르겟다.",
+          "gold": [
+            "이유를 모르겠다."
+          ],
+          "protected": [],
+          "flagged": true,
+          "top1": false,
+          "top3": true,
+          "skipped": false,
+          "limited": false,
+          "ms": 5.908582999999856,
+          "diagnostics": [
+            {
+              "kind": "unknown_word",
+              "normalized": "모르겟다",
+              "original": "모르겟다",
+              "suggestions": [
+                "모으겠다",
+                "모르겠다"
+              ],
+              "utf16": {
+                "end": 8,
+                "start": 4
+              },
+              "utf8": {
+                "end": 22,
+                "start": 10
+              }
+            }
+          ]
+        },
+        {
+          "id": "error-promise",
+          "group": "promise",
+          "split": "holdout",
+          "text": "내가 할께요.",
+          "gold": [
+            "내가 할게요."
+          ],
+          "protected": [],
+          "flagged": true,
+          "top1": true,
+          "top3": true,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.276458000000096,
+          "diagnostics": [
+            {
+              "kind": "unknown_word",
+              "normalized": "할께요",
+              "original": "할께요",
+              "suggestions": [
+                "할게요",
+                "헬까요",
+                "할까요"
+              ],
+              "utf16": {
+                "end": 6,
+                "start": 3
+              },
+              "utf8": {
+                "end": 16,
+                "start": 7
+              }
+            }
+          ]
+        },
+        {
+          "id": "error-whatever",
+          "group": "whatever",
+          "split": "holdout",
+          "text": "무엇이던지 괜찮다.",
+          "gold": [
+            "무엇이든지 괜찮다."
+          ],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.346457999999888,
+          "diagnostics": []
+        },
+        {
+          "id": "error-gently",
+          "group": "gently",
+          "split": "holdout",
+          "text": "문을 살며시 닫아 주십시요.",
+          "gold": [
+            "문을 살며시 닫아 주십시오."
+          ],
+          "protected": [],
+          "flagged": true,
+          "top1": true,
+          "top3": true,
+          "skipped": false,
+          "limited": false,
+          "ms": 24.907165999999982,
+          "diagnostics": [
+            {
+              "kind": "unknown_word",
+              "normalized": "주십시요",
+              "original": "주십시요",
+              "suggestions": [
+                "주십시오",
+                "집시요"
+              ],
+              "utf16": {
+                "end": 14,
+                "start": 10
+              },
+              "utf8": {
+                "end": 36,
+                "start": 24
+              }
+            }
+          ]
+        },
+        {
+          "id": "error-unexpected-typo",
+          "group": "unexpected-typo",
+          "split": "holdout",
+          "text": "왠 일이 이렇게 많지?",
+          "gold": [
+            "웬 일이 이렇게 많지?"
+          ],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 5.966083999999983,
+          "diagnostics": []
+        },
+        {
+          "id": "error-longtime",
+          "group": "longtime",
+          "split": "holdout",
+          "text": "정말 오랫만에 만났다.",
+          "gold": [
+            "정말 오랜만에 만났다."
+          ],
+          "protected": [],
+          "flagged": true,
+          "top1": true,
+          "top3": true,
+          "skipped": false,
+          "limited": false,
+          "ms": 54.37379200000003,
+          "diagnostics": [
+            {
+              "kind": "unknown_word",
+              "normalized": "오랫만에",
+              "original": "오랫만에",
+              "suggestions": [
+                "오랜만에"
+              ],
+              "utf16": {
+                "end": 7,
+                "start": 3
+              },
+              "utf8": {
+                "end": 19,
+                "start": 7
+              }
+            }
+          ]
+        },
+        {
+          "id": "error-spacing-verb",
+          "group": "spacing-verb",
+          "split": "holdout",
+          "text": "친구를만났다.",
+          "gold": [
+            "친구를 만났다."
+          ],
+          "protected": [],
+          "flagged": true,
+          "top1": true,
+          "top3": true,
+          "skipped": false,
+          "limited": false,
+          "ms": 147.8507910000002,
+          "diagnostics": [
+            {
+              "kind": "unknown_word",
+              "normalized": "친구를만났다",
+              "original": "친구를만났다",
+              "suggestions": [
+                "친구를 만났다"
+              ],
+              "utf16": {
+                "end": 6,
+                "start": 0
+              },
+              "utf8": {
+                "end": 18,
+                "start": 0
+              }
+            }
+          ]
+        },
+        {
+          "id": "error-spacing-subject",
+          "group": "spacing-subject",
+          "split": "holdout",
+          "text": "학교에가는길이다.",
+          "gold": [
+            "학교에 가는 길이다."
+          ],
+          "protected": [],
+          "flagged": true,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 154.25029199999994,
+          "diagnostics": [
+            {
+              "kind": "unknown_word",
+              "normalized": "학교에가는길이다",
+              "original": "학교에가는길이다",
+              "suggestions": [
+                "과학고등학교이다"
+              ],
+              "utf16": {
+                "end": 8,
+                "start": 0
+              },
+              "utf8": {
+                "end": 24,
+                "start": 0
+              }
+            }
+          ]
+        },
+        {
+          "id": "error-spacing-object",
+          "group": "spacing-object",
+          "split": "holdout",
+          "text": "책을읽고있다.",
+          "gold": [
+            "책을 읽고 있다."
+          ],
+          "protected": [],
+          "flagged": true,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 143.44175000000004,
+          "diagnostics": [
+            {
+              "kind": "unknown_word",
+              "normalized": "책을읽고있다",
+              "original": "책을읽고있다",
+              "suggestions": [],
+              "utf16": {
+                "end": 6,
+                "start": 0
+              },
+              "utf8": {
+                "end": 18,
+                "start": 0
+              }
+            }
+          ]
+        },
+        {
+          "id": "error-spacing-phrase",
+          "group": "spacing-phrase",
+          "split": "holdout",
+          "text": "시간이없어서못갔다.",
+          "gold": [
+            "시간이 없어서 못 갔다."
+          ],
+          "protected": [],
+          "flagged": true,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 171.092625,
+          "diagnostics": [
+            {
+              "kind": "unknown_word",
+              "normalized": "시간이없어서못갔다",
+              "original": "시간이없어서못갔다",
+              "suggestions": [],
+              "utf16": {
+                "end": 9,
+                "start": 0
+              },
+              "utf8": {
+                "end": 27,
+                "start": 0
+              }
+            }
+          ]
+        },
+        {
+          "id": "error-spacing-ability",
+          "group": "spacing-ability",
+          "split": "holdout",
+          "text": "내일은 갈수있다.",
+          "gold": [
+            "내일은 갈 수 있다."
+          ],
+          "protected": [],
+          "flagged": true,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 43.715042000000096,
+          "diagnostics": [
+            {
+              "kind": "unknown_word",
+              "normalized": "갈수있다",
+              "original": "갈수있다",
+              "suggestions": [
+                "갈수기다"
+              ],
+              "utf16": {
+                "end": 8,
+                "start": 4
+              },
+              "utf8": {
+                "end": 22,
+                "start": 10
+              }
+            }
+          ]
+        },
+        {
+          "id": "error-spacing-negative",
+          "group": "spacing-negative",
+          "split": "holdout",
+          "text": "알수없는 일이다.",
+          "gold": [
+            "알 수 없는 일이다."
+          ],
+          "protected": [],
+          "flagged": true,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 43.90987500000021,
+          "diagnostics": [
+            {
+              "kind": "unknown_word",
+              "normalized": "알수없는",
+              "original": "알수없는",
+              "suggestions": [
+                "알 수없는",
+                "싹수없는"
+              ],
+              "utf16": {
+                "end": 4,
+                "start": 0
+              },
+              "utf8": {
+                "end": 12,
+                "start": 0
+              }
+            }
+          ]
+        },
+        {
+          "id": "error-unicode",
+          "group": "unicode",
+          "split": "holdout",
+          "text": "😀 일이 됬다.\r\n",
+          "gold": [
+            "😀 일이 됐다.\r\n"
+          ],
+          "protected": [],
+          "flagged": true,
+          "top1": true,
+          "top3": true,
+          "skipped": true,
+          "limited": false,
+          "ms": 6.335374999999921,
+          "diagnostics": [
+            {
+              "kind": "unknown_word",
+              "normalized": "됬다",
+              "original": "됬다",
+              "suggestions": [
+                "됐다",
+                "되다",
+                "뎄다"
+              ],
+              "utf16": {
+                "end": 8,
+                "start": 6
+              },
+              "utf8": {
+                "end": 18,
+                "start": 12
+              }
+            }
+          ]
+        },
+        {
+          "id": "protected-proper-name",
+          "group": "proper-name",
+          "split": "protected",
+          "text": "됬다",
+          "gold": [],
+          "protected": [
+            "됬다"
+          ],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": true,
+          "limited": false,
+          "ms": 6.312333999999975,
+          "diagnostics": []
+        },
+        {
+          "id": "protected-rule-name",
+          "group": "rule-name",
+          "split": "protected",
+          "text": "되요",
+          "gold": [],
+          "protected": [
+            "되요"
+          ],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": true,
+          "limited": false,
+          "ms": 6.3555829999999425,
+          "diagnostics": []
+        },
+        {
+          "id": "protected-spacing-name",
+          "group": "spacing-name",
+          "split": "protected",
+          "text": "할수있다",
+          "gold": [],
+          "protected": [
+            "할수있다"
+          ],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": true,
+          "limited": false,
+          "ms": 6.339000000000095,
+          "diagnostics": []
+        },
+        {
+          "id": "protected-brand",
+          "group": "brand",
+          "split": "protected",
+          "text": "한오토마타",
+          "gold": [],
+          "protected": [
+            "한오토마타"
+          ],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": true,
+          "limited": false,
+          "ms": 5.673999999999957,
+          "diagnostics": []
+        },
+        {
+          "id": "protected-nfd-name",
+          "group": "nfd-name",
+          "split": "protected",
+          "text": "되요",
+          "gold": [],
+          "protected": [
+            "되요"
+          ],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": true,
+          "limited": false,
+          "ms": 5.455667000000108,
+          "diagnostics": []
+        }
+      ],
+      "performance": {
+        "normal_300": {
+          "characters": 300,
+          "utf8_bytes": 720,
+          "text_sha256": "d57e12b08134635f8cc52562bed4df35215c73c595706c7da5b033ce540b304e",
+          "repeats": 30,
+          "p50_ms": 6.307854000000113,
+          "p95_ms": 6.349041
+        },
+        "errors_300": {
+          "characters": 300,
+          "utf8_bytes": 720,
+          "text_sha256": "63aa3c2356f48ed127107a99b8ffe6f51345b704772eca2a56f598b60ffdf073",
+          "repeats": 30,
+          "p50_ms": 1095.8743125000003,
+          "p95_ms": 1171.452333
+        }
+      },
+      "all": {
+        "n": 79,
+        "error_sentences": 29,
+        "normal_or_protected": 50,
+        "flagged_sentences": 24,
+        "sentence_precision": 1.0,
+        "sentence_recall": 0.8275862068965517,
+        "exact_sentence_top1": 0.4482758620689655,
+        "exact_sentence_top3": 0.5172413793103449,
+        "normal_sentence_false_positive_rate": 0.0,
+        "no_op_rate": 1.0,
+        "sentences_with_skips": 14,
+        "limited": 0,
+        "warm_p50_ms": 6.299916999999988,
+        "warm_p95_ms": 143.44175000000004
+      },
+      "holdout": {
+        "n": 74,
+        "error_sentences": 24,
+        "normal_or_protected": 50,
+        "flagged_sentences": 20,
+        "sentence_precision": 1.0,
+        "sentence_recall": 0.8333333333333334,
+        "exact_sentence_top1": 0.5416666666666666,
+        "exact_sentence_top3": 0.625,
+        "normal_sentence_false_positive_rate": 0.0,
+        "no_op_rate": 1.0,
+        "sentences_with_skips": 14,
+        "limited": 0,
+        "warm_p50_ms": 6.299041999999977,
+        "warm_p95_ms": 143.44175000000004
+      },
+      "protected": {
+        "n": 5,
+        "error_sentences": 0,
+        "normal_or_protected": 5,
+        "flagged_sentences": 0,
+        "sentence_precision": null,
+        "sentence_recall": null,
+        "exact_sentence_top1": null,
+        "exact_sentence_top3": null,
+        "normal_sentence_false_positive_rate": 0.0,
+        "no_op_rate": 1.0,
+        "sentences_with_skips": 5,
+        "limited": 0,
+        "warm_p50_ms": 6.312333999999975,
+        "warm_p95_ms": 6.3555829999999425
+      },
+      "normal_only": {
+        "n": 45,
+        "error_sentences": 0,
+        "normal_or_protected": 45,
+        "flagged_sentences": 0,
+        "sentence_precision": null,
+        "sentence_recall": null,
+        "exact_sentence_top1": null,
+        "exact_sentence_top3": null,
+        "normal_sentence_false_positive_rate": 0.0,
+        "no_op_rate": 1.0,
+        "sentences_with_skips": 8,
+        "limited": 0,
+        "warm_p50_ms": 6.2945840000000475,
+        "warm_p95_ms": 6.342624999999935
+      }
+    },
+    "hunspell-rules": {
+      "cold_ms": 190.12024999999966,
+      "peak_sampled_worker_rss_bytes": 66764800,
+      "rows": [
+        {
+          "id": "normal-greeting",
+          "group": "greeting",
+          "split": "evaluation",
+          "text": "안녕하세요. 오늘도 좋은 하루 보내세요.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.353084000004117,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-thanks",
+          "group": "thanks",
+          "split": "evaluation",
+          "text": "도와주셔서 감사합니다.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.324959000004071,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-meeting",
+          "group": "meeting",
+          "split": "evaluation",
+          "text": "회의는 내일 오전에 시작합니다.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.326792000002968,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-school",
+          "group": "school",
+          "split": "evaluation",
+          "text": "아이가 학교에 갔습니다.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.3267499999994925,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-meal",
+          "group": "meal",
+          "split": "evaluation",
+          "text": "친구와 점심을 먹었습니다.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.316625000003739,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-weather",
+          "group": "weather",
+          "split": "evaluation",
+          "text": "오늘은 비가 많이 옵니다.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 5.244042000001059,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-request",
+          "group": "request",
+          "split": "evaluation",
+          "text": "자료를 확인해 주세요.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 5.322458999998503,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-report",
+          "group": "report",
+          "split": "evaluation",
+          "text": "보고서를 작성했습니다.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.333458000000292,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-travel",
+          "group": "travel",
+          "split": "evaluation",
+          "text": "기차를 타고 부산에 갑니다.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.342332999999201,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-book",
+          "group": "book",
+          "split": "evaluation",
+          "text": "책을 읽는 시간이 즐겁습니다.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.339624999995408,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-family",
+          "group": "family",
+          "split": "evaluation",
+          "text": "주말에 가족을 만났습니다.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 5.266957999999988,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-time",
+          "group": "time",
+          "split": "evaluation",
+          "text": "아직 시간이 많이 남았습니다.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.348250000002054,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-permission",
+          "group": "permission",
+          "split": "evaluation",
+          "text": "여기에 앉아도 돼요.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.4164169999969545,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-contraction",
+          "group": "contraction",
+          "split": "evaluation",
+          "text": "이제 준비가 됐다.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.398415999996132,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-stem",
+          "group": "stem",
+          "split": "evaluation",
+          "text": "잘되면 다시 연락하겠습니다.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 5.71816600000119,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-question",
+          "group": "question",
+          "split": "evaluation",
+          "text": "언제 다시 만나게 되나요?",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.494041999999922,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-ability",
+          "group": "ability",
+          "split": "evaluation",
+          "text": "나는 할 수 있다.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.391209000000231,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-inability",
+          "group": "inability",
+          "split": "evaluation",
+          "text": "지금은 할 수 없어요.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.398957999998345,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-gradual",
+          "group": "gradual",
+          "split": "evaluation",
+          "text": "공부할수록 재미있다.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 5.706625000001964,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-because",
+          "group": "because",
+          "split": "evaluation",
+          "text": "왠지 기분이 좋습니다.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 5.615417000001344,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-retrospective",
+          "group": "retrospective",
+          "split": "evaluation",
+          "text": "키가 얼마나 크던지 놀랐다.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.348457999997947,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-unexpected",
+          "group": "unexpected",
+          "split": "evaluation",
+          "text": "웬 일이 이렇게 많나요?",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 5.351292000000285,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-amount",
+          "group": "amount",
+          "split": "evaluation",
+          "text": "며칠 동안 기다렸습니다.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.188957999995637,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-decision",
+          "group": "decision",
+          "split": "evaluation",
+          "text": "이번 달에는 쉬기로 했어요.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 5.177834000001269,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-opinion",
+          "group": "opinion",
+          "split": "evaluation",
+          "text": "저는 그렇게 생각합니다.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.134875000000761,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-schedule",
+          "group": "schedule",
+          "split": "evaluation",
+          "text": "일정을 바꾸기 어렵습니다.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 5.534541999999476,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-warmth",
+          "group": "warmth",
+          "split": "evaluation",
+          "text": "따뜻한 물을 마셨습니다.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 5.882540999998298,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-help",
+          "group": "help",
+          "split": "evaluation",
+          "text": "무엇을 도와드릴까요?",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 5.391959000000668,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-nature",
+          "group": "nature",
+          "split": "evaluation",
+          "text": "나뭇잎이 바람에 흔들립니다.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 5.566791999996212,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-quality",
+          "group": "quality",
+          "split": "evaluation",
+          "text": "정확한 내용을 확인해야 합니다.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.322416999999803,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-boundary",
+          "group": "boundary",
+          "split": "evaluation",
+          "text": "할 수밖에 없는 일입니다.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.34683300000205,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-name",
+          "group": "name",
+          "split": "evaluation",
+          "text": "홍길동은 서울에 살고 있습니다.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 5.729374999994263,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-compound",
+          "group": "compound",
+          "split": "evaluation",
+          "text": "우리나라의 가을 하늘은 높다.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.081500000000517,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-counterexample",
+          "group": "counterexample",
+          "split": "evaluation",
+          "text": "그 일은 내가 할 일이 아니다.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.349667000002057,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-punctuation",
+          "group": "punctuation",
+          "split": "evaluation",
+          "text": "학교에, 집에, 도서관에 갔다.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.348209000002214,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-linebreak",
+          "group": "linebreak",
+          "split": "evaluation",
+          "text": "안녕하세요.\r\n확인해 주세요.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.336415999996348,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-empty",
+          "group": "empty",
+          "split": "evaluation",
+          "text": "",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 5.208416999998633,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-emoji",
+          "group": "emoji",
+          "split": "evaluation",
+          "text": "😀 안녕하세요. 좋은 하루 보내세요.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": true,
+          "limited": false,
+          "ms": 6.343874999998889,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-jamo",
+          "group": "jamo",
+          "split": "evaluation",
+          "text": "ㅋㅋ ㅎㅎ ㄱ ㅏ",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": true,
+          "limited": false,
+          "ms": 6.051083999999207,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-mixed",
+          "group": "mixed",
+          "split": "evaluation",
+          "text": "API와 Rust를 함께 사용합니다.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": true,
+          "limited": false,
+          "ms": 6.338374999998564,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-code",
+          "group": "code",
+          "split": "evaluation",
+          "text": "`됬다`와 `되요`는 예제 문자열입니다.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": true,
+          "limited": false,
+          "ms": 6.453958000001592,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-url",
+          "group": "url",
+          "split": "evaluation",
+          "text": "https://example.org/됬다 user@example.org",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": true,
+          "limited": false,
+          "ms": 9.4747919999989,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-identifier",
+          "group": "identifier",
+          "split": "evaluation",
+          "text": "foo_됬다 v2.0 /tmp/됬다.txt",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": true,
+          "limited": false,
+          "ms": 23.582250000004024,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-number",
+          "group": "number",
+          "split": "evaluation",
+          "text": "2026년 10월 16일 오후 3시",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": true,
+          "limited": false,
+          "ms": 5.967458000000647,
+          "diagnostics": []
+        },
+        {
+          "id": "normal-english",
+          "group": "english",
+          "split": "evaluation",
+          "text": "Hello world. Please keep this unchanged.",
+          "gold": [],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": true,
+          "limited": false,
+          "ms": 6.439792000001887,
+          "diagnostics": []
+        },
+        {
+          "id": "error-doe-dev",
+          "group": "doe-dev",
+          "split": "rule-development",
+          "text": "이제 되요.",
+          "gold": [
+            "이제 돼요."
+          ],
+          "protected": [],
+          "flagged": true,
+          "top1": true,
+          "top3": true,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.447167000004583,
+          "diagnostics": [
+            {
+              "kind": "rule_suggestion",
+              "normalized": "되요",
+              "original": "되요",
+              "rule_id": "ko-doe-yo",
+              "source": "https://korean.go.kr/front/mcfaq/mcfaqView.do?mcfaq_seq=6761&mn_id=62",
+              "suggestions": [
+                "돼요"
+              ],
+              "utf16": {
+                "end": 5,
+                "start": 3
+              },
+              "utf8": {
+                "end": 13,
+                "start": 7
+              }
+            }
+          ]
+        },
+        {
+          "id": "error-su-dev",
+          "group": "su-dev",
+          "split": "rule-development",
+          "text": "나는 할수있다.",
+          "gold": [
+            "나는 할 수 있다."
+          ],
+          "protected": [],
+          "flagged": true,
+          "top1": true,
+          "top3": true,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.422833999998545,
+          "diagnostics": [
+            {
+              "kind": "rule_suggestion",
+              "normalized": "할수있다",
+              "original": "할수있다",
+              "rule_id": "ko-dependent-su",
+              "source": "https://www.korean.go.kr/kornorms/m/m_regltn.do",
+              "suggestions": [
+                "할 수 있다"
+              ],
+              "utf16": {
+                "end": 7,
+                "start": 3
+              },
+              "utf8": {
+                "end": 19,
+                "start": 7
+              }
+            }
+          ]
+        },
+        {
+          "id": "error-su-polite",
+          "group": "su-polite",
+          "split": "rule-development",
+          "text": "지금도 할수있어요.",
+          "gold": [
+            "지금도 할 수 있어요."
+          ],
+          "protected": [],
+          "flagged": true,
+          "top1": true,
+          "top3": true,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.3671670000005065,
+          "diagnostics": [
+            {
+              "kind": "rule_suggestion",
+              "normalized": "할수있어요",
+              "original": "할수있어요",
+              "rule_id": "ko-dependent-su",
+              "source": "https://www.korean.go.kr/kornorms/m/m_regltn.do",
+              "suggestions": [
+                "할 수 있어요"
+              ],
+              "utf16": {
+                "end": 9,
+                "start": 4
+              },
+              "utf8": {
+                "end": 25,
+                "start": 10
+              }
+            }
+          ]
+        },
+        {
+          "id": "error-su-not",
+          "group": "su-not",
+          "split": "rule-development",
+          "text": "오늘은 할수없다.",
+          "gold": [
+            "오늘은 할 수 없다."
+          ],
+          "protected": [],
+          "flagged": true,
+          "top1": true,
+          "top3": true,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.000374999999281,
+          "diagnostics": [
+            {
+              "kind": "rule_suggestion",
+              "normalized": "할수없다",
+              "original": "할수없다",
+              "rule_id": "ko-dependent-su",
+              "source": "https://www.korean.go.kr/kornorms/m/m_regltn.do",
+              "suggestions": [
+                "할 수 없다"
+              ],
+              "utf16": {
+                "end": 8,
+                "start": 4
+              },
+              "utf8": {
+                "end": 22,
+                "start": 10
+              }
+            }
+          ]
+        },
+        {
+          "id": "error-su-not-polite",
+          "group": "su-not-polite",
+          "split": "rule-development",
+          "text": "혼자서는 할수없어요.",
+          "gold": [
+            "혼자서는 할 수 없어요."
+          ],
+          "protected": [],
+          "flagged": true,
+          "top1": true,
+          "top3": true,
+          "skipped": false,
+          "limited": false,
+          "ms": 36.24120799999986,
+          "diagnostics": [
+            {
+              "kind": "unknown_word",
+              "normalized": "혼자서는",
+              "original": "혼자서는",
+              "suggestions": [
+                "혼자시는",
+                "혼나서는",
+                "혼 자서는"
+              ],
+              "utf16": {
+                "end": 4,
+                "start": 0
+              },
+              "utf8": {
+                "end": 12,
+                "start": 0
+              }
+            },
+            {
+              "kind": "rule_suggestion",
+              "normalized": "할수없어요",
+              "original": "할수없어요",
+              "rule_id": "ko-dependent-su",
+              "source": "https://www.korean.go.kr/kornorms/m/m_regltn.do",
+              "suggestions": [
+                "할 수 없어요"
+              ],
+              "utf16": {
+                "end": 10,
+                "start": 5
+              },
+              "utf8": {
+                "end": 28,
+                "start": 13
+              }
+            }
+          ]
+        },
+        {
+          "id": "error-past",
+          "group": "past",
+          "split": "holdout",
+          "text": "모든 준비가 됬다.",
+          "gold": [
+            "모든 준비가 됐다."
+          ],
+          "protected": [],
+          "flagged": true,
+          "top1": true,
+          "top3": true,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.350541999999848,
+          "diagnostics": [
+            {
+              "kind": "unknown_word",
+              "normalized": "됬다",
+              "original": "됬다",
+              "suggestions": [
+                "됐다",
+                "되다",
+                "뎄다"
+              ],
+              "utf16": {
+                "end": 9,
+                "start": 7
+              },
+              "utf8": {
+                "end": 23,
+                "start": 17
+              }
+            }
+          ]
+        },
+        {
+          "id": "error-past-polite",
+          "group": "past-polite",
+          "split": "holdout",
+          "text": "잘 됬어요.",
+          "gold": [
+            "잘 됐어요."
+          ],
+          "protected": [],
+          "flagged": true,
+          "top1": true,
+          "top3": true,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.3845830000062165,
+          "diagnostics": [
+            {
+              "kind": "unknown_word",
+              "normalized": "됬어요",
+              "original": "됬어요",
+              "suggestions": [
+                "됐어요",
+                "되어요",
+                "뎄어요"
+              ],
+              "utf16": {
+                "end": 5,
+                "start": 2
+              },
+              "utf8": {
+                "end": 13,
+                "start": 4
+              }
+            }
+          ]
+        },
+        {
+          "id": "error-developed",
+          "group": "developed",
+          "split": "holdout",
+          "text": "새 기술이 개발됬다.",
+          "gold": [
+            "새 기술이 개발됐다."
+          ],
+          "protected": [],
+          "flagged": true,
+          "top1": true,
+          "top3": true,
+          "skipped": false,
+          "limited": false,
+          "ms": 64.90741700000058,
+          "diagnostics": [
+            {
+              "kind": "unknown_word",
+              "normalized": "개발됬다",
+              "original": "개발됬다",
+              "suggestions": [
+                "개발됐다",
+                "계발됐다",
+                "개발되다"
+              ],
+              "utf16": {
+                "end": 10,
+                "start": 6
+              },
+              "utf8": {
+                "end": 26,
+                "start": 14
+              }
+            }
+          ]
+        },
+        {
+          "id": "error-why",
+          "group": "why",
+          "split": "holdout",
+          "text": "웬지 마음이 편하다.",
+          "gold": [
+            "왠지 마음이 편하다."
+          ],
+          "protected": [],
+          "flagged": true,
+          "top1": true,
+          "top3": true,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.356083999996542,
+          "diagnostics": [
+            {
+              "kind": "unknown_word",
+              "normalized": "웬지",
+              "original": "웬지",
+              "suggestions": [
+                "왠지",
+                "웨지",
+                "웨진"
+              ],
+              "utf16": {
+                "end": 2,
+                "start": 0
+              },
+              "utf8": {
+                "end": 6,
+                "start": 0
+              }
+            }
+          ]
+        },
+        {
+          "id": "error-days",
+          "group": "days",
+          "split": "holdout",
+          "text": "몇일 동안 기다렸다.",
+          "gold": [
+            "며칠 동안 기다렸다."
+          ],
+          "protected": [],
+          "flagged": true,
+          "top1": true,
+          "top3": true,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.344624999996995,
+          "diagnostics": [
+            {
+              "kind": "unknown_word",
+              "normalized": "몇일",
+              "original": "몇일",
+              "suggestions": [
+                "며칠",
+                "몇이",
+                "몇을"
+              ],
+              "utf16": {
+                "end": 2,
+                "start": 0
+              },
+              "utf8": {
+                "end": 6,
+                "start": 0
+              }
+            }
+          ]
+        },
+        {
+          "id": "error-soon",
+          "group": "soon",
+          "split": "holdout",
+          "text": "금새 도착했다.",
+          "gold": [
+            "금세 도착했다."
+          ],
+          "protected": [],
+          "flagged": true,
+          "top1": true,
+          "top3": true,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.414958999997111,
+          "diagnostics": [
+            {
+              "kind": "unknown_word",
+              "normalized": "금새",
+              "original": "금새",
+              "suggestions": [
+                "금세",
+                "그새",
+                "금색"
+              ],
+              "utf16": {
+                "end": 2,
+                "start": 0
+              },
+              "utf8": {
+                "end": 6,
+                "start": 0
+              }
+            }
+          ]
+        },
+        {
+          "id": "error-role",
+          "group": "role",
+          "split": "holdout",
+          "text": "각자의 역활이 중요하다.",
+          "gold": [
+            "각자의 역할이 중요하다."
+          ],
+          "protected": [],
+          "flagged": true,
+          "top1": true,
+          "top3": true,
+          "skipped": false,
+          "limited": false,
+          "ms": 82.76358299999487,
+          "diagnostics": [
+            {
+              "kind": "unknown_word",
+              "normalized": "역활이",
+              "original": "역활이",
+              "suggestions": [
+                "역할이",
+                "역 활이"
+              ],
+              "utf16": {
+                "end": 7,
+                "start": 4
+              },
+              "utf8": {
+                "end": 19,
+                "start": 10
+              }
+            }
+          ]
+        },
+        {
+          "id": "error-development",
+          "group": "development",
+          "split": "holdout",
+          "text": "자기 계발을 위한 계획을 새웠다.",
+          "gold": [
+            "자기 계발을 위한 계획을 세웠다."
+          ],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.347083999997949,
+          "diagnostics": []
+        },
+        {
+          "id": "error-indefinite",
+          "group": "indefinite",
+          "split": "holdout",
+          "text": "언제던지 연락하세요.",
+          "gold": [
+            "언제든지 연락하세요."
+          ],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.38262500000053,
+          "diagnostics": []
+        },
+        {
+          "id": "error-greeting-typo",
+          "group": "greeting-typo",
+          "split": "holdout",
+          "text": "안녕하새요.",
+          "gold": [
+            "안녕하세요."
+          ],
+          "protected": [],
+          "flagged": true,
+          "top1": true,
+          "top3": true,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.416999999999007,
+          "diagnostics": [
+            {
+              "kind": "unknown_word",
+              "normalized": "안녕하새요",
+              "original": "안녕하새요",
+              "suggestions": [
+                "안녕하세요",
+                "안녕하셔요"
+              ],
+              "utf16": {
+                "end": 5,
+                "start": 0
+              },
+              "utf8": {
+                "end": 15,
+                "start": 0
+              }
+            }
+          ]
+        },
+        {
+          "id": "error-thanks-typo",
+          "group": "thanks-typo",
+          "split": "holdout",
+          "text": "정말 감사함니다.",
+          "gold": [
+            "정말 감사합니다."
+          ],
+          "protected": [],
+          "flagged": true,
+          "top1": false,
+          "top3": true,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.344083999998418,
+          "diagnostics": [
+            {
+              "kind": "unknown_word",
+              "normalized": "감사함니다",
+              "original": "감사함니다",
+              "suggestions": [
+                "감사함이다",
+                "감사합니다"
+              ],
+              "utf16": {
+                "end": 8,
+                "start": 3
+              },
+              "utf8": {
+                "end": 22,
+                "start": 7
+              }
+            }
+          ]
+        },
+        {
+          "id": "error-missing",
+          "group": "missing",
+          "split": "holdout",
+          "text": "이유를 모르겟다.",
+          "gold": [
+            "이유를 모르겠다."
+          ],
+          "protected": [],
+          "flagged": true,
+          "top1": false,
+          "top3": true,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.266750000001764,
+          "diagnostics": [
+            {
+              "kind": "unknown_word",
+              "normalized": "모르겟다",
+              "original": "모르겟다",
+              "suggestions": [
+                "모으겠다",
+                "모르겠다"
+              ],
+              "utf16": {
+                "end": 8,
+                "start": 4
+              },
+              "utf8": {
+                "end": 22,
+                "start": 10
+              }
+            }
+          ]
+        },
+        {
+          "id": "error-promise",
+          "group": "promise",
+          "split": "holdout",
+          "text": "내가 할께요.",
+          "gold": [
+            "내가 할게요."
+          ],
+          "protected": [],
+          "flagged": true,
+          "top1": true,
+          "top3": true,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.336209000004089,
+          "diagnostics": [
+            {
+              "kind": "unknown_word",
+              "normalized": "할께요",
+              "original": "할께요",
+              "suggestions": [
+                "할게요",
+                "헬까요",
+                "할까요"
+              ],
+              "utf16": {
+                "end": 6,
+                "start": 3
+              },
+              "utf8": {
+                "end": 16,
+                "start": 7
+              }
+            }
+          ]
+        },
+        {
+          "id": "error-whatever",
+          "group": "whatever",
+          "split": "holdout",
+          "text": "무엇이던지 괜찮다.",
+          "gold": [
+            "무엇이든지 괜찮다."
+          ],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 6.328165999995861,
+          "diagnostics": []
+        },
+        {
+          "id": "error-gently",
+          "group": "gently",
+          "split": "holdout",
+          "text": "문을 살며시 닫아 주십시요.",
+          "gold": [
+            "문을 살며시 닫아 주십시오."
+          ],
+          "protected": [],
+          "flagged": true,
+          "top1": true,
+          "top3": true,
+          "skipped": false,
+          "limited": false,
+          "ms": 31.450290999998742,
+          "diagnostics": [
+            {
+              "kind": "unknown_word",
+              "normalized": "주십시요",
+              "original": "주십시요",
+              "suggestions": [
+                "주십시오",
+                "집시요"
+              ],
+              "utf16": {
+                "end": 14,
+                "start": 10
+              },
+              "utf8": {
+                "end": 36,
+                "start": 24
+              }
+            }
+          ]
+        },
+        {
+          "id": "error-unexpected-typo",
+          "group": "unexpected-typo",
+          "split": "holdout",
+          "text": "왠 일이 이렇게 많지?",
+          "gold": [
+            "웬 일이 이렇게 많지?"
+          ],
+          "protected": [],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 5.813458000005767,
+          "diagnostics": []
+        },
+        {
+          "id": "error-longtime",
+          "group": "longtime",
+          "split": "holdout",
+          "text": "정말 오랫만에 만났다.",
+          "gold": [
+            "정말 오랜만에 만났다."
+          ],
+          "protected": [],
+          "flagged": true,
+          "top1": true,
+          "top3": true,
+          "skipped": false,
+          "limited": false,
+          "ms": 59.10124999999766,
+          "diagnostics": [
+            {
+              "kind": "unknown_word",
+              "normalized": "오랫만에",
+              "original": "오랫만에",
+              "suggestions": [
+                "오랜만에"
+              ],
+              "utf16": {
+                "end": 7,
+                "start": 3
+              },
+              "utf8": {
+                "end": 19,
+                "start": 7
+              }
+            }
+          ]
+        },
+        {
+          "id": "error-spacing-verb",
+          "group": "spacing-verb",
+          "split": "holdout",
+          "text": "친구를만났다.",
+          "gold": [
+            "친구를 만났다."
+          ],
+          "protected": [],
+          "flagged": true,
+          "top1": true,
+          "top3": true,
+          "skipped": false,
+          "limited": false,
+          "ms": 164.47000000000145,
+          "diagnostics": [
+            {
+              "kind": "unknown_word",
+              "normalized": "친구를만났다",
+              "original": "친구를만났다",
+              "suggestions": [
+                "친구를 만났다"
+              ],
+              "utf16": {
+                "end": 6,
+                "start": 0
+              },
+              "utf8": {
+                "end": 18,
+                "start": 0
+              }
+            }
+          ]
+        },
+        {
+          "id": "error-spacing-subject",
+          "group": "spacing-subject",
+          "split": "holdout",
+          "text": "학교에가는길이다.",
+          "gold": [
+            "학교에 가는 길이다."
+          ],
+          "protected": [],
+          "flagged": true,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 199.67429199999742,
+          "diagnostics": [
+            {
+              "kind": "unknown_word",
+              "normalized": "학교에가는길이다",
+              "original": "학교에가는길이다",
+              "suggestions": [
+                "과학고등학교이다"
+              ],
+              "utf16": {
+                "end": 8,
+                "start": 0
+              },
+              "utf8": {
+                "end": 24,
+                "start": 0
+              }
+            }
+          ]
+        },
+        {
+          "id": "error-spacing-object",
+          "group": "spacing-object",
+          "split": "holdout",
+          "text": "책을읽고있다.",
+          "gold": [
+            "책을 읽고 있다."
+          ],
+          "protected": [],
+          "flagged": true,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 146.81320799999753,
+          "diagnostics": [
+            {
+              "kind": "unknown_word",
+              "normalized": "책을읽고있다",
+              "original": "책을읽고있다",
+              "suggestions": [],
+              "utf16": {
+                "end": 6,
+                "start": 0
+              },
+              "utf8": {
+                "end": 18,
+                "start": 0
+              }
+            }
+          ]
+        },
+        {
+          "id": "error-spacing-phrase",
+          "group": "spacing-phrase",
+          "split": "holdout",
+          "text": "시간이없어서못갔다.",
+          "gold": [
+            "시간이 없어서 못 갔다."
+          ],
+          "protected": [],
+          "flagged": true,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 177.5893749999966,
+          "diagnostics": [
+            {
+              "kind": "unknown_word",
+              "normalized": "시간이없어서못갔다",
+              "original": "시간이없어서못갔다",
+              "suggestions": [],
+              "utf16": {
+                "end": 9,
+                "start": 0
+              },
+              "utf8": {
+                "end": 27,
+                "start": 0
+              }
+            }
+          ]
+        },
+        {
+          "id": "error-spacing-ability",
+          "group": "spacing-ability",
+          "split": "holdout",
+          "text": "내일은 갈수있다.",
+          "gold": [
+            "내일은 갈 수 있다."
+          ],
+          "protected": [],
+          "flagged": true,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 42.54162499999836,
+          "diagnostics": [
+            {
+              "kind": "unknown_word",
+              "normalized": "갈수있다",
+              "original": "갈수있다",
+              "suggestions": [
+                "갈수기다"
+              ],
+              "utf16": {
+                "end": 8,
+                "start": 4
+              },
+              "utf8": {
+                "end": 22,
+                "start": 10
+              }
+            }
+          ]
+        },
+        {
+          "id": "error-spacing-negative",
+          "group": "spacing-negative",
+          "split": "holdout",
+          "text": "알수없는 일이다.",
+          "gold": [
+            "알 수 없는 일이다."
+          ],
+          "protected": [],
+          "flagged": true,
+          "top1": false,
+          "top3": false,
+          "skipped": false,
+          "limited": false,
+          "ms": 48.3632500000013,
+          "diagnostics": [
+            {
+              "kind": "unknown_word",
+              "normalized": "알수없는",
+              "original": "알수없는",
+              "suggestions": [
+                "알 수없는",
+                "싹수없는"
+              ],
+              "utf16": {
+                "end": 4,
+                "start": 0
+              },
+              "utf8": {
+                "end": 12,
+                "start": 0
+              }
+            }
+          ]
+        },
+        {
+          "id": "error-unicode",
+          "group": "unicode",
+          "split": "holdout",
+          "text": "😀 일이 됬다.\r\n",
+          "gold": [
+            "😀 일이 됐다.\r\n"
+          ],
+          "protected": [],
+          "flagged": true,
+          "top1": true,
+          "top3": true,
+          "skipped": true,
+          "limited": false,
+          "ms": 6.360209000000339,
+          "diagnostics": [
+            {
+              "kind": "unknown_word",
+              "normalized": "됬다",
+              "original": "됬다",
+              "suggestions": [
+                "됐다",
+                "되다",
+                "뎄다"
+              ],
+              "utf16": {
+                "end": 8,
+                "start": 6
+              },
+              "utf8": {
+                "end": 18,
+                "start": 12
+              }
+            }
+          ]
+        },
+        {
+          "id": "protected-proper-name",
+          "group": "proper-name",
+          "split": "protected",
+          "text": "됬다",
+          "gold": [],
+          "protected": [
+            "됬다"
+          ],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": true,
+          "limited": false,
+          "ms": 6.350541999999848,
+          "diagnostics": []
+        },
+        {
+          "id": "protected-rule-name",
+          "group": "rule-name",
+          "split": "protected",
+          "text": "되요",
+          "gold": [],
+          "protected": [
+            "되요"
+          ],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": true,
+          "limited": false,
+          "ms": 6.374917000002256,
+          "diagnostics": []
+        },
+        {
+          "id": "protected-spacing-name",
+          "group": "spacing-name",
+          "split": "protected",
+          "text": "할수있다",
+          "gold": [],
+          "protected": [
+            "할수있다"
+          ],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": true,
+          "limited": false,
+          "ms": 5.220500000000072,
+          "diagnostics": []
+        },
+        {
+          "id": "protected-brand",
+          "group": "brand",
+          "split": "protected",
+          "text": "한오토마타",
+          "gold": [],
+          "protected": [
+            "한오토마타"
+          ],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": true,
+          "limited": false,
+          "ms": 5.8662080000004835,
+          "diagnostics": []
+        },
+        {
+          "id": "protected-nfd-name",
+          "group": "nfd-name",
+          "split": "protected",
+          "text": "되요",
+          "gold": [],
+          "protected": [
+            "되요"
+          ],
+          "flagged": false,
+          "top1": false,
+          "top3": false,
+          "skipped": true,
+          "limited": false,
+          "ms": 6.121916999994426,
+          "diagnostics": []
+        }
+      ],
+      "performance": {
+        "normal_300": {
+          "characters": 300,
+          "utf8_bytes": 720,
+          "text_sha256": "d57e12b08134635f8cc52562bed4df35215c73c595706c7da5b033ce540b304e",
+          "repeats": 30,
+          "p50_ms": 6.291187999998726,
+          "p95_ms": 6.3721249999986185
+        },
+        "errors_300": {
+          "characters": 300,
+          "utf8_bytes": 720,
+          "text_sha256": "63aa3c2356f48ed127107a99b8ffe6f51345b704772eca2a56f598b60ffdf073",
+          "repeats": 30,
+          "p50_ms": 927.5026460000007,
+          "p95_ms": 1117.661541000004
+        }
+      },
+      "all": {
+        "n": 79,
+        "error_sentences": 29,
+        "normal_or_protected": 50,
+        "flagged_sentences": 25,
+        "sentence_precision": 1.0,
+        "sentence_recall": 0.8620689655172413,
+        "exact_sentence_top1": 0.6206896551724138,
+        "exact_sentence_top3": 0.6896551724137931,
+        "normal_sentence_false_positive_rate": 0.0,
+        "no_op_rate": 1.0,
+        "sentences_with_skips": 14,
+        "limited": 0,
+        "warm_p50_ms": 6.344624999996995,
+        "warm_p95_ms": 146.81320799999753
+      },
+      "holdout": {
+        "n": 74,
+        "error_sentences": 24,
+        "normal_or_protected": 50,
+        "flagged_sentences": 20,
+        "sentence_precision": 1.0,
+        "sentence_recall": 0.8333333333333334,
+        "exact_sentence_top1": 0.5416666666666666,
+        "exact_sentence_top3": 0.625,
+        "normal_sentence_false_positive_rate": 0.0,
+        "no_op_rate": 1.0,
+        "sentences_with_skips": 14,
+        "limited": 0,
+        "warm_p50_ms": 6.343979499998653,
+        "warm_p95_ms": 146.81320799999753
+      },
+      "protected": {
+        "n": 5,
+        "error_sentences": 0,
+        "normal_or_protected": 5,
+        "flagged_sentences": 0,
+        "sentence_precision": null,
+        "sentence_recall": null,
+        "exact_sentence_top1": null,
+        "exact_sentence_top3": null,
+        "normal_sentence_false_positive_rate": 0.0,
+        "no_op_rate": 1.0,
+        "sentences_with_skips": 5,
+        "limited": 0,
+        "warm_p50_ms": 6.121916999994426,
+        "warm_p95_ms": 6.374917000002256
+      },
+      "normal_only": {
+        "n": 45,
+        "error_sentences": 0,
+        "normal_or_protected": 45,
+        "flagged_sentences": 0,
+        "sentence_precision": null,
+        "sentence_recall": null,
+        "exact_sentence_top1": null,
+        "exact_sentence_top3": null,
+        "normal_sentence_false_positive_rate": 0.0,
+        "no_op_rate": 1.0,
+        "sentences_with_skips": 8,
+        "limited": 0,
+        "warm_p50_ms": 6.3267499999994925,
+        "warm_p95_ms": 6.494041999999922
+      }
+    }
+  }
+}

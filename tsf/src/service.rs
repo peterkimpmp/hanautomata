@@ -16,7 +16,7 @@ use hanautomata_ffi::{Engine, InputMode};
 
 use crate::display::{Attributes, InputAttribute};
 use crate::edit;
-use crate::guids::{DISPLAY_ATTRIBUTE_INPUT, PRESERVED_RECONVERT};
+use crate::guids::{DISPLAY_ATTRIBUTE_INPUT, PRESERVED_RECONVERT, PRESERVED_PROOFREAD};
 use crate::shell::{KeyEvent, Op, Outcome, Shell};
 use crate::system;
 
@@ -26,6 +26,8 @@ mod edit_failure_tests;
 
 #[path = "service_learning.rs"]
 mod learning;
+#[path = "service_proofreading.rs"]
+mod proofreading;
 
 struct CheckedKey {
     context: ITfContext,
@@ -108,6 +110,7 @@ const RECONVERSION_KEY: TF_PRESERVEDKEY = TF_PRESERVEDKEY {
     uVKey: crate::shell::vk::F2 as u32,
     uModifiers: 0,
 };
+const PROOFREADING_KEY: TF_PRESERVEDKEY = TF_PRESERVEDKEY { uVKey: 0x76, uModifiers: TF_MOD_CONTROL | TF_MOD_SHIFT };
 
 static NEXT_SERVICE_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -186,6 +189,9 @@ struct State {
     thread_focus_cookie: Option<u32>,
     compartment_sink_cookie: u32,
     reconversion_key_registered: bool,
+    proofreading_key_registered: bool,
+    proofreading: Option<crate::proofreading::Session>,
+    proofreading_token: u64,
     composition: Option<ITfComposition>,
     composition_text: String,
     write_serial: u64,
@@ -1023,6 +1029,7 @@ impl ITfTextInputProcessor_Impl for TextService_Impl {
                         }
                     }
                     let _ = keystrokes.UnadviseKeyEventSink(st.client);
+                    if st.proofreading_key_registered { let _ = keystrokes.UnpreserveKey(&PRESERVED_PROOFREAD, &PROOFREADING_KEY); }
                 }
                 if let Ok(source) = tm.cast::<ITfSource>() {
                     let _ = source.UnadviseSink(st.thread_sink_cookie);
@@ -1115,6 +1122,9 @@ impl ITfTextInputProcessorEx_Impl for TextService_Impl {
                 Ok(()) => self.state.borrow_mut().reconversion_key_registered = true,
                 Err(error) => system::log(&format!("preserve F2 failed; ordinary key route retained: {:?}", error.code())),
             }
+            if keystrokes.PreserveKey(tid, &PRESERVED_PROOFREAD, &PROOFREADING_KEY, &edit::utf16("Hanautomata proofread selection")).is_ok() {
+                self.state.borrow_mut().proofreading_key_registered = true;
+            }
         }
         self.trace("activate-before-indicator");
         self.update_indicator();
@@ -1157,6 +1167,7 @@ impl ITfThreadFocusSink_Impl for TextService_Impl {
             return Err(windows::Win32::Foundation::RPC_E_WRONG_THREAD.into());
         }
         let _keep_alive = self.this();
+        self.cancel_proofreading();
         guarded((), || { self.candidates.clear(); Ok(()) })
     }
 }
@@ -1164,6 +1175,7 @@ impl ITfThreadFocusSink_Impl for TextService_Impl {
 impl ITfKeyEventSink_Impl for TextService_Impl {
     fn OnSetFocus(&self, fforeground: BOOL) -> Result<()> {
         guarded((), || {
+            if !fforeground.as_bool() { self.cancel_proofreading(); }
             if !fforeground.as_bool() { self.commit_on_focus_change(); }
             Ok(())
         })
@@ -1187,6 +1199,9 @@ impl ITfKeyEventSink_Impl for TextService_Impl {
 
     fn OnPreservedKey(&self, pic: Ref<ITfContext>, rguid: *const GUID) -> Result<BOOL> {
         guarded(false.into(), || {
+            if !rguid.is_null() && unsafe { *rguid } == PRESERVED_PROOFREAD {
+                return match pic.as_ref() { Some(context) => self.start_proofreading(context), None => Ok(false.into()) };
+            }
             if self.state.borrow().excluded_app { return Ok(false.into()); }
             if rguid.is_null() || unsafe { *rguid } != PRESERVED_RECONVERT {
                 return Ok(false.into());
