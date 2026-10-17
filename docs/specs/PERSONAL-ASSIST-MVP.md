@@ -101,7 +101,7 @@ Windows 트레이 메뉴 또는 macOS 입력 메뉴의 `내 표현…`으로 연
 | delete | entry_id | 항목 삭제·관련 undo 제거 |
 | clear | 없음 | 모든 항목·순위 신호 제거, 추천 설정은 유지 |
 
-`request_id`는 최대 64 ASCII 영숫자/하이픈이며 UI는 세션 내 증가 ID를 쓴다. 응답 items는 `{id,text,copies,last_copied_day}`이다. 오류 코드는 `invalid_request`, `invalid_text`, `full`, `disabled`, `not_found`, `stale_undo`, `store_unavailable` 등 내용 없는 코드다. unknown command/schema/필드, 초과 프레임은 거부한다. 서비스 시작 시 저장소 실패는 request_id가 빈 오류 프레임 후 종료한다. UI는 이를 연결 실패로 표시한다.
+`request_id`는 최대 64 ASCII 영숫자/하이픈이며 UI는 세션 내 증가 ID를 쓴다. 응답 items는 `{id,text,copies,last_copied_day}`이다. 오류 코드는 `invalid_request`, `invalid_text`, `full`, `disabled`, `not_found`, `stale_undo`, `store_unavailable` 등 내용 없는 코드다. unknown command/schema/필드, 초과 프레임은 거부한다. 서비스 시작 시 저장소 실패는 request_id가 빈 오류 프레임 후 종료한다. UI는 이를 연결 실패로 표시한다. 저장소 잠금이 잡혀 있으면 최대 0.5초 기다리고, 그래도 풀리지 않을 때만 `store_unavailable`을 낸다. 방금 종료한 서비스의 잠금을 OS가 늦게 풀 수 있기 때문이다.
 
 복원 토큰은 프로세스 수명 안에서만 유효하다. 새 copied 또는 등록/삭제/전체삭제/끄기 등의 기억 변경은 이전 토큰을 무효화한다. 검색·list는 토큰에 영향을 주지 않는다. UI 재실행으로 영구 복원 로그를 만들지 않는다.
 

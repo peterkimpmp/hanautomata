@@ -1,11 +1,14 @@
 use crate::{valid_id, Library, Reply, Request};
 use std::{
-    fs::{self, File, OpenOptions},
+    fs::{self, File, OpenOptions, TryLockError},
     io::{Read, Write},
     path::{Path, PathBuf},
+    thread,
+    time::{Duration, Instant},
 };
 
 pub const MAX_FILE: u64 = 1024 * 1024;
+const LOCK_WAIT: Duration = Duration::from_millis(500);
 pub struct Store {
     library: Library,
     path: PathBuf,
@@ -29,6 +32,19 @@ fn private_options() -> OpenOptions {
     }
     options
 }
+// A lock can stay held briefly after its holder let go: Windows unlocks a killed helper's file when resources
+// allow, and on Unix a child forked by another thread keeps the flock until it execs. Wait that out; a live
+// writer such as another window still gets store_unavailable well inside the clients' 3 s request timeout.
+fn lock_exclusive(lock: &File) -> Result<(), &'static str> {
+    let deadline = Instant::now() + LOCK_WAIT;
+    loop {
+        match lock.try_lock() {
+            Ok(()) => return Ok(()),
+            Err(TryLockError::WouldBlock) if Instant::now() < deadline => thread::sleep(Duration::from_millis(5)),
+            Err(_) => return Err("store_unavailable"),
+        }
+    }
+}
 impl Store {
     pub fn open(path: &Path) -> Result<Self, &'static str> {
         if !path.is_absolute() {
@@ -46,7 +62,7 @@ impl Store {
             .truncate(false)
             .open(lock_path)
             .map_err(|_| "store_unavailable")?;
-        lock.try_lock().map_err(|_| "store_unavailable")?;
+        lock_exclusive(&lock)?;
         // Under the exclusive OS lock, a temporary file can only be from an interrupted previous save.
         if temporary.exists() {
             fs::remove_file(&temporary).map_err(|_| "store_unavailable")?;

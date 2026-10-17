@@ -6,6 +6,8 @@ use std::{
     path::PathBuf,
     process::{Command, Stdio},
     sync::atomic::{AtomicUsize, Ordering},
+    thread,
+    time::{Duration, Instant},
 };
 
 static NEXT: AtomicUsize = AtomicUsize::new(0);
@@ -61,9 +63,51 @@ fn persists_and_clear_never_resurrects_on_restart() {
 fn exclusive_writer_and_os_release_after_close() {
     let temp = Temp::new();
     let s = Store::open(&temp.file()).unwrap();
+    let started = Instant::now();
     assert!(Store::open(&temp.file()).is_err());
+    // A live writer is reported well inside the clients' 3 s request timeout.
+    assert!(started.elapsed() < Duration::from_secs(2));
     drop(s);
     assert!(Store::open(&temp.file()).is_ok());
+}
+
+#[test]
+fn lock_released_moments_later_is_waited_for() {
+    // A helper the client just killed can keep the OS lock for a moment after the restart begins.
+    let temp = Temp::new();
+    let s = Store::open(&temp.file()).unwrap();
+    let holder = thread::spawn(move || {
+        thread::sleep(Duration::from_millis(100));
+        drop(s);
+    });
+    assert!(Store::open(&temp.file()).is_ok());
+    holder.join().unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn lock_inherited_by_a_child_forked_elsewhere_is_waited_for() {
+    // A spawn from any thread copies every descriptor into the child until it execs, so the flock outlives
+    // this drop. The cli() tests spawn while other tests reopen their stores.
+    use std::os::unix::process::CommandExt;
+    let temp = Temp::new();
+    let s = Store::open(&temp.file()).unwrap();
+    let spawner = thread::spawn(|| {
+        let mut child = Command::new(env!("CARGO_BIN_EXE_hanautomata-assist"));
+        child.arg("--version").stdout(Stdio::null());
+        // SAFETY: the hook only sleeps, which is async-signal-safe.
+        unsafe {
+            child.pre_exec(|| {
+                thread::sleep(Duration::from_millis(150));
+                Ok(())
+            });
+        }
+        child.status().unwrap()
+    });
+    thread::sleep(Duration::from_millis(50));
+    drop(s);
+    assert!(Store::open(&temp.file()).is_ok());
+    assert!(spawner.join().unwrap().success());
 }
 
 #[test]
