@@ -105,18 +105,18 @@ namespace Hanautomata
         internal bool ClosingPermanently;
         internal Dashboard()
         {
-            Text = "Hanautomata v" + About.Version + " 베타 — 한영 모드 없는 입력";
+            Text = "다듬 v" + About.Version + " 베타 — 한영 모드 없는 입력";
             AutoScaleMode = AutoScaleMode.None;
             ClientSize = new Size(760, 570); MinimumSize = Size;
             StartPosition = FormStartPosition.CenterScreen; MaximizeBox = false;
             BackColor = Color.FromArgb(246, 248, 252); Font = new Font("Malgun Gothic", 14, FontStyle.Regular, GraphicsUnit.Pixel);
-            AddLabel("Hanautomata", 28, 20, 480, 45, 25, true, Color.FromArgb(21, 32, 53));
+            AddLabel("다듬 (Dadeum)", 28, 20, 480, 45, 25, true, Color.FromArgb(21, 32, 53));
             AddLabel("한영키 대신, 쓰고 싶은 말을 입력하세요.", 31, 72, 685, 28, 12, false, Color.FromArgb(65, 80, 101));
             State = AddLabel("입력 칸 확인 중", 32, 116, 500, 27, 12, true, Color.FromArgb(0, 112, 92));
             Detail = AddLabel("", 32, 146, 680, 24, 9, false, Color.DimGray);
             AddLabel("여기에서 연습해 보세요", 32, 194, 540, 28, 11, true, Color.FromArgb(21, 32, 53));
             AddLabel("dkssudgktpdy → 안녕하세요     hello world → hello world", 32, 225, 690, 25, 10, false, Color.FromArgb(78, 91, 111));
-            Practice = new TextBox { Name = "HanautomataPractice", AccessibleName = "Hanautomata 입력 연습", Multiline = true, AcceptsReturn = true, AcceptsTab = false,
+            Practice = new TextBox { Name = "HanautomataPractice", AccessibleName = "다듬 입력 연습", Multiline = true, AcceptsReturn = true, AcceptsTab = false,
                 Location = new Point(32, 264), Size = new Size(694, 122), Font = new Font("Malgun Gothic", 20, FontStyle.Regular, GraphicsUnit.Pixel), BorderStyle = BorderStyle.FixedSingle, ScrollBars = ScrollBars.Vertical };
             Controls.Add(Practice);
             Instructions = AddLabel("", 32, 399, 700, 23, 10, false, Color.FromArgb(55, 70, 94));
@@ -142,19 +142,19 @@ namespace Hanautomata
         internal const string License = "MIT 라이선스 · © 2026 Taeyoung Kim (peterkimpmp)";
         internal static string Version { get { var v = typeof(About).Assembly.GetName().Version; return v.Major + "." + v.Minor + "." + v.Build; } }
         // One line to paste into an issue: version, Windows version and process architecture.
-        internal static string Summary { get { return "Hanautomata " + Version + " · " + Environment.OSVersion.VersionString + " · " + (Environment.Is64BitProcess ? "x64" : "x86"); } }
+        internal static string Summary { get { return "Dadeum " + Version + " · " + Environment.OSVersion.VersionString + " · " + (Environment.Is64BitProcess ? "x64" : "x86"); } }
     }
     // Version, source and license (C-OPS-10). Nothing here uses the network; a link opens the browser only when clicked.
     internal sealed class AboutWindow : Form
     {
         internal AboutWindow(Icon icon)
         {
-            Text = "Hanautomata 정보"; Icon = icon;
+            Text = "다듬 정보"; Icon = icon;
             AutoScaleMode = AutoScaleMode.None; ClientSize = new Size(520, 330);
             FormBorderStyle = FormBorderStyle.FixedDialog; MaximizeBox = false; MinimizeBox = false; ShowInTaskbar = false;
             StartPosition = FormStartPosition.CenterScreen;
             BackColor = Color.FromArgb(246, 248, 252); Font = new Font("Malgun Gothic", 14, FontStyle.Regular, GraphicsUnit.Pixel);
-            AddLabel("Hanautomata", 28, 20, 460, 44, 22, true, Color.FromArgb(21, 32, 53));
+            AddLabel("다듬 (Dadeum)", 28, 20, 460, 44, 22, true, Color.FromArgb(21, 32, 53));
             AddLabel("v" + About.Version + " 베타 · 한영 모드 없는 입력", 30, 64, 460, 26, 11, false, Color.FromArgb(65, 80, 101));
             AddLink("GitHub — " + About.Repository.Substring("https://".Length), About.Repository, 30, 108);
             AddLink("릴리스 노트·새 판", About.Repository + "/releases", 30, 138);
@@ -258,11 +258,11 @@ namespace Hanautomata
             menu.Items.Add("자동 시작 상태 확인", null, delegate {
                 StartupStatus state = ReadStartup();
                 MessageBox.Show(state.Detail + "\n\n작업: " + state.TaskName + "\n최근 실행: " + (state.LastRun ?? "기록 없음") +
-                    "\n실행 결과: " + state.LastResult + "\n\n시작 기록: " + state.LogPath, "Hanautomata 자동 시작");
+                    "\n실행 결과: " + state.LastResult + "\n\n시작 기록: " + state.LogPath, "다듬 자동 시작");
             });
-            menu.Items.Add("Hanautomata 정보 (v" + About.Version + ")", null, delegate { ShowAbout(); });
+            menu.Items.Add("다듬 정보 (v" + About.Version + ")", null, delegate { ShowAbout(); });
             menu.Items.Add("종료", null, delegate { ExitThread(); });
-            tray = new NotifyIcon { Text = "Hanautomata · 자동 한영 입력", Icon = icon, ContextMenuStrip = menu, Visible = true };
+            tray = new NotifyIcon { Text = "다듬 · 자동 한영 입력", Icon = icon, ContextMenuStrip = menu, Visible = true };
             tray.DoubleClick += delegate { ShowDashboard(); };
             menu.Opening += delegate { enabled.Checked = Input.Enabled;
                 StartupStatus state = ReadStartup(); startup.Checked = state.Enabled;
@@ -317,7 +317,7 @@ namespace Hanautomata
             Dashboard.Toggle.Text = Input.Enabled ? "일시정지  F12" : "다시 시작  F12";
             Dashboard.Recovery.Text = Input.LastError.Length > 0 ? Input.LastError : Input.Recovery.Length > 0 ? "이동 전 조합이 보관되었습니다. 트레이 메뉴에서 복사할 수 있습니다." : "";
             if (personalStore != null && personalStore.LastError.Length > 0) Dashboard.Recovery.Text = personalStore.LastError;
-            tray.Text = Input.Enabled ? "Hanautomata · 자동 판별" : "Hanautomata · 일시정지";
+            tray.Text = Input.Enabled ? "다듬 · 자동 판별" : "다듬 · 일시정지";
             Decision candidate = null; string shown = null;
             lock (Input.Sync) { if (!Input.Composition.IsEmpty) { candidate = Input.Composition.Current; shown = Input.Spaced(candidate.Text); } }
             if (fresh && candidate != null) preview.UpdateCandidate(candidate, shown, snapshot.Position, Input.SemicolonShortcut);
@@ -359,7 +359,7 @@ namespace Hanautomata
             catch (Exception ex)
             {
                 StartupLog.Write("registration-failed", "menu", ex);
-                MessageBox.Show("자동 시작 설정을 저장하지 못했습니다.\n" + ex.Message + "\n설정을 확인한 뒤 다시 켜 주세요.", "Hanautomata", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show("자동 시작 설정을 저장하지 못했습니다.\n" + ex.Message + "\n설정을 확인한 뒤 다시 켜 주세요.", "다듬", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
         protected override void ExitThreadCore()
@@ -420,13 +420,13 @@ namespace Hanautomata
             if (LegacyInstanceRunning())
             {
                 StartupLog.Write("legacy-running", mode, null);
-                if (!background) MessageBox.Show("이전 이름의 HanFlow가 실행 중입니다. 두 앱이 같은 키를 함께 처리하지 않도록 트레이에서 HanFlow를 종료한 뒤 다시 실행하세요.", "Hanautomata");
+                if (!background) MessageBox.Show("이전 이름의 HanFlow가 실행 중입니다. 두 앱이 같은 키를 함께 처리하지 않도록 트레이에서 HanFlow를 종료한 뒤 다시 실행하세요.", "다듬");
                 return 1;
             }
             bool created;
             using (var mutex = ImeSharedAccess.CreateTrayMutex("Local\\Hanautomata.Instance." + sid, out created))
             {
-                if (!created) { StartupLog.Write("already-running", mode, null); if (!background) MessageBox.Show("Hanautomata가 이미 실행 중입니다. 작업 표시줄의 한 아이콘을 확인하세요.", "Hanautomata"); return 0; }
+                if (!created) { StartupLog.Write("already-running", mode, null); if (!background) MessageBox.Show("다듬이 이미 실행 중입니다. 작업 표시줄의 한 아이콘을 확인하세요.", "다듬"); return 0; }
                 using (var stop = new EventWaitHandle(false, EventResetMode.ManualReset, stopName))
                 {
                     try
@@ -439,7 +439,7 @@ namespace Hanautomata
                         Application.Run(app);
                         StartupLog.Write("stopped", mode, null);
                     }
-                    catch (Exception ex) { StartupLog.Write("failed", mode, ex); if (!background) MessageBox.Show("Hanautomata를 시작하지 못했습니다.\n" + ex.Message, "Hanautomata", MessageBoxButtons.OK, MessageBoxIcon.Error); return 1; }
+                    catch (Exception ex) { StartupLog.Write("failed", mode, ex); if (!background) MessageBox.Show("다듬을 시작하지 못했습니다.\n" + ex.Message, "다듬", MessageBoxButtons.OK, MessageBoxIcon.Error); return 1; }
                 }
                 mutex.ReleaseMutex();
             }

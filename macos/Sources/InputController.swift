@@ -233,7 +233,7 @@ final class HanautomataInputController: IMKInputController {
         }
         menu.addItem(.separator())
         menu.addItem(item("설정…", #selector(showPreferences(_:))))
-        menu.addItem(item("한오토마타 \(Updates.current) 정보…", #selector(showAbout(_:))))
+        menu.addItem(item("다듬 \(Updates.current) 정보…", #selector(showAbout(_:))))
         menu.addItem(item("기억한 선택 \(engine.learnedCount())개", #selector(noop(_:)), enabled: false))
         if Settings.updateCheck, !Settings.latestVersion.isEmpty {
             menu.addItem(item("새 판 \(Settings.latestVersion) 내려받기…", #selector(openReleases(_:))))

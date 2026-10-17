@@ -5,8 +5,8 @@ cask "hanautomata" do
   sha256 "@SHA256@"
 
   url "https://github.com/peterkimpmp/hanautomata/releases/download/v#{version}/Hanautomata-#{version}-macos.zip"
-  name "Hanautomata"
-  name "한오토마타"
+  name "Dadeum"
+  name "다듬"
   desc "Korean/English auto-detecting input method"
   homepage "https://github.com/peterkimpmp/hanautomata"
 
@@ -34,7 +34,7 @@ cask "hanautomata" do
   ]
 
   caveats <<~EOS
-    Add the input source once: System Settings > Keyboard > Input Sources > Edit… > + > Korean > 한오토마타.
+    Add the input source once: System Settings > Keyboard > Input Sources > Edit… > + > Korean > 다듬.
     The first time you select it, a three-step setup explains the switch keys and any macOS setting that takes them.
   EOS
 end

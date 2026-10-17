@@ -207,7 +207,7 @@ struct SwitchKeysSection: View {
         Section("한/영 전환 키") {
             Toggle("⇧Space — Shift를 누른 뒤 다른 키 없이 Space", isOn: $model.shiftSpace)
             if model.shiftSpace && model.system.shiftSpaceTaken {
-                Warning(text: "macOS 단축키 '입력 메뉴에서 이전/다음 소스 선택'이 ⇧Space라서 이 키가 한오토마타까지 오지 않습니다. "
+                Warning(text: "macOS 단축키 '입력 메뉴에서 이전/다음 소스 선택'이 ⇧Space라서 이 키가 다듬까지 오지 않습니다. "
                             + "시스템 설정 > 키보드 > 키보드 단축키 > 입력 소스에서 그 단축키를 바꾸거나 끄세요.",
                         button: "키보드 설정 열기") { SystemSettings.open(SystemSettings.keyboard) }
             }
@@ -249,7 +249,7 @@ struct SwitchKeysSection: View {
         } else {
             VStack(alignment: .leading, spacing: 4) {
                 Text("입력 모니터링 권한이 없어도 짧게 눌러 전환하고 Shift+Caps Lock으로 대문자를 고정합니다. "
-                     + "길게 눌러 대문자를 고정하려면 권한이 필요합니다. 한오토마타는 Caps Lock만 읽고 다른 키는 기록하지 않습니다.")
+                     + "길게 눌러 대문자를 고정하려면 권한이 필요합니다. 다듬은 Caps Lock만 읽고 다른 키는 기록하지 않습니다.")
                     .font(.callout).fixedSize(horizontal: false, vertical: true)
                 HStack {
                     if model.capsAccess == .unknown {
@@ -317,7 +317,7 @@ struct InputSection: View {
             Toggle("검색 칸에서 조합 중인 글자도 바로 검색되게 (실험)", isOn: $model.searchInline)
             if model.searchInline {
                 Caption("검색 칸에서는 밑줄 조합 대신 글자를 바로 넣고 바뀔 때마다 고칩니다. 검색 칸을 알아보려면 시스템 설정 > 개인정보 보호 및 보안 > "
-                        + "손쉬운 사용에서 Hanautomata를 켜야 합니다. 지금: " + (FieldInspector.trusted ? "허용됨" : "허용 안 됨"))
+                        + "손쉬운 사용에서 다듬을 켜야 합니다. 지금: " + (FieldInspector.trusted ? "허용됨" : "허용 안 됨"))
                 if !FieldInspector.trusted {
                     Button("손쉬운 사용 설정 열기") {
                         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
@@ -421,7 +421,7 @@ struct AppsSection: View {
             Toggle("앱마다 마지막 모드 기억", isOn: $model.perAppMode)
             Toggle("기본 앱 프로필 쓰기 — 원격·가상 머신은 영문 고정으로 시작, 터미널·코드 편집기는 보수 판별",
                    isOn: $model.builtInProfiles)
-            Toggle("입력 소스 잠금 — 다른 입력 소스로 바뀌면 한오토마타로 되돌리기", isOn: $model.lockSource)
+            Toggle("입력 소스 잠금 — 다른 입력 소스로 바뀌면 다듬으로 되돌리기", isOn: $model.lockSource)
             Picker("Esc로 영문 전환(vi)", selection: $model.escVi) {
                 Text("끔").tag("off")
                 Text("터미널·편집기").tag("apps")
@@ -571,7 +571,7 @@ struct DisplaySection: View {
         IconsSection(model: model)
         Section("업데이트") {
             Toggle("하루 한 번 새 판 확인 (GitHub Releases)", isOn: $model.updateCheck)
-            Caption("끄면 한오토마타는 네트워크를 전혀 쓰지 않습니다. 켜도 입력한 글자는 보내지 않습니다.")
+            Caption("끄면 다듬은 네트워크를 전혀 쓰지 않습니다. 켜도 입력한 글자는 보내지 않습니다.")
         }
         Section("진단") {
             Text(Diagnostics.report(Shell.core.diagnostics.snapshot))
@@ -602,7 +602,7 @@ struct IconsSection: View {
                 }
             }
             Caption("고정 모드의 아이콘(가·A)을 메뉴 막대에 보이려면 시스템 설정 > 키보드 > 입력 소스 > 편집… > + > 한국어에서 "
-                    + "'한오토마타 (한글 고정)'·'한오토마타 (영문 고정)'도 추가하세요. 추가하지 않아도 모드는 바뀌고 입력 메뉴에 표시됩니다.")
+                    + "'다듬 (한글 고정)'·'다듬 (영문 고정)'도 추가하세요. 추가하지 않아도 모드는 바뀌고 입력 메뉴에 표시됩니다.")
             Button("키보드 설정 열기") { SystemSettings.open(SystemSettings.keyboard) }
         }
     }
@@ -619,7 +619,7 @@ struct AboutSection: View {
                 Text("한").font(.system(size: 28, weight: .bold)).foregroundStyle(.white)
                     .frame(width: 52, height: 52).background(Circle().fill(Color(red: 29 / 255, green: 77 / 255, blue: 216 / 255)))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("한오토마타 (Hanautomata)").font(.title3.bold())
+                    Text("다듬 (Dadeum)").font(.title3.bold())
                     Text("판 \(Updates.current) (빌드 \(About.build))").textSelection(.enabled)
                     Text("한영 모드 없이 치는 대로 한글·영문을 고르는 입력기").foregroundStyle(.secondary)
                 }
@@ -691,7 +691,7 @@ struct SetupView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("한오토마타 시작하기 \(step + 1)/3 — \(titles[step])").font(.title3.bold())
+            Text("다듬 시작하기 \(step + 1)/3 — \(titles[step])").font(.title3.bold())
             Form {
                 switch step {
                 case 0: SwitchKeysSection(model: model)
@@ -746,7 +746,7 @@ enum SettingsWindow {
             ? AnyView(SetupView(model: model) { window.close() })
             : AnyView(SettingsView(model: model, tab: tab))
         window.contentViewController = NSHostingController(rootView: root)
-        window.title = firstRun ? "한오토마타 시작하기" : "한오토마타 설정"
+        window.title = firstRun ? "다듬 시작하기" : "다듬 설정"
         window.center()
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)

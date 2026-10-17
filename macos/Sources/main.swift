@@ -49,7 +49,7 @@ if CommandLine.arguments.contains("--check") {
     print("Caps Lock: " + (check.capsLockSwitchesABC
         ? "macOS 'Use the Caps Lock key to switch to and from ABC' is on — turn it off in System Settings > Keyboard > Input Sources > Edit…"
         : "free"))
-    print("Caps Lock long press needs Input Monitoring for Hanautomata (asked in its first-run setup)")
+    print("Caps Lock long press needs Input Monitoring for Dadeum (asked in its first-run setup)")
     exit(0)
 }
 

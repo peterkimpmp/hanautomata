@@ -1,4 +1,4 @@
-# macos — 한오토마타 macOS 입력기 0.6.1
+# macos — 다듬 macOS 입력기 0.6.1
 
 InputMethodKit 입력기다. 판별·조합·학습은 Rust 공통 엔진([core](../core/README.md))이 맡는다. 엔진은 UniFFI 계층([ffi](../ffi/src/lib.rs))을 거쳐 Swift 셸과 연결된다. Windows 트레이 앱과 같은 판별 결과를 낸다(동등성 게이트 G1).
 
@@ -16,12 +16,12 @@ cd macos
 ./package.sh --with-proofreading # 기존 실험 맞춤법 검사기·사전·소스·고지를 함께 담는 universal 묶음
 ```
 
-- **처음 설치 때 한 번 직접 추가해야 한다.** 시스템 설정 → 키보드 → 입력 소스 → 편집… → + → 한국어 → 한오토마타 순서로 추가한다. macOS 26에서 `TISEnableInputSource`가 성공을 돌려줘도 실제로 켜지지 않는 것을 확인했다(2026-10-11). `install.sh`는 실제 상태를 보고, 켜지지 않았으면 이 안내를 출력한다.
+- **처음 설치 때 한 번 직접 추가해야 한다.** 시스템 설정 → 키보드 → 입력 소스 → 편집… → + → 한국어 → 다듬 순서로 추가한다. macOS 26에서 `TISEnableInputSource`가 성공을 돌려줘도 실제로 켜지지 않는 것을 확인했다(2026-10-11). `install.sh`는 실제 상태를 보고, 켜지지 않았으면 이 안내를 출력한다.
 - **다시 설치한 뒤** 옛 판으로 입력하던 앱은 입력 소스를 한 번 바꿨다가 되돌린다(그래도 안 되면 앱을 다시 연다). 입력기 프로세스가 바뀌어도 열려 있던 앱은 저절로 다시 연결하지 않았다(2026-10-12).
 - **전환 키와 겹치는 macOS 설정**은 `install.sh`(내부적으로 `Hanautomata --check`)와 첫 실행 설정이 읽어서 알려 준다. 바꾸지는 않는다.
-  - 키보드 단축키 '입력 메뉴에서 이전/다음 소스 선택'이 ⇧Space면 ⇧Space가 한오토마타까지 오지 않는다.
+  - 키보드 단축키 '입력 메뉴에서 이전/다음 소스 선택'이 ⇧Space면 ⇧Space가 다듬까지 오지 않는다.
   - 'Caps Lock 키로 ABC 입력 소스 전환'이 켜져 있으면 시스템이 Caps Lock을 먼저 가져간다.
-- 메뉴 막대에서 고정 모드 아이콘(가·A)을 보려면 '한오토마타 (한글 고정)'·'한오토마타 (영문 고정)'도 추가한다. 추가하지 않아도 모드는 바뀌고 입력 메뉴에 표시된다.
+- 메뉴 막대에서 고정 모드 아이콘(가·A)을 보려면 '다듬 (한글 고정)'·'다듬 (영문 고정)'도 추가한다. 추가하지 않아도 모드는 바뀌고 입력 메뉴에 표시된다.
 - 필요한 것: Xcode Command Line Tools(swiftc), Rust 1.89+(cargo). universal 빌드는 `rustup target add x86_64-apple-darwin`이 필요하다. 내 표현 서비스도 같은 아키텍처로 빌드해 앱 안에 포함한다.
 
 개발판 입력 메뉴의 **내 표현…**에서 직접 등록한 표현을 찾아 복사할 수 있습니다. 별도로 창만 열려면 `build/Hanautomata.app/Contents/MacOS/Hanautomata --personal-expressions`를 실행합니다. 이 방식은 입력기 등록 없이 동작하며, 입력 중 자동 추천과 LLM 기능은 아직 포함하지 않습니다. [MVP 명세](../docs/specs/PERSONAL-ASSIST-MVP.md), [검증 상태](../docs/PERSONAL-ASSIST-VALIDATION.md)를 참조하세요.
@@ -115,7 +115,7 @@ Windows 트레이의 14개 닫힌 규칙을 Rust로 이식했다. `할수있다 
   | 같은 언어 | 6 | 0 |
   | 반대 언어 | 15 | 4 |
 - **서명·공증(D15)**: Apple Developer ID 연 99달러. 없으면 내려받은 zip을 Gatekeeper가 막는다.
-- **⇧Space·Caps Lock을 먼저 가져가는 macOS 설정**: 사용자가 시스템 설정에서 직접 바꾼다. 한오토마타는 알려 주기만 한다.
+- **⇧Space·Caps Lock을 먼저 가져가는 macOS 설정**: 사용자가 시스템 설정에서 직접 바꾼다. 다듬은 알려 주기만 한다.
 
 ## 구조
 

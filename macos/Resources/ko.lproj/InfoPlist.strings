@@ -1,5 +1,5 @@
-"io.github.peterkimpmp.inputmethod.Hanautomata" = "한오토마타";
-"io.github.peterkimpmp.inputmethod.Hanautomata.Korean" = "한오토마타 (한글 고정)";
-"io.github.peterkimpmp.inputmethod.Hanautomata.English" = "한오토마타 (영문 고정)";
-CFBundleName = "Hanautomata";
-CFBundleDisplayName = "한오토마타";
+"io.github.peterkimpmp.inputmethod.Hanautomata" = "다듬";
+"io.github.peterkimpmp.inputmethod.Hanautomata.Korean" = "다듬 (한글 고정)";
+"io.github.peterkimpmp.inputmethod.Hanautomata.English" = "다듬 (영문 고정)";
+CFBundleName = "Dadeum";
+CFBundleDisplayName = "다듬";

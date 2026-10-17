@@ -8,7 +8,7 @@ use windows::Win32::Foundation::{E_ABORT, E_ACCESSDENIED, E_FAIL, E_INVALIDARG, 
 use windows::Win32::UI::WindowsAndMessaging::*;
 use windows::Win32::UI::Input::KeyboardAndMouse::{EnableWindow, IsWindowEnabled};
 
-pub const DISPLAY_NAME: &str = "한오토마타 입력기 설정";
+pub const DISPLAY_NAME: &str = "다듬 입력기 설정";
 static SHOWING: AtomicBool = AtomicBool::new(false);
 
 struct Showing<'a>(&'a AtomicBool);

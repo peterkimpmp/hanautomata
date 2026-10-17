@@ -171,7 +171,7 @@ enum Lists {
     /// Applies new lists and writes both files.
     static func save(keep: [String], convert: [String], _ engine: Engine) {
         engine.setExceptions(keep: keep, convert: convert)
-        let header = "# 한오토마타 예외 목록 — 한 줄에 한 단어, #으로 시작하면 설명\n"
+        let header = "# 다듬 예외 목록 — 한 줄에 한 단어, #으로 시작하면 설명\n"
         do {
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             try (header + "# 절대 바꾸지 않을 단어(영문 그대로)\n" + engine.keepList().joined(separator: "\n") + "\n")
@@ -267,6 +267,6 @@ enum About {
         let arch = "x86_64"
         #endif
         let os = ProcessInfo.processInfo.operatingSystemVersion
-        return "Hanautomata \(Updates.current) (\(build)) · macOS \(os.majorVersion).\(os.minorVersion).\(os.patchVersion) · \(arch)"
+        return "Dadeum \(Updates.current) (\(build)) · macOS \(os.majorVersion).\(os.minorVersion).\(os.patchVersion) · \(arch)"
     }
 }

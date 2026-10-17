@@ -143,7 +143,7 @@ final class ProofreadingDemo: NSObject, NSTextViewDelegate {
         editMenu.addItem(withTitle: "붙여넣기", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
         editMenu.addItem(withTitle: "모두 선택", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
         NSApplication.shared.mainMenu = menu
-        window.title = "Hanautomata · 맞춤법 검증용 편집기"
+        window.title = "다듬 · 맞춤법 검증용 편집기"
         text.string = "안녕하세요. 오늘은 일이 잘 됬다. 내일은 할수있다. 이제 되요."
         text.font = .systemFont(ofSize: 20); text.isRichText = false; text.allowsUndo = true; text.delegate = self
         window.contentView!.addSubview(text)

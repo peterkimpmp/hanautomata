@@ -1,8 +1,10 @@
-# Hanautomata
+# 다듬 (Dadeum)
+
+2026-10-17 제품명을 **Hanautomata → 다듬(Dadeum)**으로 확정했습니다. 새 소스의 화면·입력기 표시 이름부터 적용합니다. 기존 배포본은 이전 이름으로 표시될 수 있으며 저장소 주소·실행 파일·설정 경로는 호환성을 위해 유지합니다. [이름과 호환성 기준](docs/BRAND.md).
 
 **한영키를 바꾸지 않고 입력한다 — 단어 단위 한/영 자동 판별 입력 도구 (Windows·macOS) v0.6.1**
 
-Hanautomata는 같은 물리 키로 한국어와 영어를 입력하면 **단어 단위로 언어를 판별**해 주는 로컬 입력 도구입니다. 손목록 먼저, 다음은 한글 음절 bigram 대 영문 자모 bigram의 우도비로 판별하고, 애매할 때만 작은 후보창을 보여 주며, Space로 확정하고 F2(직전 단어)·Shift+F2(선택 영역)로 고칩니다. `dkssudgktpdy`는 **안녕하세요**, `hello world`는 **hello world**가 됩니다.
+다듬은 같은 물리 키로 한국어와 영어를 입력하면 **단어 단위로 언어를 판별**해 주는 로컬 입력 도구입니다. 손목록 먼저, 다음은 한글 음절 bigram 대 영문 자모 bigram의 우도비로 판별하고, 애매할 때만 작은 후보창을 보여 주며, Space로 확정하고 F2(직전 단어)·Shift+F2(선택 영역)로 고칩니다. `dkssudgktpdy`는 **안녕하세요**, `hello world`는 **hello world**가 됩니다.
 
 입력 처리에 네트워크·클라우드 모델·외부 사전이 없습니다. 무엇을 저장하고 무엇을 하지 않는지는 [PRIVACY.md](PRIVACY.md)에 있습니다. 코드는 MIT, 모델 표는 위키백과 덤프의 집계 통계(CC BY-SA 4.0)입니다.
 
@@ -87,7 +89,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -Startup # 자
 
 ### Windows 입력기(TSF) — `Hanautomata-ime-<판>-win.zip` (시험판)
 
-정식 입력기 방식이라 **관리자 1회 설치**가 필요하고, 설치 후 입력기 목록에 '한오토마타'가 추가됩니다. 설치·갱신·제거 절차와 현재 검증 범위는 [tsf/README.md](tsf/README.md)를 따르세요. 트레이 앱과 함께 켜지 않습니다.
+정식 입력기 방식이라 **관리자 1회 설치**가 필요하고, 설치 후 입력기 목록에 '다듬'가 추가됩니다. 설치·갱신·제거 절차와 현재 검증 범위는 [tsf/README.md](tsf/README.md)를 따르세요. 트레이 앱과 함께 켜지 않습니다.
 
 ### macOS — `Hanautomata-<판>-macos.zip`
 
@@ -95,7 +97,7 @@ macOS 14 이상(Apple Silicon·Intel universal).
 
 1. `shasum -a 256 Hanautomata-<판>-macos.zip` 결과를 체크섬과 대조합니다.
 2. zip을 풀어 `Hanautomata.app`을 `~/Library/Input Methods/`에 둡니다.
-3. 시스템 설정 → 키보드 → 입력 소스 → 편집… → `+` → 한국어 → **한오토마타**를 추가합니다.
+3. 시스템 설정 → 키보드 → 입력 소스 → 편집… → `+` → 한국어 → **다듬**를 추가합니다.
 
 서명이 없는 빌드는 Gatekeeper가 차단할 수 있습니다: `xattr -dr com.apple.quarantine ~/Library/Input\ Methods/Hanautomata.app` 후 다시 추가하세요. 제거는 `macos/uninstall.sh` 또는 입력 소스 제거 후 앱 삭제입니다. 자세한 사용법·전환 키·설정은 [macos/README.md](macos/README.md)에 있습니다.
 

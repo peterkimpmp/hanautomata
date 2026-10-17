@@ -74,7 +74,7 @@ namespace Hanautomata
             // Early layout otherwise consumes the scale factor before ClientSize and children exist.
             SuspendLayout();
             path = Path.GetFullPath(settingsPath);
-            Text = "한오토마타 입력기 설정";
+            Text = "다듬 입력기 설정";
             Font = new Font("Malgun Gothic", 9F); StartPosition = FormStartPosition.CenterScreen;
             AutoScaleDimensions = new SizeF(96, 96); AutoScaleMode = AutoScaleMode.Dpi;
             ClientSize = new Size(660, 610); MinimumSize = new Size(560, 500);
@@ -83,8 +83,8 @@ namespace Hanautomata
             layout.SizeChanged += delegate { status.Height = status.Font.Height * 5 + 12; };
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize)); layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); layout.RowStyles.Add(new RowStyle(SizeType.AutoSize)); layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            layout.Controls.Add(new Label { Text = "한오토마타 · Windows 입력기", AutoSize = true, Font = new Font(Font.FontFamily, 16F, FontStyle.Bold), Margin = new Padding(0, 0, 0, 10) }, 0, 0);
-            layout.Controls.Add(new Label { Text = "저장 후 입력기를 다른 입력기로 바꿨다가 한오토마타를 다시 선택해 주세요.\n실행 중인 앱에 적용되지 않으면 해당 앱을 다시 열어 주세요.", AutoSize = true, Dock = DockStyle.Fill, Margin = new Padding(0, 0, 0, 12) }, 0, 1);
+            layout.Controls.Add(new Label { Text = "다듬 · Windows 입력기", AutoSize = true, Font = new Font(Font.FontFamily, 16F, FontStyle.Bold), Margin = new Padding(0, 0, 0, 10) }, 0, 0);
+            layout.Controls.Add(new Label { Text = "저장 후 입력기를 다른 입력기로 바꿨다가 다듬을 다시 선택해 주세요.\n실행 중인 앱에 적용되지 않으면 해당 앱을 다시 열어 주세요.", AutoSize = true, Dock = DockStyle.Fill, Margin = new Padding(0, 0, 0, 12) }, 0, 1);
             layout.Controls.Add(tabs, 0, 2); layout.Controls.Add(status, 0, 3);
             var input = Page("입력");
             Combo(input, "InputMode", "시작 입력 모드", new Choice("Auto", "자동 판별"), new Choice("Korean", "한글"), new Choice("English", "영어"));
@@ -202,7 +202,7 @@ namespace Hanautomata
         }
         void PreviewRecovery()
         {
-            using (var dialog = new OpenFileDialog { Title = "복원할 한오토마타 설정 선택", CheckFileExists = true, RestoreDirectory = true,
+            using (var dialog = new OpenFileDialog { Title = "복원할 다듬 설정 선택", CheckFileExists = true, RestoreDirectory = true,
                 InitialDirectory = Path.GetDirectoryName(path),
                 Filter = "보관된 설정 (*.previous;*.tmp;*.json)|*.previous;*.tmp;*.json|모든 파일 (*.*)|*.*" })
             {

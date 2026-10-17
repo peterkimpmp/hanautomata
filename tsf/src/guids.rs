@@ -12,7 +12,7 @@ pub const PRESERVED_RECONVERT: GUID = GUID::from_u128(0x38CE7FA9_60EF_473D_B87F_
 pub const PRESERVED_PROOFREAD: GUID = GUID::from_u128(0x8a42a145_16ef_4dd0_995b_7c3061a5f407);
 
 pub const LANGID_KOREAN: u16 = 0x0412;
-pub const DESCRIPTION: &str = "한오토마타";
+pub const DESCRIPTION: &str = "다듬";
 pub const DLL_NAME: &str = "hanautomata_tsf.dll";
 
 /// `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}` as the registry and InstallLayoutOrTip write it.

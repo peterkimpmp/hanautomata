@@ -72,7 +72,7 @@ if [ "$activate" = yes ]; then
     i=0
     while pgrep -u "$(id -u)" -x Hanautomata >/dev/null && [ "$i" -lt 25 ]; do sleep 0.2; i=$((i + 1)); done
     if pgrep -u "$(id -u)" -x Hanautomata >/dev/null; then
-        echo 'Hanautomata is still running. Quit it, then run this installer again; installed files were not changed.' >&2
+        echo 'Dadeum is still running. Quit it, then run this installer again; installed files were not changed.' >&2
         exit 1
     fi
 fi
@@ -89,11 +89,11 @@ echo "Installed files: $installed"
 [ -z "$backup" ] || echo "Previous bundle: $backup/Hanautomata.app"
 if [ "$activate" = yes ]; then
     if ! "$installed/Contents/MacOS/Hanautomata" --register; then
-        echo 'Add 한오토마타 in System Settings > Keyboard > Input Sources, or log out and back in.'
+        echo 'Add 다듬 in System Settings > Keyboard > Input Sources, or log out and back in.'
     fi
-    open -g "$installed" || echo 'If macOS blocked launch, use Privacy & Security > Open Anyway for Hanautomata.'
+    open -g "$installed" || echo 'If macOS blocked launch, use Privacy & Security > Open Anyway for Dadeum.'
     "$installed/Contents/MacOS/Hanautomata" --check || true
 fi
-echo 'Switch to another input source and back to Hanautomata in apps that used the previous version.'
-echo 'Activation is not verified by this installer. Confirm the new version in Hanautomata settings > About.'
+echo 'Switch to another input source and back to Dadeum in apps that used the previous version.'
+echo 'Activation is not verified by this installer. Confirm the new version in Dadeum settings > About.'
 echo 'Settings and personal learning files are preserved.'

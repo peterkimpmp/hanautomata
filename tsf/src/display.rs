@@ -25,7 +25,7 @@ impl ITfDisplayAttributeInfo_Impl for InputAttribute_Impl {
     }
 
     fn GetDescription(&self) -> Result<BSTR> {
-        Ok(BSTR::from("Hanautomata composition"))
+        Ok(BSTR::from("Dadeum composition"))
     }
 
     fn GetAttributeInfo(&self, pda: *mut TF_DISPLAYATTRIBUTE) -> Result<()> {

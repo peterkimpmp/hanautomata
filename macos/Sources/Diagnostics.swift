@@ -150,7 +150,7 @@ final class Diagnostics {
         }
         let formatter = ISO8601DateFormatter()
         var lines = [
-            "Hanautomata diagnostics since \(formatter.string(from: s.since)) — counts only, no typed text",
+            "Dadeum diagnostics since \(formatter.string(from: s.since)) — counts only, no typed text",
             "keys \(s.keys) · passed: \(table(s.passed)) · secure-field keys \(s.secureKeys) · engine failures \(s.failures)",
             "latency (\(s.latency.count) keys): p50 ≤ \(ms(s.latency.percentile(0.5))) · p99 ≤ \(ms(s.latency.percentile(0.99)))"
                 + " · max \(ms(s.latency.count > 0 ? s.latency.maxMicros : nil))",

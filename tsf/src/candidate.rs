@@ -182,7 +182,7 @@ impl Element {
 impl ITfUIElement_Impl for Element_Impl {
     fn GetDescription(&self) -> Result<BSTR> {
         self.on_thread(|| Ok(BSTR::from(self.snapshot.borrow().as_ref().map_or_else(
-            || "한오토마타 후보".to_string(), |s| format!("한오토마타 후보 · {}", s.learning_notice)))))
+            || "다듬 후보".to_string(), |s| format!("다듬 후보 · {}", s.learning_notice)))))
     }
     fn GetGUID(&self) -> Result<GUID> { self.on_thread(|| Ok(ID)) }
     fn Show(&self, show: BOOL) -> Result<()> { self.on_thread(|| self.visible(show.as_bool())) }

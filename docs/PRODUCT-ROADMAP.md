@@ -1,5 +1,5 @@
 ---
-title: "Hanautomata는 한영 입력에서 개인화된 문장 작성으로 확장한다"
+title: "다듬은 한영 입력에서 개인화된 문장 작성으로 확장한다"
 date: 2026-10-17
 layout: a4
 purpose: operations
@@ -10,7 +10,7 @@ baseline: "610a7ef · macOS 0.6.1 / Windows 트레이 0.6.0"
 atlas_waiver: "공개 제품의 기능·UX·기술 조사에 따른 로드맵"
 ---
 
-# Hanautomata는 한영 입력에서 개인화된 문장 작성으로 확장한다
+# 다듬은 한영 입력에서 개인화된 문장 작성으로 확장한다
 
 - a~d는 두 OS가 공유할 기능 정의다.
 - 개인화·추천은 모든 단계에 걸쳐 발전시킨다.
@@ -59,7 +59,7 @@ flowchart LR
 
 짧은 추천은 기본 한 줄, 펼치면 최대 3개를 비교하는 안부터 검증한다. 긴 작업은 별도 패널에서 입력 의도와 결과를 충분히 보여 준다. 추가 기능은 작업 안에서 펼치고, 반복 작업은 이름 붙인 개인 명령으로 저장할 수 있게 한다. 구체적인 화면·단축키는 호스트 및 접근성 시험을 거쳐 확정한다.
 
-Apple의 선택문 Writing Tools, SwiftKey의 톤 선택, Grammarly의 확인·수정 가능한 문체 프로필은 참고할 UX 선례다. 이 제품들의 설명은 Hanautomata의 한국어 품질이나 모든 앱 지원을 입증하지 않는다. [Apple](https://support.apple.com/guide/mac-help/writing-tools-write-improve-summarize-mchldcd6c260/mac), [SwiftKey](https://support.microsoft.com/en-us/swiftkey-keyboard/how-to-use-tone-in-microsoft-swiftkey-keyboard), [Grammarly](https://support.grammarly.com/hc/en-us/articles/23153676821773-View-and-customize-your-voice-profile).
+Apple의 선택문 Writing Tools, SwiftKey의 톤 선택, Grammarly의 확인·수정 가능한 문체 프로필은 참고할 UX 선례다. 이 제품들의 설명은 다듬의 한국어 품질이나 모든 앱 지원을 입증하지 않는다. [Apple](https://support.apple.com/guide/mac-help/writing-tools-write-improve-summarize-mchldcd6c260/mac), [SwiftKey](https://support.microsoft.com/en-us/swiftkey-keyboard/how-to-use-tone-in-microsoft-swiftkey-keyboard), [Grammarly](https://support.grammarly.com/hc/en-us/articles/23153676821773-View-and-customize-your-voice-profile).
 
 ## 3. 개인화는 단어·표현·문체·반응을 나눠 기억한다
 

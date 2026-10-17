@@ -124,7 +124,7 @@ namespace Hanautomata
             using (var writer = XmlWriter.Create(output, new XmlWriterSettings { OmitXmlDeclaration = true }))
             {
                 writer.WriteStartElement("Task", Namespace); writer.WriteAttributeString("version", "1.2");
-                writer.WriteStartElement("RegistrationInfo"); writer.WriteElementString("Description", "Hanautomata: start 15 seconds after this user signs in."); writer.WriteEndElement();
+                writer.WriteStartElement("RegistrationInfo"); writer.WriteElementString("Description", "Dadeum: start 15 seconds after this user signs in."); writer.WriteEndElement();
                 writer.WriteStartElement("Triggers"); writer.WriteStartElement("LogonTrigger");
                 writer.WriteElementString("Enabled", "true"); writer.WriteElementString("UserId", sid); writer.WriteElementString("Delay", "PT15S"); writer.WriteEndElement(); writer.WriteEndElement();
                 writer.WriteStartElement("Principals"); writer.WriteStartElement("Principal"); writer.WriteAttributeString("id", "CurrentUser");

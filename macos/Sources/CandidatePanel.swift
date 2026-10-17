@@ -46,7 +46,7 @@ final class CandidatePanel: Feedback {
         ])
         panel.contentView = background
         panel.setAccessibilityRole(.popover)
-        panel.setAccessibilityLabel("한오토마타 후보")
+        panel.setAccessibilityLabel("다듬 후보")
     }
 
     /// Size steps for the candidate text (C-CMP-10).

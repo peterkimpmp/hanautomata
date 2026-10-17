@@ -5,13 +5,13 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>ko</string>
 	<key>CFBundleDisplayName</key>
-	<string>Hanautomata</string>
+	<string>Dadeum</string>
 	<key>CFBundleExecutable</key>
 	<string>Hanautomata</string>
 	<key>CFBundleIdentifier</key>
 	<string>io.github.peterkimpmp.inputmethod.Hanautomata</string>
 	<key>CFBundleName</key>
-	<string>Hanautomata</string>
+	<string>Dadeum</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
