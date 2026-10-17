@@ -11,6 +11,8 @@ status: shipped-tray-0.6.0
 
 # 트레이 앱은 Space로 확정할 때 의존 명사 띄어쓰기를 자동으로 고친다
 
+2026-10-17: macOS 0.6.1에도 같은 규칙을 이식했다. 규칙 정본은 아래 표이며 Rust 구현은 `core/src/spacing.rs`, 두 언어가 공유하는 사례는 `tests/corpora/spacing.tsv`다. macOS의 확정·후보창·원문 복원·배포 상태는 [별도 검증 기록](../macos/SPACING-VALIDATION.md)에 적는다. 아래 Windows 측정 수치를 macOS 실물 성능으로 간주하지 않는다.
+
 - `gkftndlTek` + Space → **할 수 있다**. 확정 직후 F2 → **할수있다**(입력한 그대로).
 - 교정은 공백 삽입뿐이다. 공백을 지우면 언제나 원래 입력과 같다.
 - 위키백과 어절 61,759개 + 시험 어절 1,000개에서 바뀌는 어절은 검토한 6개뿐이다.

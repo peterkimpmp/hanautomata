@@ -17,6 +17,7 @@ foreach ($required in @($lexicon, $koreanLm, $englishLm, $koreanWords, $englishW
 # Embedded resources: the English lexicon, the Korean syllable and English letter statistics (aggregate counts only) and the two band-only word lists.
 $modelResources = @("/resource:$lexicon,Hanautomata.English.txt", "/resource:$koreanLm,Hanautomata.KoreanLM.txt.gz", "/resource:$englishLm,Hanautomata.EnglishLM.txt", "/resource:$koreanWords,Hanautomata.KoreanWords.txt.gz", "/resource:$englishWords,Hanautomata.EnglishWords.txt.gz")
 $testResources = @(
+    ("/resource:" + (Join-Path $appRoot 'tests/corpora/spacing.tsv') + ",Hanautomata.Spacing.tsv"),
     ("/resource:" + (Join-Path $appRoot 'tests/corpora/scorer-fixtures.tsv') + ",Hanautomata.ScorerFixtures.tsv"),
     ("/resource:" + (Join-Path $appRoot 'tests/corpora/heldout-korean-1000.tsv') + ",Hanautomata.HeldoutKorean.tsv"),
     ("/resource:" + (Join-Path $appRoot 'tests/corpora/heldout-english-1000.tsv') + ",Hanautomata.HeldoutEnglish.tsv"))

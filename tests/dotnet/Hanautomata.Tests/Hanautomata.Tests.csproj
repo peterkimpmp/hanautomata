@@ -29,6 +29,7 @@
     <EmbeddedResource Include="../../corpora/scorer-fixtures.tsv" LogicalName="Hanautomata.ScorerFixtures.tsv" />
     <EmbeddedResource Include="../../corpora/heldout-korean-1000.tsv" LogicalName="Hanautomata.HeldoutKorean.tsv" />
     <EmbeddedResource Include="../../corpora/heldout-english-1000.tsv" LogicalName="Hanautomata.HeldoutEnglish.tsv" />
+    <EmbeddedResource Include="../../corpora/spacing.tsv" LogicalName="Hanautomata.Spacing.tsv" />
   </ItemGroup>
   <ItemGroup Condition="'$(TargetFramework)' == 'net9.0'">
     <Compile Include="JavaScriptSerializerShim.cs" />

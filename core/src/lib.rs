@@ -20,6 +20,7 @@ mod prefs;
 mod resources;
 mod scorer;
 mod session;
+pub mod spacing;
 mod store;
 mod unicode;
 #[rustfmt::skip]

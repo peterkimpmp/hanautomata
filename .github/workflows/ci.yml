@@ -4,6 +4,28 @@ on:
   pull_request:
   workflow_dispatch:
 jobs:
+  macos-input-method:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Rust, Swift, AppKit and safe installer regressions
+        run: ./macos/build.sh --test
+      - name: Universal input method and offline proofreading package
+        run: ./macos/package.sh --with-proofreading
+      - name: Extracted release payload, architectures and signatures
+        run: python3 macos/Tests/verify_package.py macos/build/dist/Hanautomata-$(cat VERSION)-macos.zip --with-proofreading
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Hanautomata-macos
+          path: |
+            macos/build/dist/*.zip
+            macos/build/dist/*.sha256
   proofreading:
     strategy:
       matrix:

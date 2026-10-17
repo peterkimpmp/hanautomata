@@ -82,6 +82,12 @@ enum Settings {
         set { defaults.set(newValue, forKey: "semicolon") }
     }
 
+    /// Closed spacing rules shared with Windows; no model or network request.
+    static var autoSpacing: Bool {
+        get { bool("autoSpacing", true) }
+        set { defaults.set(newValue, forKey: "autoSpacing") }
+    }
+
     static var learning: Bool {
         get { bool("learning", true) }
         set { defaults.set(newValue, forKey: "learning") }
@@ -290,7 +296,7 @@ enum Settings {
         "mode", "sensitivity", "switchKind", "shiftSpace", "capsLock", "rightCommand", "pauseKey", "semicolon", "learning",
         "learningPaused", "candidateAlways", "excludedApps", "keyboard", "deleteSyllable", "msClusters", "perAppMode",
         "appModes", "builtInProfiles", "escVi", "viApps", "modeNotice", "candidateSize", "candidateTheme", "extraTaps",
-        "bindings", "optionKey", "wonSign", "lockSource", "hanjaExtended", "updateCheck", "caretContext", "searchInline",
+        "bindings", "optionKey", "wonSign", "lockSource", "hanjaExtended", "updateCheck", "caretContext", "searchInline", "autoSpacing",
     ]
 
     /// The portable settings as a JSON object (profiles as an object, not encoded data).

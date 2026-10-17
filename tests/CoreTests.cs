@@ -239,6 +239,10 @@ static class CoreTests
     }
     static void SpacingTests()
     {
+        True(ReadResourceRows("Hanautomata.Spacing.tsv", delegate(string[] row) {
+            Equal(row[1], Spacing.Correct(row[0]), "shared C#/Rust spacing " + row[0]);
+            Equal(row[1], Spacing.Correct(row[1]), "shared spacing idempotence " + row[0]);
+        }) == 133, "all shared spacing cases are loaded");
         foreach (string[] pair in new[] {
             // ㄹ 수 있다/없다 — the request that started this rule set, and the evaluation set's holdout cases.
             new[] { "할수있다", "할 수 있다" }, new[] { "할수있어요", "할 수 있어요" }, new[] { "할수없다", "할 수 없다" },

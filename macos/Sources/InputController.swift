@@ -7,6 +7,8 @@ final class IMKClient: TextClient {
     let base: AnyObject
     private let input: IMKTextInput
 
+    var identity: ObjectIdentifier { ObjectIdentifier(base) }
+
     init?(_ sender: Any?) {
         guard let input = sender as? (IMKTextInput & NSObjectProtocol) else { return nil }
         self.input = input
@@ -212,6 +214,7 @@ final class HanautomataInputController: IMKInputController {
             menu.addItem(item("\(name)에서 끄기", #selector(toggleExclusion(_:)), on: Shell.core.isExcluded(client)))
         }
         menu.addItem(.separator())
+        menu.addItem(item("자동 띄어쓰기", #selector(toggleSpacing(_:)), on: Settings.autoSpacing))
         menu.addItem(item("선택한 글자 한↔영 바꾸기  \(Settings.binding(.flip)?.label ?? "")", #selector(flipSelection(_:))))
         menu.addItem(item("최근 세 단어 한↔영 바꾸기  \(Settings.binding(.recent)?.label ?? "")", #selector(flipRecent(_:))))
         menu.addItem(item("클립보드 글자 한↔영 바꾸기", #selector(flipClipboard(_:))))
@@ -246,6 +249,10 @@ final class HanautomataInputController: IMKInputController {
     }
 
     @objc func modeAuto(_ sender: Any?) { setMode(.auto) }
+    @objc func toggleSpacing(_ sender: Any?) {
+        Settings.autoSpacing.toggle()
+        SettingsWindow.reload()
+    }
     @objc func modeKorean(_ sender: Any?) { setMode(.korean) }
     @objc func modeEnglish(_ sender: Any?) { setMode(.english) }
     @objc func togglePause(_ sender: Any?) {

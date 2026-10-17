@@ -7,6 +7,8 @@ import Foundation
 /// A text field the input method edits (InputMethodKit's client in the app, a buffer in the tests).
 protocol TextClient: AnyObject {
     var bundleIdentifier: String { get }
+    /// Stable across event adapters for the same underlying input client.
+    var identity: ObjectIdentifier { get }
     /// Inserts at the composition or selection (`nil`), or replaces `range`; ends the composition.
     func insert(_ text: String, replacing range: NSRange?)
     /// Shows the composition at the caret; empty clears it.
@@ -19,6 +21,10 @@ protocol TextClient: AnyObject {
     func caretRect() -> CGRect?
     /// Shows the mode's input source in the menu bar; false when that source is not enabled.
     func selectMode(_ id: String) -> Bool
+}
+
+extension TextClient {
+    var identity: ObjectIdentifier { ObjectIdentifier(self) }
 }
 
 /// Where the caret is, asked only when the window is drawn: the client call it needs can be slow, so it stays off the key
@@ -192,6 +198,21 @@ final class InputCore {
     /// Where that text is and what it says, so the next change replaces exactly it.
     private var inline: (range: NSRange, text: String)?
 
+    private struct SpacedCommit {
+        let client: ObjectIdentifier
+        let epoch: UInt64
+        let range: NSRange
+        let original: String
+        let corrected: String
+        let word: String
+        let time: TimeInterval
+    }
+    private var spacedCommit: SpacedCommit?
+    // A rejected correction stays off for this process only; bounded and never saved as a language preference.
+    private var unspacedWords = Set<String>()
+    private var unspacedOrder: [String] = []
+    var spacingClock: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
+
     init(engine: Engine) {
         self.engine = engine
         currentMode = engine.mode()
@@ -201,6 +222,8 @@ final class InputCore {
 
     func activate(_ client: TextClient, capsLocked: Bool) {
         proofreadingEpoch &+= 1
+        spacedCommit = nil
+        engine.forgetReconversion()
         shiftSpace.reset()
         resetTaps()
         caps.sync(locked: capsLocked)
@@ -254,6 +277,7 @@ final class InputCore {
 
     /// Focus left the composition: a click, the system ending it, or deactivation.
     func commitPending(_ client: TextClient?) {
+        spacedCommit = nil
         let result = engine.commitPending()
         if !result.commit.isEmpty { kept = result.commit }
         apply(result, to: client, path: "focus")
@@ -301,6 +325,11 @@ final class InputCore {
                                                  modifiers.contains(.option), modifiers.contains(.command))
         let bound = KeyMap.command(keyCode: keyCode, shift: shift, control: control, option: option, command: command,
                                    bindings: Settings.bindings)
+        if bound != .candidate { spacedCommit = nil }
+        if secureInput() || excluded || engine.paused() {
+            spacedCommit = nil
+            engine.forgetReconversion()
+        }
         if bound == .pause, Settings.pauseKey, !excluded {
             if !isRepeat {
                 setPaused(!engine.paused(), client: client)
@@ -329,6 +358,11 @@ final class InputCore {
         switch bound {
         case .candidate:
             _ = shiftSpace.keyDown(isSpace: false)
+            if isRepeat { return true }
+            if !engine.isComposing(), let spaced = spacedCommit {
+                restoreSpacing(spaced, client)
+                return true
+            }
             if !engine.isComposing(), let swap = engine.reconversion() {
                 reconvert(swap, client)
                 return true
@@ -527,16 +561,19 @@ final class InputCore {
 
     /// Mode chosen in the input menu, the settings window or a mode shortcut.
     func setMode(_ mode: InputMode, client: TextClient?) {
+        spacedCommit = nil
         viReturn = nil
         apply(engine.setMode(mode: mode), to: client)
     }
 
     /// Layout chosen in the settings (C-LAY-02); the word in progress is committed first.
     func setKeyboard(_ kind: KeyboardKind, client: TextClient?) {
+        spacedCommit = nil
         apply(engine.setKeyboard(kind: kind), to: client, announce: false)
     }
 
     func setPaused(_ paused: Bool, client: TextClient?) {
+        spacedCommit = nil
         apply(engine.setPaused(paused: paused), to: client)
     }
 
@@ -582,6 +619,40 @@ final class InputCore {
     }
 
     // MARK: Correction (C-COR-02 · C-COR-03)
+
+    private func spacingText(_ text: String, _ client: TextClient) -> String {
+        let word = text.hasSuffix(" ") ? String(text.dropLast()) : text
+        guard Settings.autoSpacing, !secureInput(), !isExcluded(client), !unspacedWords.contains(word) else { return text }
+        return engine.correctSpacing(text: text)
+    }
+
+    private func rememberSpacing(original: String, corrected: String, _ client: TextClient) {
+        let length = corrected.utf16.count
+        guard let caret = client.selectedRange(), caret.location != NSNotFound, caret.length == 0,
+              caret.location >= length else { return }
+        let range = NSRange(location: caret.location - length, length: length)
+        guard client.text(in: range) == corrected else { return }
+        spacedCommit = SpacedCommit(client: client.identity, epoch: proofreadingEpoch, range: range,
+                                    original: original, corrected: corrected,
+                                    word: String(original.dropLast()), time: spacingClock())
+    }
+
+    /// First F2 restores spacing only. A subsequent F2 can still use the engine's original language alternative.
+    private func restoreSpacing(_ spaced: SpacedCommit, _ client: TextClient) {
+        spacedCommit = nil
+        let age = spacingClock() - spaced.time
+        guard !secureInput(), client.identity == spaced.client, proofreadingEpoch == spaced.epoch,
+              age >= 0, age <= 15,
+              client.selectedRange() == NSRange(location: NSMaxRange(spaced.range), length: 0),
+              client.text(in: spaced.range) == spaced.corrected else { return failReconversion(client) }
+        client.insert(spaced.original, replacing: spaced.range)
+        if unspacedWords.insert(spaced.word).inserted {
+            unspacedOrder.append(spaced.word)
+            if unspacedOrder.count > 256 { unspacedWords.remove(unspacedOrder.removeFirst()) }
+        }
+        diagnostics.correction("spacingUndo")
+        feedback?.hide()
+    }
 
     /// F2 right after a word committed with Space: if the word is still right before the caret, swap it for the other
     /// candidate and remember the choice; otherwise change nothing and say so.
@@ -734,6 +805,12 @@ final class InputCore {
     /// Applies an engine result: insert the commit, show or clear the composition, then the candidate window. `path`
     /// names what committed a word, for the diagnostics.
     private func apply(_ result: KeyResult, to client: TextClient?, path: String = "other", announce: Bool = true) {
+        spacedCommit = nil
+        var output = result
+        if !result.failed, !result.commit.isEmpty, let client {
+            output.commit = spacingText(result.commit, client)
+            if path == "focus" { kept = output.commit }
+        }
         if result.failed {
             // C-CMP-11: the engine returned the word as typed; insert it, keep a copy and fall back to pass-through.
             log("engine failure; switching to pass-through")
@@ -750,9 +827,9 @@ final class InputCore {
             shown = (result.confidence, engine.mode() == .korean || result.korean)
         }
         if let client {
-            if !applyInline(result, client) {
-            if !result.commit.isEmpty {
-                client.insert(result.commit, replacing: nil)
+            if !applyInline(output, client) {
+            if !output.commit.isEmpty {
+                client.insert(output.commit, replacing: nil)
                 hasMarked = false
             }
             if !result.marked.isEmpty {
@@ -762,6 +839,9 @@ final class InputCore {
                 client.setMarked("", uncertain: false)
                 hasMarked = false
             }
+            }
+            if path == "space", result.marked.isEmpty, result.commit.hasSuffix(" "), output.commit != result.commit {
+                rememberSpacing(original: result.commit, corrected: output.commit, client)
             }
             show(result, client)
             if result.failed {
@@ -817,7 +897,12 @@ final class InputCore {
     /// a switch key made with nothing composed (22 §5.1a).
     private func show(_ result: KeyResult, _ client: TextClient) {
         guard let feedback else { return }
-        if !result.marked.isEmpty, !result.alternative.isEmpty, result.alternative != result.marked,
+        let preview = result.failed ? result.marked : spacingText(result.marked, client)
+        if !result.marked.isEmpty, preview != result.marked {
+            let undo = Settings.binding(.candidate).map { "Space 확정 후 \($0.label) 원문 복원" } ?? "Space 확정"
+            feedback.showCandidate(preview, hint: "띄어쓰기 · " + undo,
+                                   near: { client.caretRect() })
+        } else if !result.marked.isEmpty, !result.alternative.isEmpty, result.alternative != result.marked,
            result.uncertain || Settings.candidateAlways {
             let keys = Settings.semicolon && engine.mode() == .auto ? "; / F2 → " : "F2 → "
             let evidence = result.label.isEmpty ? "" : result.label + " · "

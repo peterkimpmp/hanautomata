@@ -7,8 +7,11 @@
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 root=$(cd "$here/.." && pwd)
+case "${1:-}" in ""|--with-proofreading) ;; *) echo 'usage: package.sh [--with-proofreading]' >&2; exit 2 ;; esac
 "$here/build.sh" --universal
 app="$here/build/Hanautomata.app"
+[ "${1:-}" != "--with-proofreading" ] || /bin/sh "$here/Tools/package-proofreading.sh" "$app"
+codesign --verify --deep --strict "$app"
 version=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$here/Info.plist")
 dist="$here/build/dist"
 zip="$dist/Hanautomata-$version-macos.zip"
@@ -20,6 +23,8 @@ pack() {
     mkdir "$stage"
     ditto "$app" "$stage/Hanautomata.app"
     cp "$root/LICENSE" "$root/NOTICE.md" "$root/THIRD-PARTY-NOTICES.md" "$root/PRIVACY.md" "$stage/"
+    cp "$here/Packaging/Install.command" "$here/Packaging/README.txt" "$stage/"
+    chmod +x "$stage/Install.command"
     ditto -c -k --norsrc --noextattr "$stage" "$zip"
     rm -rf "$stage"
 }

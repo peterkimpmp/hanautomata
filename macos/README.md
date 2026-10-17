@@ -1,4 +1,4 @@
-# macos — 한오토마타 macOS 입력기 (MVP·1.0 기능 구현 · 실물 검증 전)
+# macos — 한오토마타 macOS 입력기 0.6.1
 
 InputMethodKit 입력기다. 판별·조합·학습은 Rust 공통 엔진([core](../core/README.md))이 맡는다. 엔진은 UniFFI 계층([ffi](../ffi/src/lib.rs))을 거쳐 Swift 셸과 연결된다. Windows 트레이 앱과 같은 판별 결과를 낸다(동등성 게이트 G1).
 
@@ -13,6 +13,7 @@ cd macos
 ./install.sh            # ~/Library/Input Methods에 설치(관리자 권한 없음), 입력 소스 등록, 전환 키와 겹치는 macOS 설정 점검
 ./uninstall.sh          # 입력 소스를 끄고 앱을 지운다. 학습 파일은 남긴다
 ./package.sh            # 출시 묶음: universal zip + SHA-256 + Homebrew cask(build/dist/). 올리거나 게시하지 않는다
+./package.sh --with-proofreading # 기존 실험 맞춤법 검사기·사전·소스·고지를 함께 담는 universal 묶음
 ```
 
 - **처음 설치 때 한 번 직접 추가해야 한다.** 시스템 설정 → 키보드 → 입력 소스 → 편집… → + → 한국어 → 한오토마타 순서로 추가한다. macOS 26에서 `TISEnableInputSource`가 성공을 돌려줘도 실제로 켜지지 않는 것을 확인했다(2026-10-11). `install.sh`는 실제 상태를 보고, 켜지지 않았으면 이 안내를 출력한다.
@@ -30,11 +31,20 @@ cd macos
 | `keep.txt` · `convert.txt` | 예외 목록(안 바꿀 단어 · 항상 바꿀 단어). 한 줄에 하나, `#` 설명. 고치면 다음 입력부터 반영 |
 | `diagnostics.json` | 진단 집계. 글자 없이 횟수만(`Hanautomata --diagnose`, `--diagnose reset`) |
 
+## 자동 띄어쓰기 (0.6.1)
+
+Windows 트레이의 14개 닫힌 규칙을 Rust로 이식했다. `할수있다 → 할 수 있다`, `하는것 → 하는 것`처럼 공백만 넣는다. 전체 문장 문법 검사나 통계 모델은 아니다. 조합 밑줄은 보존하고 후보창에 확정될 글자를 미리 보여 주며, Space·Enter·Tab·단축키·포커스 이동 시 확정문에 적용한다.
+
+입력 메뉴와 설정 → 입력의 **자동 띄어쓰기**(기본 켬)에서 끌 수 있다. Space 확정 직후 15초 안에 후보 바꾸기 키(기본 F2)를 누르면 같은 입력 칸·커서·원문인지 읽어 확인하고 원문으로 되돌린다. 이때 학습하지 않는다. 한 번 더 누르면 기존 언어 재변환이다. 복원한 표현은 프로세스 메모리 256개 안에서만 제외하며 디스크에 저장하지 않는다. 보안 입력과 제외 앱에는 적용하지 않는다.
+
+[규칙 상세](../docs/SPACING.md), [macOS 0.6.1 검증 기록](SPACING-VALIDATION.md). Windows 메모장의 지연 전송은 macOS에 넣지 않았다. IMK의 `insertText`로 확정문을 한 번 전달한다.
+
 ## 서명·배포 (M-14 · 결정 D15)
 
 - 2026-10-16: Developer ID 구매를 사용자가 검토하고 있다. 0.5.0 사전 공개본은 ad-hoc 서명이다.
-- zip에는 `Hanautomata.app`과 함께 LICENSE·NOTICE.md·THIRD-PARTY-NOTICES.md·PRIVACY.md가 들어 있다. 번들 안에 넣으면 서명 봉인이 깨지므로 번들 밖에 둔다.
-- 기본은 ad-hoc 서명이다. 직접 빌드해 설치하면 그대로 쓴다. 내려받은 zip은 Gatekeeper가 막을 수 있다. 이때는 `xattr -dr com.apple.quarantine ~/Library/Input\ Methods/Hanautomata.app`로 풀어야 한다.
+- zip에는 앱·고지 4종·`Install.command`·`README.txt`가 들어 있다. `--with-proofreading`이면 검사기와 사전·정확한 소스·고지도 앱 안에 서명 전에 넣는다. 입력기와 검사기 모두 Apple Silicon·Intel 바이너리를 포함한다.
+- 설치기는 새 앱의 서명과 복사본을 확인한 뒤 기존 앱을 `~/Library/Application Support/Hanautomata/Backups/`로 옮겨 보관한다. 교체 실패 시 복구하며, 이전 입력기가 종료되지 않으면 교체하지 않는다. 기존 맞춤법 검사 기능을 빼는 갱신은 거부한다. 학습 파일과 설정은 건드리지 않는다.
+- 기본은 ad-hoc 서명이다. 내려받은 zip은 Gatekeeper가 막을 수 있다. 출처와 SHA-256을 확인한 뒤 시스템 설정 → 개인정보 보호 및 보안에서 **Hanautomata의 확인 없이 열기**를 선택한다. 현재 공증 여부는 검증 기록에 적는다.
 - Developer ID가 생기면 다음 두 변수를 두고 `./package.sh`를 실행한다. 그러면 hardened runtime으로 서명하고, 공증한 뒤 티켓을 붙인다.
   - `HANAUTOMATA_SIGN_ID="Developer ID Application: …"`
   - `HANAUTOMATA_NOTARY_PROFILE=<notarytool store-credentials 프로필>`

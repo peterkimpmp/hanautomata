@@ -42,6 +42,8 @@ _ = engine.setMode(mode: .english)
 check(!engine.handle(kind: .text, raw: "a", key: "a").handled && engine.mode() == .english, "English mode passes")
 check(engine.setSensitivity(name: "aggressive") == "aggressive" && engine.setSensitivity(name: "x") == "balanced", "sensitivity")
 check(engine.flip(text: "dkssud 한글") == "안녕 gksrmf", "flip")
+check(engine.correctSpacing(text: "😀 할수있다\t하는것") == "😀 할 수 있다\t하는 것", "spacing bridge preserves Unicode and whitespace")
+check(engine.correctSpacing(text: "설거지 그럴듯") == "설거지 그럴듯", "spacing bridge preserves counterexamples")
 // F2 after a Space commit (C-COR-02) and the candidate window's evidence label.
 let fresh = Engine(home: "/Users/홍길동", storePath: dir.appendingPathComponent("fresh.json").path)
 var last = KeyResult(commit: "", marked: "", handled: false, alternative: "", uncertain: false, reason: "", label: "",

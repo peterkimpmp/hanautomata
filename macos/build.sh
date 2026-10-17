@@ -19,7 +19,7 @@ export MACOSX_DEPLOYMENT_TARGET=14.0
 rust_target() { [ "$1" = arm64 ] && echo aarch64-apple-darwin || echo x86_64-apple-darwin; }
 
 if [ "${1:-}" = "--test" ]; then
-    (cd "$root/core" && cargo test --release --quiet)
+    (cd "$root/core" && cargo test --release --locked --quiet)
     mkdir -p "$out"
     swiftc -swift-version 5 -target "$host-apple-macos14.0" "$here/Sources/ProofreadingModel.swift" \
         "$here/Tests/Proofreading/main.swift" -o "$out/proofreading-tests"
@@ -30,7 +30,7 @@ if [ "${1:-}" = "--test" ]; then
 fi
 
 # The host library generates the Swift bindings and links the tests.
-cargo build --release --quiet --manifest-path "$root/ffi/Cargo.toml"
+cargo build --release --locked --quiet --manifest-path "$root/ffi/Cargo.toml"
 ffi="$root/ffi/target/release"
 rm -rf "$gen" "$app"
 mkdir -p "$gen" "$app/Contents/MacOS" "$app/Contents/Resources"
@@ -43,7 +43,7 @@ for arch in $archs; do
         lib="$ffi/libhanautomata_ffi.a"
     else
         rt=$(rust_target "$arch")
-        cargo build --release --quiet --manifest-path "$root/ffi/Cargo.toml" --lib --target "$rt"
+        cargo build --release --locked --quiet --manifest-path "$root/ffi/Cargo.toml" --lib --target "$rt"
         lib="$root/ffi/target/$rt/release/libhanautomata_ffi.a"
     fi
     swiftc -O -swift-version 5 -target "$arch-apple-macos14.0" -module-name Hanautomata \
@@ -69,6 +69,13 @@ if [ "${1:-}" = "--test" ]; then
         "$here/Sources/InputCore.swift" "$here/Sources/Diagnostics.swift" "$here/Tests/Input/main.swift" \
         "$ffi/libhanautomata_ffi.a" -o "$out/input-tests"
     "$out/input-tests" "$root/tests/corpora"
+    swiftc -swift-version 5 -target "$host-apple-macos14.0" -module-name AppKitTests \
+        -Xcc -fmodule-map-file="$gen/hanautomata_ffiFFI.modulemap" -I "$gen" \
+        "$gen/hanautomata_ffi.swift" "$here/Sources/KeyMap.swift" "$here/Sources/Settings.swift" \
+        "$here/Sources/InputCore.swift" "$here/Sources/Diagnostics.swift" "$here/Tests/AppKit/main.swift" \
+        "$ffi/libhanautomata_ffi.a" -framework Cocoa -o "$out/appkit-tests"
+    "$out/appkit-tests"
+    python3 "$here/Tests/test_install.py"
 fi
 cp "$here/Info.plist" "$app/Contents/Info.plist"
 cp -R "$here/Resources/ko.lproj" "$here/Resources/en.lproj" "$app/Contents/Resources/"

@@ -6,13 +6,24 @@ import json
 from pathlib import Path
 import shutil
 import subprocess
-from write_notices import generate
+from write_notices import cargo, generate, runtime_keys
 
 HERE=Path(__file__).resolve().parent
 
-def package(binary, data, output, target=None):
+def validate_targets(target, additional_targets):
+    targets = list(dict.fromkeys([target, *additional_targets]))
+    if len(targets) > 1:
+        dependencies = [runtime_keys(cargo('tree', '--target', t, '-e', 'normal,no-proc-macro',
+                                           '--prefix', 'none', '--format', '{p}')) for t in targets]
+        if not dependencies[0] or any(d != dependencies[0] for d in dependencies[1:]):
+            raise ValueError('Universal targets have different runtime dependencies; combine their notices explicitly')
+    return targets
+
+
+def package(binary, data, output, target=None, additional_targets=()):
     if target is None:
         target=next(line.split(': ',1)[1] for line in subprocess.check_output(['rustc','-vV'],text=True).splitlines() if line.startswith('host: '))
+    targets=validate_targets(target, additional_targets)
     lock=json.loads((HERE/'dictionary.lock.json').read_text())
     output.mkdir(parents=True,exist_ok=True)
     destination=output/'data'; destination.mkdir(exist_ok=True)
@@ -30,9 +41,13 @@ def package(binary, data, output, target=None):
     shutil.copy2(HERE/'dictionary.lock.json',destination/'dictionary.lock.json')
     shutil.copy2(binary,output/binary.name)
     generate(output,target)
+    if len(targets)>1:
+        notice=output/'THIRD-PARTY-NOTICES.md'
+        notice.write_text(notice.read_text(encoding='utf-8')+'\nUniversal binary targets: '+', '.join(targets)+
+                          '. Runtime dependency versions were checked to be identical.\n',encoding='utf-8')
     manifest={p.relative_to(output).as_posix():dict(bytes=p.stat().st_size,sha256=hashlib.sha256(p.read_bytes()).hexdigest())
               for p in sorted(output.rglob('*')) if p.is_file() and p.name!='MANIFEST.json'}
-    (output/'MANIFEST.json').write_text(json.dumps(dict(schema_version=1,experimental=True,target=target,
+    (output/'MANIFEST.json').write_text(json.dumps(dict(schema_version=1,experimental=True,target=target,targets=targets,
         rustc=subprocess.check_output(['rustc','--version'],text=True).strip(),files=manifest),indent=2)+'\n')
     print('Payload verified:',len(manifest),'files in',output)
 
@@ -42,4 +57,5 @@ if __name__=='__main__':
     parser.add_argument('--data',required=True,type=Path)
     parser.add_argument('--output',required=True,type=Path)
     parser.add_argument('--target')
-    args=parser.parse_args(); package(args.binary,args.data,args.output,args.target)
+    parser.add_argument('--additional-target',action='append',default=[])
+    args=parser.parse_args(); package(args.binary,args.data,args.output,args.target,args.additional_target)

@@ -426,6 +426,11 @@ impl Engine {
         hangul::flip(&text)
     }
 
+    /// Conservative, insertion-only spacing. Does not change the composition or personal dictionary.
+    pub fn correct_spacing(&self, text: String) -> String {
+        hanautomata_core::spacing::correct(&text).text
+    }
+
     pub fn keyboard(&self) -> KeyboardKind {
         match guard(&self.session).layout() {
             Layout::Dubeolsik => KeyboardKind::Dubeolsik,

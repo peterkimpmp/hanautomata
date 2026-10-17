@@ -124,7 +124,7 @@ final class Harness {
     }
 
     func type(_ text: String, _ buffer: Buffer) {
-        for c in text { key(codes[c]!, [], buffer) }
+        for c in text { key(codes[Character(c.lowercased())]!, c.isUppercase ? [.shift] : [], buffer) }
     }
 
     func flags(_ code: UInt16, _ modifiers: Modifiers, _ buffer: Buffer, after: TimeInterval = 0.05) {
@@ -144,6 +144,114 @@ final class Harness {
         flags(KeyCode.rightCommand, [.command, .rightCommand], buffer)
         flags(KeyCode.rightCommand, [], buffer, after: hold)
     }
+}
+
+// Automatic spacing: preserve the composition, preview the commit, and undo only our verified edit without learning.
+do {
+    let s = Harness("spacing")
+    let b = s.client()
+    s.type("gkftndlTek", b)
+    check(b.marked == "할수있다" && b.all.isEmpty, "spacing keeps uncommitted text intact")
+    check(s.window.candidate?.text == "할 수 있다" && (s.window.candidate?.hint.contains("띄어쓰기") ?? false),
+          "spacing preview appears even for a certain word")
+    s.key(Code.space, [], b)
+    check(b.all == "할 수 있다 ", "spacing applies through Space")
+    let learned = s.engine.learnedCount(), saves = s.saves
+    s.key(Code.f2, [], b)
+    check(b.all == "할수있다 ", "first F2 restores exactly the unspaced input")
+    check(s.engine.learnedCount() == learned && s.saves == saves, "spacing undo never learns or saves")
+    s.type("gkftndlTek", b)
+    s.key(Code.space, [], b)
+    check(b.all == "할수있다 할수있다 ", "undone word stays unspaced in this process")
+    s.key(Code.f2, [], b)
+    check(b.all == "할수있다 gkftndlTek ", "next F2 retains normal language reconversion")
+
+    let enter = Harness("spacing-enter"), e = enter.client()
+    enter.type("gksmsrjt", e)
+    check(!enter.key(Code.enter, [], e) && e.all == "하는 것", "Enter commits spacing and still passes to the app")
+    let off = Harness("spacing-off"), o = off.client()
+    Settings.defaults.set(false, forKey: "autoSpacing")
+    off.type("gkftndlTek", o)
+    off.key(Code.space, [], o)
+    check(o.all == "할수있다 ", "setting off preserves input")
+    let exported = Settings.exported()
+    Settings.defaults.set(true, forKey: "autoSpacing")
+    Settings.imported(exported)
+    check(!Settings.defaults.bool(forKey: "autoSpacing"), "spacing choice survives export/import")
+    Settings.defaults.removeObject(forKey: "autoSpacing")
+
+    let edited = Harness("spacing-edited"), eb = edited.client()
+    edited.type("gkftndlTek", eb); edited.key(Code.space, [], eb)
+    eb.text.setString("다른 문장 "); eb.caret = eb.text.length
+    edited.key(Code.f2, [], eb)
+    check(eb.all == "다른 문장 " && edited.saves == 0, "changed document is never overwritten by spacing undo")
+    let secure = Harness("spacing-secure"), sb = secure.client()
+    secure.core.secureInput = { true }
+    secure.type("gkftndlTek", sb); secure.key(Code.space, [], sb)
+    check(sb.all == "할수있다 " && secure.saves == 0, "secure input skips spacing and retention")
+
+    Settings.searchInline = true
+    let search = Harness("spacing-search"), q = search.client()
+    search.core.fieldChanged(.search)
+    search.type("gkftndlTek", q); search.key(Code.space, [], q)
+    check(q.all == "할 수 있다 " && q.marked.isEmpty, "search inline path applies spacing once without duplication")
+    search.key(Code.f2, [], q)
+    check(q.all == "할수있다 ", "search inline correction can be restored")
+    Settings.searchInline = false
+
+    let twice = Harness("spacing-twice"), t = twice.client()
+    twice.type("gkftndlTek", t); twice.key(Code.space, [], t)
+    twice.key(Code.f2, [], t)
+    twice.key(Code.f2, [], t, repeating: true)
+    check(t.all == "할수있다 " && twice.saves == 0, "held F2 does not learn or flip after restoring spacing")
+    twice.key(Code.f2, [], t)
+    check(t.all == "gkftndlTek " && twice.saves == 1, "a second deliberate F2 performs normal language reconversion")
+
+    let fixed = Harness("spacing-fixed"), f = fixed.client()
+    fixed.core.setMode(.korean, client: f)
+    fixed.type("gkftndlTek", f); fixed.key(Code.space, [], f); fixed.key(Code.f2, [], f)
+    check(f.all == "할수있다 " && fixed.saves == 0, "fixed Korean supports spacing undo without a language alternative")
+    Settings.mode = .auto
+
+    let expire = Harness("spacing-expired"), x = expire.client()
+    var tick: TimeInterval = 10
+    expire.core.spacingClock = { tick }
+    expire.type("gkftndlTek", x); expire.key(Code.space, [], x)
+    tick += 15.001
+    expire.key(Code.f2, [], x)
+    check(x.all == "할 수 있다 " && expire.saves == 0, "expired correction is not replaced or learned")
+
+    let other = Harness("spacing-other-client"), first = other.client()
+    other.type("gkftndlTek", first); other.key(Code.space, [], first)
+    let second = Buffer()
+    second.insert(first.all, replacing: nil)
+    other.key(Code.f2, [], second)
+    check(first.all == "할 수 있다 " && second.all == first.all && other.saves == 0,
+          "same app and identical text in another client cannot be replaced")
+
+    for scenario in ["caret", "selection", "unreadable", "secure", "reactivate"] {
+        let h = Harness("spacing-guard-" + scenario), b = h.client()
+        h.type("gkftndlTek", b); h.key(Code.space, [], b)
+        switch scenario {
+        case "caret": b.caret -= 1
+        case "selection": b.selection = 1; b.caret -= 1
+        case "unreadable": b.readable = false
+        case "secure": h.core.secureInput = { true }
+        default: h.core.activate(b, capsLocked: false)
+        }
+        h.key(Code.f2, [], b)
+        check(b.all == "할 수 있다 " && h.saves == 0, "spacing guard: " + scenario)
+    }
+
+    for code: UInt16 in [48, 123, 8] { // Tab, left arrow, Command+C
+        let h = Harness("spacing-boundary-\(code)"), b = h.client()
+        h.type("gksmsrjt", b)
+        check(!h.key(code, code == 8 ? [.command] : [], b) && b.all == "하는 것",
+              "spacing at boundary \(code) still passes the app's key")
+    }
+    let focus = Harness("spacing-focus"), fb = focus.client()
+    focus.type("gksmsrjt", fb); focus.core.commitPending(fb)
+    check(fb.all == "하는 것" && focus.core.kept == fb.all, "focus commit and kept text match the spacing preview")
 }
 
 // Proofreading is only allowed on committed text and is invalidated by focus epochs.

@@ -47,6 +47,7 @@ final class SettingsModel: ObservableObject {
         }
     }
     @Published var candidateAlways = Settings.candidateAlways { didSet { Settings.candidateAlways = candidateAlways } }
+    @Published var autoSpacing = Settings.autoSpacing { didSet { Settings.autoSpacing = autoSpacing } }
     @Published var deleteSyllable = Settings.deleteSyllable {
         didSet {
             Settings.deleteSyllable = deleteSyllable
@@ -304,6 +305,9 @@ struct InputSection: View {
             }
             .pickerStyle(.segmented)
             Toggle("단어 뒤 ; 로 후보 바꾸기 (;; 는 실제 ;)", isOn: $model.semicolon)
+            Toggle("자동 띄어쓰기", isOn: $model.autoSpacing)
+            Caption("'할수있다 → 할 수 있다'처럼 확실한 일부 표현을 확정할 때 띄웁니다. Space 확정 후 15초 안에 후보 바꾸기 키(기본 F2)를 누르면 "
+                    + "원문으로 돌아갑니다. 복원한 표현은 입력기가 실행 중인 동안 다시 띄우지 않으며 개인 사전에 학습하지 않습니다.")
             Toggle("후보창을 늘 표시 (끄면 '확인 필요'일 때만)", isOn: $model.candidateAlways)
             Toggle("커서 앞 문장의 언어로 애매한 첫 단어 보정 (실험)", isOn: $model.caretContext)
             if model.caretContext {

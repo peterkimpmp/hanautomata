@@ -22,7 +22,7 @@ Hanautomata는 키 입력을 다루는 입력 도구입니다. 그래서 무엇�
 | Windows | `%LOCALAPPDATA%\Hanautomata\` | `words.json`(학습한 단어 선택) · `settings.json`(앱별 제외 등 설정) · `tsf-settings.json`(입력기판 설정) · `startup.log`(자동 시작 성공/실패 기록) · 진단 로그(개수·시각·처리 결과만) |
 | macOS | `~/Library/Application Support/Hanautomata/` | `words.json` · `keep.txt`/`convert.txt`(예외 목록) · 진단 카운터(글자 없음) |
 
-트레이 앱의 띄어쓰기 자동 교정은 확정하는 단어만 그 자리에서 고치며 문장을 저장하지 않습니다. F2로 되돌린 단어 목록은 실행 중 메모리에만 두고, 설정 파일에는 켬·끔 여부(`AutoSpacing`)만 저장합니다.
+Windows 트레이·macOS의 띄어쓰기 자동 교정은 확정하는 단어만 그 자리에서 고치며 문장을 저장하지 않습니다. F2로 되돌린 단어 목록은 실행 중 메모리(최대 256개)에만 두고, 설정에는 켬·끔 여부(Windows `AutoSpacing`, macOS `autoSpacing`)만 저장합니다. macOS의 원문 복원은 같은 클라이언트·커서·문자열을 다시 확인하고 15초가 지나면 실행하지 않습니다.
 
 학습 파일에는 **사용자가 후보를 선택해 확정한 단어**가 들어갑니다. 문장 전체·타이핑 흐름·다른 단어는 저장하지 않습니다. 학습을 끄면(설정) 아무것도 추가되지 않습니다.
 
