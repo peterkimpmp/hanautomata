@@ -13,6 +13,7 @@ status: release-candidate
 - 공통 사례 133개를 C#·Rust 양쪽에서 같은 기대값으로 검사했다.
 - 원문 복원은 같은 칸·커서·원문·15초 조건을 모두 확인한다.
 - 입력기와 선택문 검사기 모두 Apple Silicon·Intel을 포함한다.
+- 새 표현의 Space 교정은 사용자가 확인했다. 앱별 인수는 별도다.
 - OS가 Aside 화면 접근을 거부해 TextEdit 실물 인수는 미확인이다.
 
 ## 구현 범위
@@ -72,18 +73,31 @@ Space로 확정한 교정은 F2로 복원한다. 클라이언트의 실제 객�
 
 Aside로 위 ZIP을 다시 검증·추출하고 `Install.command --no-activate`를 실행했다. 설치 경로는 `~/Library/Input Methods/Hanautomata.app`이다. 설치본 판 번호 **0.6.1**, 원본 **40파일 = 설치 40파일** 전부 해시 일치, `codesign --verify --deep --strict` 종료 0을 확인했다. 실행 파일 SHA-256은 `036d9c1c6501fe28ca20d2960e34d28aacd729d66c0e9edcd002c8ae80d9e05e`이다.
 
-이전 0.5.0은 `~/Library/Application Support/Hanautomata/Backups/upgrade-20261017-090519.WeSyZs/Hanautomata.app`에 남겼다. 로컬 `deliverables/macos-0.6.1/installation-receipt.json`이 설치 영수증이다. 실행 중 프로세스를 종료하거나 입력 소스를 등록하지 않았으므로 **활성 입력기 판 번호·실제 키 입력은 미확인**이다. 사용자에게 종료·재선택 후 정보 화면과 TextEdit의 교정·복원 확인을 요청했다.
+이전 0.5.0은 `~/Library/Application Support/Hanautomata/Backups/upgrade-20261017-090519.WeSyZs/Hanautomata.app`에 남겼다. 로컬 `deliverables/macos-0.6.1/installation-receipt.json`이 설치 영수증이다. 이 파일 설치 단계에서는 실행 중 프로세스를 종료하거나 입력 소스를 등록하지 않았다. 후속 활성화·사용자 시험 결과는 아래와 같다.
+
+### 후속 활성화와 사용자 시험 (2026-10-17)
+
+정보 화면에 0.5.0이 표시된다는 사용자 피드백 뒤, 로컬 CLI의 `pgrep`·`ps`·`lsof`와 각 번들의 판 번호·해시를 대조했다. 0.5.0 한 개와 0.6.1 두 개가 함께 실행 중이었다. 사용자에게 모두 종료하도록 요청한 뒤 기존 세 프로세스가 사라졌고, 09:57 KST에는 0.6.1 프로세스 하나만 확인됐다. 새 프로세스의 실행 파일 해시는 위 설치본과 같고, 번들의 deep strict 서명 검증도 통과했다. AppTranslocation 경로에서 실행되므로 원래 어느 복사본을 열었는지는 단정하지 않는다. Aside가 수행한 종료 권한 확인(`kill -0`)은 OS에서 거부됐으며, Aside 또는 진단 명령이 종료·재실행을 수행한 것으로 기록하지 않는다.
+
+사용자는 `할수있다`에 Space를 눌러도 붙어 있었다고 보고했다. 자동 띄어쓰기 설정은 기본 켬이고, 설치본 `--check`는 자동 입력 소스가 추가됐다고 보고했다. 진단에는 `spacingUndo: 1`, `failures: 0`이 있었다. 현재 Windows·macOS 구현은 F2로 복원한 표현을 같은 프로세스에서 재교정하지 않으므로, 아직 시험하지 않은 표현으로 비교를 요청했다.
+
+| 시험 요청 | 사용자 응답 | 판단 범위 |
+|---|---|---|
+| 새 표현 `할수없다` 입력 후 Space | `할 수 없다` | 기본 자동 띄어쓰기 사용자 확인 |
+| 기존 표현 `할수있다`와 비교 | `할수있다` | 표현별 재교정 제외 동작과 일치 |
+
+사용자의 응답은 `할 수 없다 vs 할수있다`였다. 이 확인은 새 표현의 교정이 동작한다는 근거이며, 전반적으로 교정이 꺼져 있다는 가설과 맞지 않는다. 누적 진단은 입력 문자열을 저장하지 않으므로 특정 표현의 예외 메모리를 직접 확인한 결과는 아니다. 시험 앱도 특정되지 않았으므로 TextEdit·브라우저·Word·VS Code 전체의 IMK 인수나 F2의 모든 조건을 통과한 것으로 확대하지 않는다. 로컬 `deliverables/macos-0.6.1/activation-diagnostics.json`에 관측과 사용자 응답을 보관했다.
 
 ## 남은 인수와 확인 방법
 
-Aside의 Guard·Full Access 세션 모두 프로세스 열람에 `Operation not permitted`, System Events/TextEdit/입력 메뉴 열람에 OS 오류 `-10827`을 반환했다. 다른 UI 도구로 우회하지 않았다. 기존 설치 파일은 0.5.0으로 읽혔지만 이 관측만으로 실행 중 버전을 단정하지 않는다.
+Aside의 Guard·Full Access 세션 모두 프로세스 열람에 `Operation not permitted`, System Events/TextEdit/입력 메뉴 열람에 OS 오류 `-10827`을 반환했다. 다른 UI 도구로 우회하지 않았다. 위 후속 확인은 로컬 CLI 읽기와 사용자 보고를 근거로 하며 Aside 화면 검증은 아니다.
 
 1. 새 설치 후 입력 메뉴에서 한오토마타를 다시 선택하고 정보 화면의 **0.6.1**을 확인한다. 이전 프로세스가 남으면 작업 저장 후 입력기 종료·재선택 또는 로그아웃·로그인을 한다.
-2. TextEdit의 새 빈 문서에서 **키 입력**으로 `할수있다`와 Space를 친다. 후보 미리보기 및 `할 수 있다 `를 확인한다.
+2. TextEdit의 새 빈 문서에서 **키 입력**으로 `할수있다`와 Space를 친다. 후보 미리보기 및 `할 수 있다 `를 확인한다. 이미 F2로 복원한 표현은 이번 입력기 실행 동안 재교정하지 않으므로, 반복 시험에는 새 표현을 쓰거나 입력기를 재시작한다. 앱의 새 문서만 열어서는 이 기억이 초기화되지 않는다.
 3. 15초 안에 F2: `할수있다 `, 다시 F2: `gkftndlTek `를 확인한다. 이어서 `하는것 `, `설거지 `, 자동 띄어쓰기 끔, Enter·Tab·앱 전환을 확인한다.
 4. Safari/Chrome 편집 칸·Word·VS Code의 해당 경로와 기존 [G2 점검표](COMPATIBILITY.md)를 기록한다. AppKit 저장소 시험을 이 시험의 대체로 세지 않는다.
 
-Intel 네이티브 실행·실물 키보드·앱별 IMK 연결은 별도 인수다. Windows Chrome·Edge 재시험 역시 이번 macOS 자동 검증으로 완료되지 않는다.
+Intel 네이티브 실행·앱을 특정한 실물 키보드 시험·앱별 IMK 연결은 별도 인수다. Windows Chrome·Edge 재시험 역시 이번 macOS 자동 검증으로 완료되지 않는다.
 
 ## 제작·검증 기록
 
