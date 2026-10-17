@@ -64,7 +64,9 @@ Space로 확정한 교정은 F2로 복원한다. 클라이언트의 실제 객�
 
 이번 앱은 **ad-hoc 서명**이다. 검사 시 유효한 코드 서명 인증서는 0개였으며 Developer ID 서명·Apple 공증·공개 릴리스 게시는 수행하지 않았다. 서명 무결성 통과는 Gatekeeper 신뢰·공증 통과와 다르다. 내려받은 앱의 실행 허가는 시스템 설정 → 개인정보 보호 및 보안에서 사용자가 수행한다.
 
-최종 ZIP: `Hanautomata-0.6.1-macos.zip`, SHA-256 `6bfc82b2fdf6e46322265d988951dd514b9b5dd7016a717222b65c80f1356d0a`. 저장소의 무시된 `deliverables/macos-0.6.1/`에 ZIP·체크섬·검증 영수증을 보관했다. 새 macOS CI 작업을 추가했지만, 이 로컬 후보에 대한 GitHub CI 결과는 아직 없다.
+최종 로컬 ZIP: `Hanautomata-0.6.1-macos.zip`, SHA-256 `6bfc82b2fdf6e46322265d988951dd514b9b5dd7016a717222b65c80f1356d0a`. 저장소의 무시된 `deliverables/macos-0.6.1/`에 ZIP·체크섬·검증 영수증을 보관했다.
+
+구현 커밋 `36b36fc`의 [GitHub CI #38985068819](https://github.com/peterkimpmp/hanautomata/actions/runs/38985068819)는 **6개 작업 모두 성공**했다. Windows 빌드, 공통 C# 회귀, Windows·macOS·Linux 맞춤법 검사와 새 macOS 입력기 작업을 포함한다. 새 macOS 작업은 Rust·Swift·AppKit·설치 회귀를 거친 후 universal 묶음을 만들고, 재추출한 바이너리·서명·manifest·실제 사전 제안을 검사했다. CI에서 생성한 ZIP과 이 Mac의 설치 ZIP은 빌드 환경이 달라 바이트 동일성을 주장하지 않는다.
 
 ### 이 Mac의 파일 설치 확인 (2026-10-17)
 
