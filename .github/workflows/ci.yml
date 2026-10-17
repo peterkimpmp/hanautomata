@@ -109,6 +109,9 @@ jobs:
       - name: IME settings persistence and editor build
         shell: pwsh
         run: .\tests\ImeSettingsTests.ps1 -BuildPreview
+      - name: Personal expressions window layout at 96 DPI and native scale
+        shell: pwsh
+        run: .\tests\PersonalAssistLayoutTests.ps1
       - name: TSF payload and isolated user preparation
         shell: pwsh
         run: .\tests\TsfPayloadTests.ps1 -OptionsExecutable .\build\Hanautomata.ImeOptions.exe

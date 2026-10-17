@@ -25,24 +25,29 @@ namespace Hanautomata
             if(current==null || current.IsDisposed) current=new PersonalAssistWindow();
             current.Show(); current.Activate();
         }
-        internal PersonalAssistWindow()
+        internal PersonalAssistWindow() : this(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"hanautomata-assist.exe"),
+            Path.Combine(Settings.DirectoryPath,"personal-expressions.json")) { }
+        internal PersonalAssistWindow(string helper,string store)
         {
+            // Build the complete 96-DPI layout before WinForms scales it once to the display.
+            SuspendLayout();
             Text="내 표현 · 이 기기에서 처리"; Font=new Font("Malgun Gothic",10);
-            AutoScaleMode=AutoScaleMode.Dpi; ClientSize=new Size(760,580); MinimumSize=new Size(680,560);
+            AutoScaleDimensions=new SizeF(96,96); AutoScaleMode=AutoScaleMode.Dpi; ClientSize=new Size(760,580); MinimumSize=new Size(680,560);
             StartPosition=FormStartPosition.CenterScreen;
-            service=new PersonalAssistClient(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"hanautomata-assist.exe"),
-                Path.Combine(Settings.DirectoryPath,"personal-expressions.json"));
+            service=new PersonalAssistClient(helper,store);
             var layout=new TableLayoutPanel { Dock=DockStyle.Fill, Padding=new Padding(20), ColumnCount=1, RowCount=11 };
+            // A fixed-width column lets labels wrap instead of widening the column past the window.
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));
             for(int i=0;i<11;i++) layout.RowStyles.Add(new RowStyle(i==5 ? SizeType.Percent : SizeType.AutoSize, i==5 ? 100 : 0));
-            layout.Controls.Add(new Label { Text="내 단어와 표현을 빠르게 찾으세요", AutoSize=true, Font=new Font(Font.FontFamily,16,FontStyle.Bold) },0,0);
-            layout.Controls.Add(new Label { Text="직접 등록한 표현만 이 기기에 평문으로 저장합니다. 입력 내용은 자동 수집하지 않습니다.", AutoSize=true, MaximumSize=new Size(690,0), Margin=new Padding(0,10,0,10) },0,1);
+            layout.Controls.Add(new Label { Text="내 단어와 표현을 빠르게 찾으세요", AutoSize=true, Dock=DockStyle.Fill, Font=new Font(Font.FontFamily,16,FontStyle.Bold) },0,0);
+            layout.Controls.Add(new Label { Text="직접 등록한 표현만 이 기기에 평문으로 저장합니다. 입력 내용은 자동 수집하지 않습니다.", AutoSize=true, Dock=DockStyle.Fill, Margin=new Padding(0,10,0,10) },0,1);
             layout.Controls.Add(enabled,0,2);
-            layout.Controls.Add(new Label { Text="표현 찾기 · 두 글자 이상 / 비우면 전체 목록", AutoSize=true, Margin=new Padding(0,14,0,4) },0,3);
+            layout.Controls.Add(new Label { Text="표현 찾기 · 두 글자 이상 / 비우면 전체 목록", AutoSize=true, Dock=DockStyle.Fill, Margin=new Padding(0,14,0,4) },0,3);
             layout.Controls.Add(search,0,4); layout.Controls.Add(items,0,5);
             var actions=new FlowLayoutPanel { AutoSize=true, Dock=DockStyle.Fill, WrapContents=true };
             actions.Controls.AddRange(new Control[] { copy, remove, undo, clear, retry }); layout.Controls.Add(actions,0,6);
             layout.Controls.Add(status,0,7);
-            layout.Controls.Add(new Label { Text="새 표현 · 한 줄 2~256자, 최대 512개", AutoSize=true, Margin=new Padding(0,14,0,4) },0,8);
+            layout.Controls.Add(new Label { Text="새 표현 · 한 줄 2~256자, 최대 512개", AutoSize=true, Dock=DockStyle.Fill, Margin=new Padding(0,14,0,4) },0,8);
             layout.Controls.Add(expression,0,9); layout.Controls.Add(add,0,10); Controls.Add(layout);
             search.TextChanged+=delegate { revision++; items.Items.Clear(); UpdateControls(); debounce.Stop(); debounce.Start(); };
             debounce.Tick+=delegate { debounce.Stop(); RefreshItems(); };
@@ -60,6 +65,7 @@ namespace Hanautomata
             Shown+=delegate { RefreshItems(); search.Focus(); };
             FormClosed+=delegate { debounce.Dispose(); service.Dispose(); };
             UpdateControls();
+            ResumeLayout(true);
         }
         static Dictionary<string,object> Fields() { return new Dictionary<string,object>(); }
         static Dictionary<string,object> Fields(string key,object value) { var f=Fields(); f[key]=value; return f; }
