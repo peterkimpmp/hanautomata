@@ -22,7 +22,9 @@ cd macos
   - 키보드 단축키 '입력 메뉴에서 이전/다음 소스 선택'이 ⇧Space면 ⇧Space가 한오토마타까지 오지 않는다.
   - 'Caps Lock 키로 ABC 입력 소스 전환'이 켜져 있으면 시스템이 Caps Lock을 먼저 가져간다.
 - 메뉴 막대에서 고정 모드 아이콘(가·A)을 보려면 '한오토마타 (한글 고정)'·'한오토마타 (영문 고정)'도 추가한다. 추가하지 않아도 모드는 바뀌고 입력 메뉴에 표시된다.
-- 필요한 것: Xcode Command Line Tools(swiftc), Rust(cargo). universal 빌드는 `rustup target add x86_64-apple-darwin`이 필요하다.
+- 필요한 것: Xcode Command Line Tools(swiftc), Rust 1.89+(cargo). universal 빌드는 `rustup target add x86_64-apple-darwin`이 필요하다. 내 표현 서비스도 같은 아키텍처로 빌드해 앱 안에 포함한다.
+
+개발판 입력 메뉴의 **내 표현…**에서 직접 등록한 표현을 찾아 복사할 수 있습니다. 별도로 창만 열려면 `build/Hanautomata.app/Contents/MacOS/Hanautomata --personal-expressions`를 실행합니다. 이 방식은 입력기 등록 없이 동작하며, 입력 중 자동 추천과 LLM 기능은 아직 포함하지 않습니다. [MVP 명세](../docs/specs/PERSONAL-ASSIST-MVP.md), [검증 상태](../docs/PERSONAL-ASSIST-VALIDATION.md)를 참조하세요.
 - 파일은 모두 `~/Library/Application Support/Hanautomata/`에 있다. 입력기 프로세스 하나만 쓴다(C-OPS-09).
 
 | 파일 | 내용 |

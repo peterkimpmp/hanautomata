@@ -4,6 +4,21 @@ on:
   pull_request:
   workflow_dispatch:
 jobs:
+  personal-assist:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+      - name: Local recommendation, persistence and JSONL regressions
+        run: cargo test --locked --manifest-path core/tools/assist/Cargo.toml
+      - name: C# client against the real Rust service
+        run: dotnet run --project tests/dotnet/Hanautomata.Assist -c Release -- core/tools/assist/target/debug/hanautomata-assist${{ runner.os == 'Windows' && '.exe' || '' }}
   macos-input-method:
     runs-on: macos-latest
     steps:
@@ -84,6 +99,7 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
       - name: Unit tests with the Windows Framework compiler
         shell: pwsh
         run: .\build.ps1 -Test
@@ -120,5 +136,6 @@ jobs:
           path: |
             build/Hanautomata.exe
             build/Hanautomata.exe.config
+            build/hanautomata-assist.exe
             build/Hanautomata.ImeOptions.exe
             build/Hanautomata.ImeOptions.exe.config

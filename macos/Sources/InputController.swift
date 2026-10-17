@@ -215,6 +215,7 @@ final class HanautomataInputController: IMKInputController {
         }
         menu.addItem(.separator())
         menu.addItem(item("자동 띄어쓰기", #selector(toggleSpacing(_:)), on: Settings.autoSpacing))
+        menu.addItem(item("내 표현…", #selector(showPersonalExpressions(_:))))
         menu.addItem(item("선택한 글자 한↔영 바꾸기  \(Settings.binding(.flip)?.label ?? "")", #selector(flipSelection(_:))))
         menu.addItem(item("최근 세 단어 한↔영 바꾸기  \(Settings.binding(.recent)?.label ?? "")", #selector(flipRecent(_:))))
         menu.addItem(item("클립보드 글자 한↔영 바꾸기", #selector(flipClipboard(_:))))
@@ -249,6 +250,10 @@ final class HanautomataInputController: IMKInputController {
     }
 
     @objc func modeAuto(_ sender: Any?) { setMode(.auto) }
+    @objc func showPersonalExpressions(_ sender: Any?) {
+        Shell.core.commitPending(IMKClient(client()))
+        PersonalAssistPanel.show()
+    }
     @objc func toggleSpacing(_ sender: Any?) {
         Settings.autoSpacing.toggle()
         SettingsWindow.reload()

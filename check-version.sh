@@ -18,8 +18,8 @@ for key in AssemblyVersion AssemblyFileVersion; do
     check "src/AssemblyInfo.cs $key" "$(sed -n "s/.*\[assembly: $key(\"\(.*\)\")\].*/\1/p" "$root/src/AssemblyInfo.cs")" "$want.0"
 done
 check app.manifest "$(sed -n 's/.*<assemblyIdentity version="\([^"]*\)".*/\1/p' "$root/app.manifest")" "$want.0"
-for crate in core ffi tsf core/tools/proofread; do
+for crate in core ffi tsf core/tools/proofread core/tools/assist; do
     check "$crate/Cargo.toml" "$(sed -n 's/^version = "\(.*\)"$/\1/p' "$root/$crate/Cargo.toml" | head -n 1)" "$want"
 done
-[ "$fail" -eq 0 ] && echo "version $want: Info.plist, AssemblyInfo.cs, app.manifest and 4 Cargo.toml match"
+[ "$fail" -eq 0 ] && echo "version $want: Info.plist, AssemblyInfo.cs, app.manifest and 5 Cargo.toml match"
 exit "$fail"

@@ -1,5 +1,5 @@
 # Writes THIRD-PARTY-NOTICES.md: the third-party code inside the Rust editions (Windows input method, macOS input method)
-# and the license text each one ships. The Windows tray app is C# without third-party code and has no entry.
+# and the license text each one ships. The Windows tray package includes the Rust personal expressions helper.
 # Crates come from `cargo tree` for every release target, without proc-macro and build-only crates (they run at compile
 # time and are not in the shipped files). Where a crate offers several licenses, this distribution uses the first of
 # PREFERENCE. Runs offline against the local Cargo cache (any build fetches it). Rerun after a Cargo.lock change:
@@ -11,6 +11,7 @@ LICENSES = pathlib.Path(__file__).resolve().parent / "licenses"
 EDITIONS = (
     ("Windows 입력기", "tsf/Cargo.toml", ("x86_64-pc-windows-gnu", "i686-pc-windows-gnu")),
     ("macOS", "ffi/Cargo.toml", ("aarch64-apple-darwin", "x86_64-apple-darwin")),
+    ("내 표현 서비스 (Windows 트레이·macOS)", "core/tools/assist/Cargo.toml", ("x86_64-pc-windows-msvc", "aarch64-apple-darwin", "x86_64-apple-darwin")),
 )
 PREFERENCE = ("MIT", "Apache-2.0", "Zlib", "0BSD", "Unlicense", "MPL-2.0")
 NAME_HINT = {"MIT": "MIT", "Apache-2.0": "APACHE", "Zlib": "ZLIB", "0BSD": "0BSD", "Unlicense": "UNLICENSE", "MPL-2.0": "MPL"}
@@ -91,8 +92,8 @@ def main():
     out = [
         "# 제3자 구성 요소 고지",
         "",
-        "Hanautomata의 Windows 입력기(TSF)와 macOS 입력기에 들어가는 제3자 코드와 그 라이선스입니다. Windows 트레이 앱(C#)은 "
-        "제3자 코드를 포함하지 않습니다. 데이터 파일의 출처와 조건은 [NOTICE.md](NOTICE.md)에 있습니다.",
+        "Hanautomata의 Windows 입력기(TSF)·macOS 입력기·내 표현 서비스에 들어가는 제3자 코드와 그 라이선스입니다. Windows 트레이 패키지도 "
+        "Rust 내 표현 서비스를 포함합니다. 데이터 파일의 출처와 조건은 [NOTICE.md](NOTICE.md)에 있습니다.",
         "",
         "`core/tools/third_party_notices.py`가 각 구성의 Cargo.lock에서 만듭니다. 직접 고치지 않습니다. 라이선스를 고를 수 있는 "
         "크레이트는 '적용' 열의 라이선스로 배포합니다. macOS 목록에는 바인딩 생성용 uniffi `cli` 기능의 의존성도 들어 있습니다. "
@@ -102,7 +103,7 @@ def main():
         "",
         "| 구성 요소 | 포함 구성 | 라이선스 | 본문 |",
         "|---|---|---|---|",
-        f"| Rust 표준 라이브러리 {rustc} | Windows 입력기 · macOS | MIT OR Apache-2.0 (적용 MIT) · 구성 요소별 고지는 Rust 툴체인의 "
+        f"| Rust 표준 라이브러리 {rustc} | Windows 입력기 · macOS · 내 표현 서비스 | MIT OR Apache-2.0 (적용 MIT) · 구성 요소별 고지는 Rust 툴체인의 "
         f"`share/doc/rust/COPYRIGHT-library.html` | {std_label} |",
         f"| MinGW-w64 런타임 (x86_64·i686-pc-windows-gnu 툴체인이 정적으로 링크) | Windows 입력기 | 본문의 조항별 조건 | {mingw_label} |",
         "",

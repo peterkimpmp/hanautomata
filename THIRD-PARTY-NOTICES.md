@@ -1,6 +1,6 @@
 # 제3자 구성 요소 고지
 
-Hanautomata의 Windows 입력기(TSF)와 macOS 입력기에 들어가는 제3자 코드와 그 라이선스입니다. Windows 트레이 앱(C#)은 제3자 코드를 포함하지 않습니다. 데이터 파일의 출처와 조건은 [NOTICE.md](NOTICE.md)에 있습니다.
+Hanautomata의 Windows 입력기(TSF)·macOS 입력기·내 표현 서비스에 들어가는 제3자 코드와 그 라이선스입니다. Windows 트레이 패키지도 Rust 내 표현 서비스를 포함합니다. 데이터 파일의 출처와 조건은 [NOTICE.md](NOTICE.md)에 있습니다.
 
 `core/tools/third_party_notices.py`가 각 구성의 Cargo.lock에서 만듭니다. 직접 고치지 않습니다. 라이선스를 고를 수 있는 크레이트는 '적용' 열의 라이선스로 배포합니다. macOS 목록에는 바인딩 생성용 uniffi `cli` 기능의 의존성도 들어 있습니다. 실행 파일에 남지 않는 코드일 수 있지만 빠짐없이 적었습니다.
 
@@ -8,10 +8,10 @@ Hanautomata의 Windows 입력기(TSF)와 macOS 입력기에 들어가는 제3자
 
 | 구성 요소 | 포함 구성 | 라이선스 | 본문 |
 |---|---|---|---|
-| Rust 표준 라이브러리 1.96.0 | Windows 입력기 · macOS | MIT OR Apache-2.0 (적용 MIT) · 구성 요소별 고지는 Rust 툴체인의 `share/doc/rust/COPYRIGHT-library.html` | L1 |
+| Rust 표준 라이브러리 1.96.0 | Windows 입력기 · macOS · 내 표현 서비스 | MIT OR Apache-2.0 (적용 MIT) · 구성 요소별 고지는 Rust 툴체인의 `share/doc/rust/COPYRIGHT-library.html` | L1 |
 | MinGW-w64 런타임 (x86_64·i686-pc-windows-gnu 툴체인이 정적으로 링크) | Windows 입력기 | 본문의 조항별 조건 | L2 |
 
-## 크레이트 (77개)
+## 크레이트 (80개)
 
 MPL-2.0 크레이트(uniffi)를 포함한 모든 크레이트의 소스 코드는 '출처'의 저장소와 crates.io의 같은 판에서 받을 수 있습니다.
 
@@ -22,35 +22,36 @@ MPL-2.0 크레이트(uniffi)를 포함한 모든 크레이트의 소스 코드�
 | anyhow | 1.0.104 | macOS | MIT OR Apache-2.0 | MIT | https://github.com/dtolnay/anyhow | L3 |
 | askama | 0.16.1 | macOS | MIT OR Apache-2.0 | MIT | https://github.com/askama-rs/askama | L5 |
 | bitflags | 2.13.2 | macOS | MIT OR Apache-2.0 | MIT | https://github.com/bitflags/bitflags | L6 |
-| block-buffer | 0.10.4 | Windows 입력기 · macOS | MIT OR Apache-2.0 | MIT | https://github.com/RustCrypto/utils | L7 |
+| block-buffer | 0.10.4 | Windows 입력기 · macOS · 내 표현 서비스 (Windows 트레이·macOS) | MIT OR Apache-2.0 | MIT | https://github.com/RustCrypto/utils | L7 |
 | bytes | 1.12.1 | macOS | MIT | MIT | https://github.com/tokio-rs/bytes | L8 |
 | camino | 1.2.6 | macOS | MIT OR Apache-2.0 | MIT | https://github.com/camino-rs/camino | L3 |
 | cargo-platform | 0.3.3 | macOS | MIT OR Apache-2.0 | MIT | https://github.com/rust-lang/cargo | L3 |
 | cargo_metadata | 0.23.1 | macOS | MIT | MIT | https://github.com/oli-obk/cargo_metadata | L3 |
-| cfg-if | 1.0.5 | Windows 입력기 · macOS | MIT OR Apache-2.0 | MIT | https://github.com/rust-lang/cfg-if | L9 |
+| cfg-if | 1.0.5 | Windows 입력기 · macOS · 내 표현 서비스 (Windows 트레이·macOS) | MIT OR Apache-2.0 | MIT | https://github.com/rust-lang/cfg-if | L9 |
 | clap | 4.6.7 | macOS | MIT OR Apache-2.0 | MIT | https://github.com/clap-rs/clap | L4 |
 | clap_builder | 4.6.7 | macOS | MIT OR Apache-2.0 | MIT | https://github.com/clap-rs/clap | L4 |
 | clap_lex | 1.1.1 | macOS | MIT OR Apache-2.0 | MIT | https://github.com/clap-rs/clap | L4 |
-| cpufeatures | 0.2.17 | Windows 입력기 · macOS | MIT OR Apache-2.0 | MIT | https://github.com/RustCrypto/utils | L10 |
+| cpufeatures | 0.2.17 | Windows 입력기 · macOS · 내 표현 서비스 (Windows 트레이·macOS) | MIT OR Apache-2.0 | MIT | https://github.com/RustCrypto/utils | L10 |
 | crc32fast | 1.5.2 | Windows 입력기 · macOS | MIT OR Apache-2.0 | MIT | https://github.com/srijs/rust-crc32fast | L11 |
-| crypto-common | 0.1.7 | Windows 입력기 · macOS | MIT OR Apache-2.0 | MIT | https://github.com/RustCrypto/traits | L12 |
-| digest | 0.10.7 | Windows 입력기 · macOS | MIT OR Apache-2.0 | MIT | https://github.com/RustCrypto/traits | L13 |
+| crypto-common | 0.1.7 | Windows 입력기 · macOS · 내 표현 서비스 (Windows 트레이·macOS) | MIT OR Apache-2.0 | MIT | https://github.com/RustCrypto/traits | L12 |
+| digest | 0.10.7 | Windows 입력기 · macOS · 내 표현 서비스 (Windows 트레이·macOS) | MIT OR Apache-2.0 | MIT | https://github.com/RustCrypto/traits | L13 |
 | equivalent | 1.0.2 | macOS | Apache-2.0 OR MIT | MIT | https://github.com/indexmap-rs/equivalent | L14 |
 | errno | 0.3.14 | macOS | MIT OR Apache-2.0 | MIT | https://github.com/lambda-fairy/rust-errno | L15 |
 | fastrand | 2.5.0 | macOS | Apache-2.0 OR MIT | MIT | https://github.com/smol-rs/fastrand | L3 |
 | flate2 | 1.1.10 | Windows 입력기 · macOS | MIT OR Apache-2.0 | MIT | https://github.com/rust-lang/flate2-rs | L16 |
 | fs-err | 3.3.2 | macOS | MIT OR Apache-2.0 | MIT | https://github.com/andrewhickman/fs-err | L3 |
-| generic-array | 0.14.7 | Windows 입력기 · macOS | MIT | MIT | https://github.com/fizyk20/generic-array.git | L17 |
+| generic-array | 0.14.7 | Windows 입력기 · macOS · 내 표현 서비스 (Windows 트레이·macOS) | MIT | MIT | https://github.com/fizyk20/generic-array.git | L17 |
 | getrandom | 0.4.3 | macOS | MIT OR Apache-2.0 | MIT | https://github.com/rust-random/getrandom | L18 |
 | glob | 0.3.4 | macOS | MIT OR Apache-2.0 | MIT | https://github.com/rust-lang/glob | L6 |
 | goblin | 0.8.2 | macOS | MIT | MIT | https://github.com/m4b/goblin | L19 |
 | hashbrown | 0.17.1 | macOS | MIT OR Apache-2.0 | MIT | https://github.com/rust-lang/hashbrown | L20 |
 | heck | 0.5.0 | macOS | MIT OR Apache-2.0 | MIT | https://github.com/withoutboats/heck | L21 |
 | indexmap | 2.14.2 | macOS | Apache-2.0 OR MIT | MIT | https://github.com/indexmap-rs/indexmap | L22 |
-| itoa | 1.0.18 | Windows 입력기 · macOS | MIT OR Apache-2.0 | MIT | https://github.com/dtolnay/itoa | L3 |
+| itoa | 1.0.18 | Windows 입력기 · macOS · 내 표현 서비스 (Windows 트레이·macOS) | MIT OR Apache-2.0 | MIT | https://github.com/dtolnay/itoa | L3 |
 | libc | 0.2.190 | macOS | MIT OR Apache-2.0 | MIT | https://github.com/rust-lang/libc | L23 |
+| libc | 0.2.191 | 내 표현 서비스 (Windows 트레이·macOS) | MIT OR Apache-2.0 | MIT | https://github.com/rust-lang/libc | L23 |
 | log | 0.4.34 | macOS | MIT OR Apache-2.0 | MIT | https://github.com/rust-lang/log | L6 |
-| memchr | 2.8.3 | Windows 입력기 · macOS | Unlicense OR MIT | MIT | https://github.com/BurntSushi/memchr | L24 |
+| memchr | 2.8.3 | Windows 입력기 · macOS · 내 표현 서비스 (Windows 트레이·macOS) | Unlicense OR MIT | MIT | https://github.com/BurntSushi/memchr | L24 |
 | minimal-lexical | 0.2.1 | macOS | MIT/Apache-2.0 | MIT | https://github.com/Alexhuszagh/minimal-lexical | L3 |
 | miniz_oxide | 0.9.1 | Windows 입력기 · macOS | MIT OR Zlib OR Apache-2.0 | MIT | https://github.com/Frommi/miniz_oxide/tree/master/miniz_oxide | L25 |
 | nom | 7.1.3 | macOS | MIT | MIT | https://github.com/Geal/nom | L26 |
@@ -59,12 +60,12 @@ MPL-2.0 크레이트(uniffi)를 포함한 모든 크레이트의 소스 코드�
 | rustix | 1.1.5 | macOS | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT | MIT | https://github.com/bytecodealliance/rustix | L3 |
 | scroll | 0.12.0 | macOS | MIT | MIT | https://github.com/m4b/scroll | L28 |
 | semver | 1.0.28 | macOS | MIT OR Apache-2.0 | MIT | https://github.com/dtolnay/semver | L3 |
-| serde | 1.0.229 | Windows 입력기 · macOS | MIT OR Apache-2.0 | MIT | https://github.com/serde-rs/serde | L3 |
-| serde_core | 1.0.229 | Windows 입력기 · macOS | MIT OR Apache-2.0 | MIT | https://github.com/serde-rs/serde | L3 |
+| serde | 1.0.229 | Windows 입력기 · macOS · 내 표현 서비스 (Windows 트레이·macOS) | MIT OR Apache-2.0 | MIT | https://github.com/serde-rs/serde | L3 |
+| serde_core | 1.0.229 | Windows 입력기 · macOS · 내 표현 서비스 (Windows 트레이·macOS) | MIT OR Apache-2.0 | MIT | https://github.com/serde-rs/serde | L3 |
 | serde_json | 1.0.152 | macOS | MIT OR Apache-2.0 | MIT | https://github.com/serde-rs/json | L3 |
-| serde_json | 1.0.154 | Windows 입력기 | MIT OR Apache-2.0 | MIT | https://github.com/serde-rs/json | L3 |
+| serde_json | 1.0.154 | Windows 입력기 · 내 표현 서비스 (Windows 트레이·macOS) | MIT OR Apache-2.0 | MIT | https://github.com/serde-rs/json | L3 |
 | serde_spanned | 1.1.2 | macOS | MIT OR Apache-2.0 | MIT | https://github.com/toml-rs/toml | L4 |
-| sha2 | 0.10.9 | Windows 입력기 · macOS | MIT OR Apache-2.0 | MIT | https://github.com/RustCrypto/hashes | L29 |
+| sha2 | 0.10.9 | Windows 입력기 · macOS · 내 표현 서비스 (Windows 트레이·macOS) | MIT OR Apache-2.0 | MIT | https://github.com/RustCrypto/hashes | L29 |
 | simd-adler32 | 0.3.10 | Windows 입력기 · macOS | MIT | MIT | https://github.com/mcountryman/simd-adler32 | L30 |
 | siphasher | 1.0.4 | macOS | MIT OR Apache-2.0 | MIT | https://github.com/jedisct1/rust-siphash | L3 |
 | smawk | 0.3.3 | macOS | MIT | MIT | https://github.com/mgeisler/smawk | L31 |
@@ -73,11 +74,13 @@ MPL-2.0 크레이트(uniffi)를 포함한 모든 크레이트의 소스 코드�
 | tempfile | 3.27.0 | macOS | MIT OR Apache-2.0 | MIT | https://github.com/Stebalien/tempfile | L34 |
 | textwrap | 0.16.4 | macOS | MIT | MIT | https://github.com/mgeisler/textwrap | L35 |
 | thiserror | 2.0.21 | macOS | MIT OR Apache-2.0 | MIT | https://github.com/dtolnay/thiserror | L3 |
+| tinyvec | 1.13.3 | 내 표현 서비스 (Windows 트레이·macOS) | Zlib OR Apache-2.0 OR MIT | MIT | https://github.com/Lokathor/tinyvec | L3 |
 | toml | 1.1.8+spec-1.1.0 | macOS | MIT OR Apache-2.0 | MIT | https://github.com/toml-rs/toml | L4 |
 | toml_datetime | 1.1.2+spec-1.1.0 | macOS | MIT OR Apache-2.0 | MIT | https://github.com/toml-rs/toml | L4 |
 | toml_parser | 1.1.5+spec-1.1.0 | macOS | MIT OR Apache-2.0 | MIT | https://github.com/toml-rs/toml | L4 |
 | toml_writer | 1.1.3+spec-1.1.0 | macOS | MIT OR Apache-2.0 | MIT | https://github.com/toml-rs/toml | L4 |
-| typenum | 1.20.1 | Windows 입력기 · macOS | MIT OR Apache-2.0 | MIT | https://github.com/paholg/typenum | L36 |
+| typenum | 1.20.1 | Windows 입력기 · macOS · 내 표현 서비스 (Windows 트레이·macOS) | MIT OR Apache-2.0 | MIT | https://github.com/paholg/typenum | L36 |
+| unicode-normalization | 0.1.26 | 내 표현 서비스 (Windows 트레이·macOS) | (MIT OR Apache-2.0) AND Unicode-3.0 | MIT | https://github.com/unicode-rs/unicode-normalization | L21 |
 | uniffi | 0.32.2 | macOS | MPL-2.0 | MPL-2.0 | https://github.com/mozilla/uniffi-rs | L37 |
 | uniffi_bindgen | 0.32.2 | macOS | MPL-2.0 | MPL-2.0 | https://github.com/mozilla/uniffi-rs | L37 |
 | uniffi_core | 0.32.2 | macOS | MPL-2.0 | MPL-2.0 | https://github.com/mozilla/uniffi-rs | L37 |
@@ -93,7 +96,7 @@ MPL-2.0 크레이트(uniffi)를 포함한 모든 크레이트의 소스 코드�
 | windows_i686_gnu | 0.53.1 | Windows 입력기 | MIT OR Apache-2.0 | MIT | https://github.com/microsoft/windows-rs | L39 |
 | windows_x86_64_gnu | 0.53.1 | Windows 입력기 | MIT OR Apache-2.0 | MIT | https://github.com/microsoft/windows-rs | L39 |
 | winnow | 1.0.4 | macOS | MIT | MIT | https://github.com/winnow-rs/winnow | L3 |
-| zmij | 1.0.23 | Windows 입력기 · macOS | MIT | MIT | https://github.com/dtolnay/zmij | L3 |
+| zmij | 1.0.23 | Windows 입력기 · macOS · 내 표현 서비스 (Windows 트레이·macOS) | MIT | MIT | https://github.com/dtolnay/zmij | L3 |
 
 ## 라이선스 본문
 
@@ -387,7 +390,7 @@ Lesser General Public License for more details.
 
 ### L3 · MIT
 
-적용 대상: adler2 2.0.1, anyhow 1.0.104, camino 1.2.6, cargo-platform 0.3.3, cargo_metadata 0.23.1, fastrand 2.5.0, fs-err 3.3.2, itoa 1.0.18, minimal-lexical 0.2.1, once_cell 1.21.4, rustix 1.1.5, semver 1.0.28, serde 1.0.229, serde_core 1.0.229, serde_json 1.0.152, serde_json 1.0.154, siphasher 1.0.4, thiserror 2.0.21, winnow 1.0.4, zmij 1.0.23
+적용 대상: adler2 2.0.1, anyhow 1.0.104, camino 1.2.6, cargo-platform 0.3.3, cargo_metadata 0.23.1, fastrand 2.5.0, fs-err 3.3.2, itoa 1.0.18, minimal-lexical 0.2.1, once_cell 1.21.4, rustix 1.1.5, semver 1.0.28, serde 1.0.229, serde_core 1.0.229, serde_json 1.0.152, serde_json 1.0.154, siphasher 1.0.4, thiserror 2.0.21, tinyvec 1.13.3, winnow 1.0.4, zmij 1.0.23
 
 ```text
 Permission is hereby granted, free of charge, to any
@@ -944,7 +947,7 @@ DEALINGS IN THE SOFTWARE.
 
 ### L21 · MIT
 
-적용 대상: heck 0.5.0
+적용 대상: heck 0.5.0, unicode-normalization 0.1.26
 
 ```text
 Copyright (c) 2015 The Rust Project Developers
@@ -1008,7 +1011,7 @@ DEALINGS IN THE SOFTWARE.
 
 ### L23 · MIT
 
-적용 대상: libc 0.2.190
+적용 대상: libc 0.2.190, libc 0.2.191
 
 ```text
 Copyright (c) The Rust Project Developers

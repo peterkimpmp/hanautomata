@@ -227,6 +227,7 @@ namespace Hanautomata
             enabled = new ToolStripMenuItem("자동 판별 켜짐", null, delegate { Toggle(); });
             menu.Items.Add(enabled);
             menu.Items.Add("입력 연습 및 상태", null, delegate { ShowDashboard(); });
+            menu.Items.Add("내 표현…", null, delegate { Input.PreservePending(); PersonalAssistWindow.ShowPanel(); });
             if (proofreading) menu.Items.Add("한국어 표기 검사 · Ctrl+Shift+F7 (실험)", null, delegate {
                 MessageBox.Show("검사할 글을 선택한 뒤 Ctrl+Shift+F7을 누르세요. 제안은 직접 선택해서 적용합니다.", "로컬 맞춤법 검사"); });
             excluded = new ToolStripMenuItem("현재 앱에서 사용 안 함", null, delegate { ExcludeCurrent(); }); menu.Items.Add(excluded);
@@ -388,6 +389,10 @@ namespace Hanautomata
         {
             // The options editor never acquires the hook/tray instance mutex or changes startup registration.
             if (args.Length == 1 && args[0] == "--ime-settings") return ImeOptionsProgram.Run(ImeSettingsStore.DefaultPath);
+            if (args.Length == 1 && args[0] == "--personal-expressions") {
+                Application.EnableVisualStyles(); Application.SetCompatibleTextRenderingDefault(false);
+                Application.Run(new PersonalAssistWindow()); return 0;
+            }
             if (args.Length == 3 && args[0] == "--startup")
             {
                 if (args[1] != "status") Settings.MigrateLegacyData();

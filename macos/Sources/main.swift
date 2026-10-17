@@ -2,6 +2,13 @@ import Carbon
 import Cocoa
 import InputMethodKit
 
+if CommandLine.arguments.contains("--personal-expressions") {
+    NSApplication.shared.setActivationPolicy(.regular)
+    PersonalAssistPanel.show(standalone: true)
+    NSApplication.shared.run()
+    exit(0)
+}
+
 if CommandLine.arguments.contains("--proofreading-demo") || Bundle.main.object(forInfoDictionaryKey: "HanautomataProofreadingDemo") as? Bool == true {
     let demo = ProofreadingDemo(); withExtendedLifetime(demo) { demo.run() }; exit(0)
 }

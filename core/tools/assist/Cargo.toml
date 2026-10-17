@@ -1,0 +1,19 @@
+[package]
+name = "hanautomata-assist"
+version = "0.6.1"
+edition = "2021"
+rust-version = "1.89"
+license = "MIT"
+publish = false
+description = "Local, user-managed personal expressions service for Hanautomata."
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+unicode-normalization = "0.1"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

@@ -2,7 +2,7 @@ param([string]$SourceDirectory, [string]$OutputDirectory)
 $ErrorActionPreference = 'Stop'
 if (-not $SourceDirectory) { $SourceDirectory = Join-Path $PSScriptRoot 'build' }
 if (-not $OutputDirectory) { $OutputDirectory = Join-Path $PSScriptRoot 'deliverables' }
-foreach ($file in @('Hanautomata.exe', 'Hanautomata.exe.config')) {
+foreach ($file in @('Hanautomata.exe', 'Hanautomata.exe.config', 'hanautomata-assist.exe')) {
     if (-not (Test-Path -LiteralPath (Join-Path $SourceDirectory $file) -PathType Leaf)) { throw "Release input missing: $file" }
 }
 $exe = Join-Path $SourceDirectory 'Hanautomata.exe'
@@ -27,7 +27,7 @@ if (Get-Command git -ErrorAction SilentlyContinue) {
 }
 try {
     $null = New-Item -ItemType Directory -Path $bundle
-    foreach ($file in @('Hanautomata.exe', 'Hanautomata.exe.config')) {
+    foreach ($file in @('Hanautomata.exe', 'Hanautomata.exe.config', 'hanautomata-assist.exe')) {
         Copy-Item -LiteralPath (Join-Path $SourceDirectory $file) -Destination (Join-Path $bundle $file)
     }
     foreach ($file in @('README.md', 'CHANGELOG.md', 'LICENSE', 'NOTICE.md', 'THIRD-PARTY-NOTICES.md', 'PRIVACY.md', 'SECURITY.md', 'install.ps1', 'uninstall.ps1')) {

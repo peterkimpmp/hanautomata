@@ -20,6 +20,7 @@ rust_target() { [ "$1" = arm64 ] && echo aarch64-apple-darwin || echo x86_64-app
 
 if [ "${1:-}" = "--test" ]; then
     (cd "$root/core" && cargo test --release --locked --quiet)
+    cargo test --release --locked --quiet --manifest-path "$root/core/tools/assist/Cargo.toml"
     mkdir -p "$out"
     swiftc -swift-version 5 -target "$host-apple-macos14.0" "$here/Sources/ProofreadingModel.swift" \
         "$here/Tests/Proofreading/main.swift" -o "$out/proofreading-tests"
@@ -38,7 +39,11 @@ mkdir -p "$gen" "$app/Contents/MacOS" "$app/Contents/Resources"
 
 # Link the static library by path: -l would pick the dylib next to it.
 binaries=""
+assist_binaries=""
 for arch in $archs; do
+    rt=$(rust_target "$arch")
+    cargo build --release --locked --quiet --manifest-path "$root/core/tools/assist/Cargo.toml" --target "$rt"
+    assist_binaries="$assist_binaries $root/core/tools/assist/target/$rt/release/hanautomata-assist"
     if [ "$archs" = "$host" ]; then
         lib="$ffi/libhanautomata_ffi.a"
     else
@@ -56,9 +61,21 @@ done
 # shellcheck disable=SC2086
 lipo -create $binaries -output "$app/Contents/MacOS/Hanautomata"
 # shellcheck disable=SC2086
+lipo -create $assist_binaries -output "$app/Contents/MacOS/hanautomata-assist"
+if [ -n "${HANAUTOMATA_SIGN_ID:-}" ]; then
+    codesign --force --options runtime --timestamp --sign "$HANAUTOMATA_SIGN_ID" "$app/Contents/MacOS/hanautomata-assist"
+else
+    codesign --force --sign - --timestamp=none "$app/Contents/MacOS/hanautomata-assist"
+fi
+# shellcheck disable=SC2086
 rm -f $binaries
 
 if [ "${1:-}" = "--test" ]; then
+    swiftc -swift-version 5 "$here/Sources/PersonalAssistClient.swift" "$here/Tests/PersonalAssist/main.swift" -o "$out/assist-tests"
+    "$out/assist-tests" "$app/Contents/MacOS/hanautomata-assist"
+    swiftc -swift-version 5 "$here/Sources/PersonalAssistClient.swift" "$here/Sources/PersonalAssistPanel.swift" \
+        "$here/Tests/PersonalAssistUI/main.swift" -framework Cocoa -o "$out/assist-ui-tests"
+    "$out/assist-ui-tests" "$app/Contents/MacOS/hanautomata-assist" "$out/personal-assist-preview.png"
     swiftc -swift-version 5 -target "$host-apple-macos14.0" -module-name EngineTests \
         -Xcc -fmodule-map-file="$gen/hanautomata_ffiFFI.modulemap" -I "$gen" \
         "$gen/hanautomata_ffi.swift" "$here/Tests/Engine/main.swift" "$ffi/libhanautomata_ffi.a" -o "$out/engine-tests"

@@ -18,11 +18,21 @@ Hanautomata는 같은 물리 키로 한국어와 영어를 입력하면 **단어
 
 Windows·macOS 공통 확장 방향은 [제품 로드맵](docs/PRODUCT-ROADMAP.md)에 있습니다. a 한영 입력 → b 띄어쓰기 → c 맞춤법 → d 문맥 문장 작성과 개인화 추천을 구분하며, 계획과 현재 구현 상태를 따로 표시합니다.
 
+개발 작업의 전체 순서·기술 의존성·완료 조건은 [기술 로드맵](docs/TECHNICAL-ROADMAP.md), 첫 구현 범위는 [내 표현 MVP 명세](docs/specs/PERSONAL-ASSIST-MVP.md)에 있습니다.
+
 ## 띄어쓰기 자동 교정 (Windows 트레이 · macOS)
 
 Space로 확정할 때 의존 명사와 보조 구문을 띄어 씁니다. `gkftndlTek` + Space → **할 수 있다**, `gksmsrjt` → **하는 것**, `gkfrjdi` → **할 거야**, `godigksek` → **해야 한다**. 공백만 넣으므로 글자는 바뀌지 않습니다. 확정 직후 **F2**를 누르면 입력한 그대로 돌아가고, 그 단어는 이번 실행 동안 다시 고치지 않습니다. 트레이 메뉴 **‘띄어쓰기 자동 교정’**으로 끌 수 있습니다. 다루는 14개 규칙·예외·정밀도 근거는 [docs/SPACING.md](docs/SPACING.md)에 있습니다. Windows 11 메모장은 공백·문장부호 직후 한꺼번에 들어온 글자를 잃기 때문에, 트레이는 경계마다 앱이 처리를 마칠 때까지 기다렸다 보냅니다. 그래서 메모장에서는 교정된 단어가 0.1~0.4초에 걸쳐 나타납니다.
 
 macOS는 입력 메뉴·설정 → 입력의 **‘자동 띄어쓰기’**로 끄고 켭니다. Space 외 Enter·Tab·방향키·포커스 이동에서도 확정할 때 같은 규칙을 적용합니다. 조합 밑줄은 그대로 두고 후보창에 결과를 미리 보여 줍니다. F2 원문 복원은 Space 확정 뒤 같은 칸·같은 커서·바뀌지 않은 원문에서 15초 안에만 가능하며 학습하지 않습니다. [macOS 빌드·설치 안내](macos/README.md), [검증 상태](macos/SPACING-VALIDATION.md)를 참고하세요.
+
+## 내 표현 추천 개발판
+
+신규 소스 빌드의 Windows 트레이·macOS 입력 메뉴에서 **내 표현…**을 엽니다. 직접 등록한 단어·짧은 표현을 두 글자부터 찾아 최대 세 개 추천하고, 복사 선택을 다음 순위에 반영합니다. 최근 순위 기억 되돌리기·개별 삭제·전체 삭제·추천 끄기를 제공합니다. 추천은 기본 꺼짐이고, 등록한 표현은 이 기기에 평문으로 저장합니다.
+
+이 첫 MVP는 별도 창에서 검색하고 복사하는 방식입니다. 입력 중 자동 팝업·다음 단어 예측·문장 자동 수집·LLM 생성·TSF 진입 UI는 후속 단계입니다. 공개 릴리스에 포함됐다는 뜻은 아닙니다. [검증 범위](docs/PERSONAL-ASSIST-VALIDATION.md), [개인정보 안내](PRIVACY.md)를 확인하세요.
+
+독립 실행: Windows `Hanautomata.exe --personal-expressions`, macOS `Hanautomata.app/Contents/MacOS/Hanautomata --personal-expressions`. 별도 입력기 등록 없이 내 표현 창만 열 수 있습니다.
 
 ## 맞춤법 검사 개발판
 
@@ -73,7 +83,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -Startup # 자
 
 제거는 `uninstall.ps1`입니다(자동 시작 해제 → 종료 → 폴더·바로가기 제거). 학습 단어·설정까지 지우려면 `-PurgeData`를 붙입니다. 이전 HanFlow 사용자는 [데이터 이전](docs/MIGRATION.md)을 먼저 확인하세요.
 
-소스 빌드는 저장소 루트에서 `.\build.ps1`(별도 SDK 없이 Windows 기본 C# 컴파일러) 후 `.\install.ps1`입니다.
+소스 빌드는 Rust 1.89+와 Windows 기본 C# 컴파일러를 사용합니다. 저장소 루트에서 `.\build.ps1` 후 `.\install.ps1`입니다. Rust는 빌드할 때 필요하며 사용자는 배포된 `hanautomata-assist.exe`를 함께 설치하면 됩니다.
 
 ### Windows 입력기(TSF) — `Hanautomata-ime-<판>-win.zip` (시험판)
 
@@ -144,7 +154,11 @@ macOS·Linux(또는 Windows의 .NET SDK 9)에서는 `tests/dotnet/`로 같은 �
 ```sh
 dotnet build tests/dotnet/Hanautomata.App.Net48 -c Release
 dotnet run --project tests/dotnet/Hanautomata.Tests -f net9.0 -c Release
+cargo test --locked --manifest-path core/tools/assist/Cargo.toml
+dotnet run --project tests/dotnet/Hanautomata.Assist -c Release -- core/tools/assist/target/debug/hanautomata-assist
 ```
+
+위 마지막 명령의 서비스 이름은 Windows에서 `hanautomata-assist.exe`입니다. macOS `build.sh --test`에는 같은 실제 서비스에 대한 Swift 연결·네이티브 창 회귀가 포함됩니다.
 
 단위 검사에는 통계 판별기의 C# 동치 fixture 1,135행과 held-out 게이트(한글 변환 ≥96% · 영문 보존 ≥97% · 오변환 ≤0.5%)가 들어 있습니다. 모델 표를 다시 만드는 절차는 [tests/lm/README.md](tests/lm/README.md), 데이터 출처는 [NOTICE.md](NOTICE.md)입니다.
 

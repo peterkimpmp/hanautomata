@@ -28,6 +28,10 @@ if ($Test) {
     if ($LASTEXITCODE -ne 0) { throw 'Core tests failed.' }
 }
 if (-not $Test -or $Integration) {
+    if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) { throw 'Rust 1.89+ is required to build the local personal expressions service.' }
+    & cargo build --locked --release --manifest-path (Join-Path $appRoot 'core/tools/assist/Cargo.toml') --target-dir (Join-Path $OutputDirectory 'assist-target')
+    if ($LASTEXITCODE -ne 0) { throw 'Personal expressions service compilation failed.' }
+    Copy-Item -LiteralPath (Join-Path $OutputDirectory 'assist-target/release/hanautomata-assist.exe') -Destination (Join-Path $OutputDirectory 'hanautomata-assist.exe') -Force
     $sources = @(Get-ChildItem -LiteralPath (Join-Path $appRoot 'src') -Filter '*.cs' | ForEach-Object FullName)
     & $compiler /nologo /utf8output /target:winexe /main:Hanautomata.Program /platform:anycpu /optimize+ "/win32manifest:$appRoot/app.manifest" "/out:$OutputDirectory/Hanautomata.exe" /reference:Microsoft.CSharp.dll /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Core.dll /reference:System.Web.Extensions.dll /reference:System.Runtime.Serialization.dll /reference:System.Xml.Linq.dll "/reference:$framework/WPF/UIAutomationClient.dll" "/reference:$framework/WPF/UIAutomationTypes.dll" "/reference:$framework/WPF/WindowsBase.dll" @modelResources @sources
     if ($LASTEXITCODE -ne 0) { throw 'Application compilation failed.' }

@@ -7,6 +7,8 @@ $sourceExe = Join-Path $SourceDirectory 'Hanautomata.exe'
 if (-not (Test-Path -LiteralPath $sourceExe)) { throw 'Build Hanautomata first, or specify -SourceDirectory with the portable package.' }
 $config = Join-Path $SourceDirectory 'Hanautomata.exe.config'
 if (-not (Test-Path -LiteralPath $config)) { throw 'Hanautomata.exe.config is required beside the executable.' }
+$assist = Join-Path $SourceDirectory 'hanautomata-assist.exe'
+if (-not (Test-Path -LiteralPath $assist -PathType Leaf)) { throw 'hanautomata-assist.exe is required beside the executable.' }
 if ($ValidateOnly) { Write-Output 'Install source validated; no files, shortcuts or startup entries changed.'; return }
 $destination = [System.IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA 'Programs/Hanautomata'))
 $null = New-Item -ItemType Directory -Force -Path $destination
@@ -24,8 +26,17 @@ if (Test-Path -LiteralPath $installedExe) {
 }
 $legacyRunning = @(Get-Process -Name HanFlow -ErrorAction SilentlyContinue)
 if ($legacyRunning.Count -gt 0) { throw 'Close HanFlow (the previous name of this app) from the tray first; two instances would both hook the keyboard.' }
+$installedAssist = Join-Path $destination 'hanautomata-assist.exe'
+$deadline = [DateTime]::UtcNow.AddSeconds(5)
+do {
+    $assistRunning = @(Get-Process -Name hanautomata-assist -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $installedAssist })
+    if ($assistRunning.Count -eq 0) { break }
+    Start-Sleep -Milliseconds 100
+} while ([DateTime]::UtcNow -lt $deadline)
+if ($assistRunning.Count -gt 0) { throw 'Close the personal expressions window and retry before replacing installed files.' }
 $legacyInstall = Join-Path $env:LOCALAPPDATA 'Programs/HanFlow'
 if (Test-Path -LiteralPath $legacyInstall) { Write-Warning "Previous HanFlow install left in place: $legacyInstall (and HanFlow.lnk shortcuts). Remove them after confirming Hanautomata works. Settings and learned words are copied to %LOCALAPPDATA%\Hanautomata on first start." }
+Copy-Item -LiteralPath $assist -Destination (Join-Path $destination 'hanautomata-assist.exe') -Force
 Copy-Item -LiteralPath $sourceExe -Destination $installedExe -Force
 Copy-Item -LiteralPath $config -Destination (Join-Path $destination 'Hanautomata.exe.config') -Force
 if (-not ('HanautomataInstall.Shortcut' -as [type])) {

@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework><OutputType>Exe</OutputType>
+    <LangVersion>5</LangVersion><EnableDefaultItems>false</EnableDefaultItems>
+    <Nullable>disable</Nullable><ImplicitUsings>disable</ImplicitUsings><RollForward>Major</RollForward>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../../src/PersonalAssistClient.cs" />
+    <Compile Include="../Hanautomata.Tests/JavaScriptSerializerShim.cs" />
+    <Compile Include="../../PersonalAssistTests.cs" />
+  </ItemGroup>
+</Project>

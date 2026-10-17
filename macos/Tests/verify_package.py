@@ -35,6 +35,17 @@ def verify(archive, proofreading):
         assert info['CFBundleIdentifier'] == 'io.github.peterkimpmp.inputmethod.Hanautomata'
         run('codesign', '--verify', '--deep', '--strict', str(app))
         assert set(run('lipo', '-archs', str(app / 'Contents/MacOS/Hanautomata')).split()) == {'arm64', 'x86_64'}
+        assist = app / 'Contents/MacOS/hanautomata-assist'
+        assert set(run('lipo', '-archs', str(assist)).split()) == {'arm64', 'x86_64'}
+        assert run(str(assist), '--version') == 'hanautomata-assist ' + version
+        requests = [dict(schema_version=1, request_id=str(i), command=command, **fields)
+                    for i, (command, fields) in enumerate([
+                        ('add', dict(text='검토 후 회신드리겠습니다.')),
+                        ('set_enabled', dict(enabled=True)), ('query', dict(text='검토'))])]
+        replies = [json.loads(line) for line in run(str(assist), '--store', str(root / 'test-expressions.json'),
+                   input=''.join(json.dumps(r, ensure_ascii=False) + '\n' for r in requests)).splitlines()]
+        assert len(replies) == 3 and all(reply['ok'] for reply in replies)
+        assert replies[-1]['items'][0]['text'] == '검토 후 회신드리겠습니다.'
         payload_count = 0
         if proofreading:
             payload = app / 'Contents/Resources/proofreading'

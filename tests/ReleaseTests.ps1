@@ -29,7 +29,7 @@ try {
     $portable = Join-Path $unpacked "Hanautomata-$version"
     & (Join-Path $portable 'install.ps1') -ValidateOnly | Out-Null
     Assert-Release $true 'portable installer resolves its executable without -SourceDirectory'
-    foreach ($name in @('uninstall.ps1', 'LICENSE', 'NOTICE.md', 'THIRD-PARTY-NOTICES.md', 'PRIVACY.md')) {
+    foreach ($name in @('uninstall.ps1', 'LICENSE', 'NOTICE.md', 'THIRD-PARTY-NOTICES.md', 'PRIVACY.md', 'hanautomata-assist.exe')) {
         Assert-Release (Test-Path -LiteralPath (Join-Path $portable $name)) ('bundle file missing: ' + $name)
     }
     foreach ($line in Get-Content -LiteralPath (Join-Path $portable 'SHA256SUMS.txt')) {
@@ -44,6 +44,13 @@ try {
         $head = & git -C $repo rev-parse HEAD 2>$null
         if ($LASTEXITCODE -eq 0) { Assert-Release ($manifest.source_commit -eq $head) 'release manifest records the source commit' }
     }
+    $assist = Join-Path $portable 'hanautomata-assist.exe'
+    $helperVersion = & $assist --version
+    Assert-Release ($LASTEXITCODE -eq 0 -and $helperVersion -eq "hanautomata-assist $version") 'extracted recommendation helper runs and matches product version'
+    Remove-Item -LiteralPath $assist
+    $rejected = $false
+    try { & (Join-Path $portable 'install.ps1') -ValidateOnly | Out-Null } catch { $rejected = $_.Exception.Message -match 'hanautomata-assist.exe is required' }
+    Assert-Release $rejected 'missing recommendation helper fails before installation'
     $config = Join-Path $portable 'Hanautomata.exe.config'
     Remove-Item -LiteralPath $config
     $rejected = $false
